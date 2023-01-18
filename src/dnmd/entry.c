@@ -60,6 +60,7 @@ bool md_create_handle(void const* data, size_t data_len, mdhandle_t* handle)
     uint32_t stream_size;
     uint8_t* name_end;
     size_t name_len;
+    bool tables_heap_uncompressed = false;
     for (size_t i = 0; i < stream_count; ++i)
     {
         if (!read_u32(&curr, &curr_len, &offset)
@@ -78,6 +79,22 @@ bool md_create_handle(void const* data, size_t data_len, mdhandle_t* handle)
         {
             cxt.tables_heap.ptr = base + offset;
             cxt.tables_heap.size = stream_size;
+            tables_heap_uncompressed = false;
+        }
+        // The #- stream is used for images that may have the *Ptr indirection tables.
+        // The indirection tables, as well as the #- stream, are not documented in the ECMA spec.
+        else if (strncmp((char const*)curr, "#-", name_len) == 0)
+        {
+            cxt.tables_heap.ptr = base + offset;
+            cxt.tables_heap.size = stream_size;
+            tables_heap_uncompressed = true;
+        }
+        // The #JTD stream is a marker that the image is a minimal EnC delta, as compared to an image
+        // with the EnC data included. This stream is not documented in the ECMA spec.
+        else if (strncmp((char const*)curr, "#JTD", name_len) == 0)
+        {
+            // The content of the stream is ignored.
+            cxt.context_flags |= mdc_minimal_delta;
         }
         else if (strncmp((char const*)curr, "#Strings", name_len) == 0)
         {
@@ -117,10 +134,16 @@ bool md_create_handle(void const* data, size_t data_len, mdhandle_t* handle)
             return false;
     }
 
+    // When the #JTD stream is present, the #- stream must be
+    // the stream that contains the metadata tables.
+    if ((bool)(cxt.context_flags & mdc_minimal_delta) && !tables_heap_uncompressed)
+        return false;
+
     // Header initialization is complete.
     cxt.magic = MDLIB_MAGIC_NUMBER;
     cxt.data.ptr = data;
     cxt.data.size = data_len;
+    cxt.context_flags = mdc_none;
     // Allocate and initialize a context
 
     mdcxt_t* pcxt = (mdcxt_t*)malloc(sizeof(mdcxt_t));

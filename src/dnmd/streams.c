@@ -200,6 +200,15 @@ bool initialize_tables(mdcxt_t* cxt)
         valid = valid >> 1;
     }
 
+    // There is an extra flag that is respected by metadata readers but is not defined in the ECMA spec.
+    // If the 0x40 bit is set, then there is an extra 4-byte integer after the row counts before the table data.
+    // This is refered to as the ExtraData heap size flag in the System.Reflection.Metadata reader.
+    if (cxt->heap_sizes & 0x40)
+    {
+        if (!advance_stream(&curr, &curr_len, sizeof(uint32_t)))
+            return false;
+    }
+
     // Validate we processed the row counts properly
     if (curr != table_begin)
         return false;
@@ -224,7 +233,7 @@ bool initialize_tables(mdcxt_t* cxt)
             table = &cxt->tables[i];
 
             // Initialize the table
-            if (!initialize_table_details(row_counts, cxt->heap_sizes, (mdtable_id_t)i, (bool)(sorted_tables & 1), table))
+            if (!initialize_table_details(row_counts, cxt->heap_sizes, (mdtable_id_t)i, (bool)(sorted_tables & 1), (bool)(cxt->context_flags & mdc_minimal_delta), table))
                 return false;
 
             // Consume the data based on the table details
@@ -246,6 +255,7 @@ bool validate_tables(mdcxt_t* cxt)
     assert(cxt != NULL);
     (void)cxt;
     // [TODO] Reference ECMA-335 and encode table verification.
+    // [TODO] Do not allow the EncMap and *Ptr tables to be present in a compressed table heap.
     return true;
 }
 

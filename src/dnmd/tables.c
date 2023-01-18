@@ -155,7 +155,7 @@ static uint32_t compute_row_offsets_size(mdtcol_t* col, size_t col_len)
 }
 
 // II.24.2.6
-static mdtcol_t compute_coded_index(uint32_t const* row_counts, md_coded_idx_t coded_map_idx)
+static mdtcol_t compute_coded_index(bool is_minimal_delta, uint32_t const* row_counts, md_coded_idx_t coded_map_idx)
 {
     assert(coded_map_idx < ARRAY_SIZE(coded_index_map));
     assert(coded_map_idx <= ExtractCodedIndex(mdtc_cimask) && "Coded index map index bit encoding exceeded");
@@ -174,13 +174,13 @@ static mdtcol_t compute_coded_index(uint32_t const* row_counts, md_coded_idx_t c
         }
     }
     uint32_t max_rows_2b = (uint32_t)1 << (16 - entry->bit_encoding_size);
-    return InsertCodedIndex(coded_map_idx) | mdtc_idx_coded | (m < max_rows_2b ? mdtc_b2 : mdtc_b4);
+    return InsertCodedIndex(coded_map_idx) | mdtc_idx_coded | (m < max_rows_2b && !is_minimal_delta ? mdtc_b2 : mdtc_b4);
 }
 
-static mdtcol_t compute_table_index(uint32_t const* row_counts, mdtable_id_t id)
+static mdtcol_t compute_table_index(bool is_minimal_delta, uint32_t const* row_counts, mdtable_id_t id)
 {
     assert(row_counts != NULL && (mdtid_First <= id && id < mdtid_Last));
-    return InsertTable(id) | (row_counts[id] < (1 << 16) ? mdtc_b2 : mdtc_b4) | mdtc_idx_table;
+    return InsertTable(id) | (row_counts[id] < (1 << 16) && !is_minimal_delta ? mdtc_b2 : mdtc_b4) | mdtc_idx_table;
 }
 
 bool initialize_table_details(
@@ -188,6 +188,7 @@ bool initialize_table_details(
     uint8_t heap_sizes,
     mdtable_id_t id,
     bool is_sorted,
+    bool is_minimal_delta,
     mdtable_t* table)
 {
     assert(all_table_row_counts != NULL && (mdtid_First <= id && id < mdtid_Last) && table != NULL);
@@ -203,8 +204,8 @@ bool initialize_table_details(
     table->is_sorted = is_sorted;
     table->table_id = (uint8_t)id;
 
-#define CODED_INDEX_ARGS(x) all_table_row_counts, x
-#define TABLE_INDEX_ARGS(x) all_table_row_counts, x
+#define CODED_INDEX_ARGS(x) is_minimal_delta, all_table_row_counts, x
+#define TABLE_INDEX_ARGS(x) is_minimal_delta, all_table_row_counts, x
 #pragma warning(push)
 #pragma warning(disable:4063)
     switch (id)

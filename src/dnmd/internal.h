@@ -70,6 +70,13 @@ typedef enum
     mdtc_hblob      = 0x80000000, // #Blob
 } mdtcol_t;
 
+// Flags and masks for context details
+typedef enum
+{
+    mdc_none          = 0x0000,
+    mdc_minimal_delta = 0x0001,
+} mdcxt_flag_t;
+
 // Macros used to insert/extract the column offset.
 #define InsertOffset(o) ((o << 8) & mdtc_comask)
 #define ExtractOffset(o) ((o & mdtc_comask) >> 8)
@@ -103,6 +110,7 @@ typedef struct _mdcxt_t
 {
     uint32_t magic; // mdlib magic
     mdcdata_t data; // metadata raw bytes
+    mdcxt_flag_t context_flags;
 
     // Metadata root details - II.24.2.1
     uint16_t major_ver;
@@ -214,6 +222,7 @@ bool initialize_table_details(
     uint8_t heap_sizes,
     mdtable_id_t id,
     bool is_sorted,
+    bool is_minimal_delta,
     mdtable_t* table);
 
 // Given the current table, consume the data stream assuming it contains the rows
