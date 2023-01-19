@@ -161,9 +161,13 @@ typedef enum
     MDTABLE_COLUMN(TypeDef, FieldList, 4),
     MDTABLE_COLUMN(TypeDef, MethodList, 5),
 
+    MDTABLE_COLUMN(FieldPtr, Field, 0),
+
     MDTABLE_COLUMN(Field, Flags, 0),
     MDTABLE_COLUMN(Field, Name, 1),
     MDTABLE_COLUMN(Field, Signature, 2),
+
+    MDTABLE_COLUMN(MethodPtr, Method, 0),
 
     MDTABLE_COLUMN(MethodDef, Rva, 0),
     MDTABLE_COLUMN(MethodDef, ImplFlags, 1),
@@ -171,6 +175,8 @@ typedef enum
     MDTABLE_COLUMN(MethodDef, Name, 3),
     MDTABLE_COLUMN(MethodDef, Signature, 4),
     MDTABLE_COLUMN(MethodDef, ParamList, 5),
+
+    MDTABLE_COLUMN(ParamPtr, Param, 0),
 
     MDTABLE_COLUMN(Param, Flags, 0),
     MDTABLE_COLUMN(Param, Sequence, 1),
@@ -210,12 +216,16 @@ typedef enum
     MDTABLE_COLUMN(EventMap, Parent, 0),
     MDTABLE_COLUMN(EventMap, EventList, 1),
 
+    MDTABLE_COLUMN(EventPtr, Event, 0),
+
     MDTABLE_COLUMN(Event, EventFlags, 0),
     MDTABLE_COLUMN(Event, Name, 1),
     MDTABLE_COLUMN(Event, EventType, 2),
 
     MDTABLE_COLUMN(PropertyMap, Parent, 0),
     MDTABLE_COLUMN(PropertyMap, PropertyList, 1),
+
+    MDTABLE_COLUMN(PropertyPtr, Property, 0),
 
     MDTABLE_COLUMN(Property, Flags, 0),
     MDTABLE_COLUMN(Property, Name, 1),

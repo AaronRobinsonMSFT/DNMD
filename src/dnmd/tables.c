@@ -242,7 +242,7 @@ bool initialize_table_details(
         table->column_count = 6;
         break;
     case mdtid_FieldPtr: // Not in ECMA
-        table->column_details[0] = compute_table_index(TABLE_INDEX_ARGS(mdtid_Field));
+        table->column_details[mdtFieldPtr_Field] = compute_table_index(TABLE_INDEX_ARGS(mdtid_Field));
         table->column_count = 1;
         break;
     case mdtid_Field: // II.22.15
@@ -252,7 +252,7 @@ bool initialize_table_details(
         table->column_count = 3;
         break;
     case mdtid_MethodPtr: // Not in ECMA
-        table->column_details[0] = compute_table_index(TABLE_INDEX_ARGS(mdtid_MethodDef));
+        table->column_details[mdtMethodPtr_Method] = compute_table_index(TABLE_INDEX_ARGS(mdtid_MethodDef));
         table->column_count = 1;
         break;
     case mdtid_MethodDef: // II.22.26
@@ -265,7 +265,7 @@ bool initialize_table_details(
         table->column_count = 6;
         break;
     case mdtid_ParamPtr: // Not in ECMA
-        table->column_details[0] = compute_table_index(TABLE_INDEX_ARGS(mdtid_Param));
+        table->column_details[mdtParamPtr_Param] = compute_table_index(TABLE_INDEX_ARGS(mdtid_Param));
         table->column_count = 1;
         break;
     case mdtid_Param: // II.22.33
@@ -329,7 +329,7 @@ bool initialize_table_details(
         table->column_count = 2;
         break;
     case mdtid_EventPtr: // Not in ECMA
-        table->column_details[0] = compute_table_index(TABLE_INDEX_ARGS(mdtid_Event));
+        table->column_details[mdtEventPtr_Event] = compute_table_index(TABLE_INDEX_ARGS(mdtid_Event));
         table->column_count = 1;
         break;
     case mdtid_Event:// II.22.13
@@ -344,7 +344,7 @@ bool initialize_table_details(
         table->column_count = 2;
         break;
     case mdtid_PropertyPtr: // Not in ECMA
-        table->column_details[0] = compute_table_index(TABLE_INDEX_ARGS(mdtid_Property));
+        table->column_details[mdtPropertyPtr_Property] = compute_table_index(TABLE_INDEX_ARGS(mdtid_Property));
         table->column_count = 1;
         break;
     case mdtid_Property: // II.22.34
