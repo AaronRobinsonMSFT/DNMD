@@ -183,6 +183,14 @@ static mdtcol_t compute_table_index(bool is_minimal_delta, uint32_t const* row_c
     return InsertTable(id) | (row_counts[id] < (1 << 16) && !is_minimal_delta ? mdtc_b2 : mdtc_b4) | mdtc_idx_table;
 }
 
+static mdtable_id_t get_target_table(uint32_t const* all_table_row_counts, mdtable_id_t direct_table, mdtable_id_t indirect_table)
+{
+    assert(all_table_row_counts != NULL);
+    assert(mdtid_First <= direct_table && direct_table < mdtid_Last);
+    assert(mdtid_First <= indirect_table && indirect_table < mdtid_Last);
+    return all_table_row_counts[indirect_table] > 0 ? indirect_table : direct_table;
+}
+
 bool initialize_table_details(
     uint32_t const* all_table_row_counts,
     uint8_t heap_sizes,
@@ -204,8 +212,8 @@ bool initialize_table_details(
     table->is_sorted = is_sorted;
     table->table_id = (uint8_t)id;
 
-#define CODED_INDEX_ARGS(x) is_minimal_delta, all_table_row_counts, x
-#define TABLE_INDEX_ARGS(x) is_minimal_delta, all_table_row_counts, x
+#define CODED_INDEX_ARGS(x) is_minimal_delta, all_table_row_counts, (x)
+#define TABLE_INDEX_ARGS(x) is_minimal_delta, all_table_row_counts, (x)
 #pragma warning(push)
 #pragma warning(disable:4063)
     switch (id)
@@ -229,11 +237,11 @@ bool initialize_table_details(
         table->column_details[mdtTypeDef_TypeName] = string_index;
         table->column_details[mdtTypeDef_TypeNamespace] = string_index;
         table->column_details[mdtTypeDef_Extends] = compute_coded_index(CODED_INDEX_ARGS(mdci_TypeDefOrRef));
-        table->column_details[mdtTypeDef_FieldList] = compute_table_index(TABLE_INDEX_ARGS(mdtid_Field));
-        table->column_details[mdtTypeDef_MethodList] = compute_table_index(TABLE_INDEX_ARGS(mdtid_MethodDef));
+        table->column_details[mdtTypeDef_FieldList] = compute_table_index(TABLE_INDEX_ARGS(get_target_table(all_table_row_counts, mdtid_Field, mdtid_FieldPtr)));
+        table->column_details[mdtTypeDef_MethodList] = compute_table_index(TABLE_INDEX_ARGS(get_target_table(all_table_row_counts, mdtid_MethodDef, mdtid_MethodPtr)));
         table->column_count = 6;
         break;
-    case 0x3: // FieldPtr
+    case mdtid_FieldPtr: // Not in ECMA
         table->column_details[0] = compute_table_index(TABLE_INDEX_ARGS(mdtid_Field));
         table->column_count = 1;
         break;
@@ -243,7 +251,7 @@ bool initialize_table_details(
         table->column_details[mdtField_Signature] = blob_index;
         table->column_count = 3;
         break;
-    case 0x5: // MethodPtr
+    case mdtid_MethodPtr: // Not in ECMA
         table->column_details[0] = compute_table_index(TABLE_INDEX_ARGS(mdtid_MethodDef));
         table->column_count = 1;
         break;
@@ -253,10 +261,10 @@ bool initialize_table_details(
         table->column_details[mdtMethodDef_Flags] = mdtc_constant | mdtc_b2;
         table->column_details[mdtMethodDef_Name] = string_index;
         table->column_details[mdtMethodDef_Signature] = blob_index;
-        table->column_details[mdtMethodDef_ParamList] = compute_table_index(TABLE_INDEX_ARGS(mdtid_Param));
+        table->column_details[mdtMethodDef_ParamList] = compute_table_index(TABLE_INDEX_ARGS(get_target_table(all_table_row_counts, mdtid_Param, mdtid_ParamPtr)));
         table->column_count = 6;
         break;
-    case 0x7: // ParamPtr
+    case mdtid_ParamPtr: // Not in ECMA
         table->column_details[0] = compute_table_index(TABLE_INDEX_ARGS(mdtid_Param));
         table->column_count = 1;
         break;
@@ -317,10 +325,10 @@ bool initialize_table_details(
         break;
     case mdtid_EventMap: // II.22.12
         table->column_details[mdtEventMap_Parent] = compute_table_index(TABLE_INDEX_ARGS(mdtid_TypeDef));
-        table->column_details[mdtEventMap_EventList] = compute_table_index(TABLE_INDEX_ARGS(mdtid_Event));
+        table->column_details[mdtEventMap_EventList] = compute_table_index(TABLE_INDEX_ARGS(get_target_table(all_table_row_counts, mdtid_Event, mdtid_EventPtr)));
         table->column_count = 2;
         break;
-    case 0x13: // EventPtr
+    case mdtid_EventPtr: // Not in ECMA
         table->column_details[0] = compute_table_index(TABLE_INDEX_ARGS(mdtid_Event));
         table->column_count = 1;
         break;
@@ -332,10 +340,10 @@ bool initialize_table_details(
         break;
     case mdtid_PropertyMap: // II.22.35
         table->column_details[mdtPropertyMap_Parent] = compute_table_index(TABLE_INDEX_ARGS(mdtid_TypeDef));
-        table->column_details[mdtPropertyMap_PropertyList] = compute_table_index(TABLE_INDEX_ARGS(mdtid_Property));
+        table->column_details[mdtPropertyMap_PropertyList] = compute_table_index(TABLE_INDEX_ARGS(get_target_table(all_table_row_counts, mdtid_Property, mdtid_PropertyPtr)));
         table->column_count = 2;
         break;
-    case 0x16: // PropertyPtr
+    case mdtid_PropertyPtr: // Not in ECMA
         table->column_details[0] = compute_table_index(TABLE_INDEX_ARGS(mdtid_Property));
         table->column_count = 1;
         break;
