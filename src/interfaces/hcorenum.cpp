@@ -46,7 +46,7 @@ HRESULT HCORENUMImpl::CreateTableEnum(_In_ uint32_t count, _Out_ HCORENUMImpl** 
     return S_OK;
 }
 
-void HCORENUMImpl::InitTableEnum(_Inout_ HCORENUMImpl& impl, _In_ uint32_t index, _In_ mdcursor_t cursor, _In_ uint32_t rows) noexcept
+void HCORENUMImpl::InitTableEnum(_Inout_ HCORENUMImpl& impl, _In_ uint32_t index, _In_ mdcursor_t cursor, _In_ uint32_t rows, _In_opt_ col_index_t* indirectionColumn) noexcept
 {
     assert(impl._type == HCORENUMType::Table);
     EnumData* currInit = impl._curr;
@@ -61,6 +61,17 @@ void HCORENUMImpl::InitTableEnum(_Inout_ HCORENUMImpl& impl, _In_ uint32_t index
 
     currInit->Table.Current = cursor;
     currInit->Table.Start = cursor;
+
+    if (indirectionColumn != nullptr)
+    {
+        currInit->Table.IsIndirect = true;
+        currInit->Table.IndirectionColumn = *indirectionColumn;
+    }
+    else
+    {
+        currInit->Table.IsIndirect = false;
+    }
+
     currInit->ReadIn = 0;
     currInit->Total = rows;
 }
@@ -265,8 +276,18 @@ HRESULT HCORENUMImpl::ReadTableTokens(
             _curr = currData;
         }
 
-        if (!md_cursor_to_token(currData->Table.Current, &rTokens[count]))
-            break;
+        mdcursor_t target = currData->Table.Current;
+
+        if (currData->Table.IsIndirect)
+        {
+            if (!md_get_column_value_as_token(currData->Table.Table, target, currData->Table.IndirectionColumn, &rTokens[count]))
+                break;
+        }
+        else
+        {
+            if (!md_cursor_to_token(currData->Table.Current, &rTokens[count]))
+                break;
+        }
         count++;
 
         if (!md_cursor_next(&currData->Table.Current))

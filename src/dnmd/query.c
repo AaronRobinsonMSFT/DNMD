@@ -929,3 +929,40 @@ bool md_find_cursor_of_range_element(mdcursor_t element, mdcursor_t* cursor)
         return false;
     return find_range_element(element, cursor);
 }
+
+bool md_column_is_indirect(mdcursor_t cursor, col_index_t col, col_index_t* indir_table_col)
+{
+    mdtable_t* table = CursorTable(&cursor);
+    if (table == NULL)
+        return false;
+    uint8_t idx = col_to_index(col, table);
+    mdtable_id_t table_id = ExtractTable(table->column_details[idx]);
+
+    if (table_id == mdtid_FieldPtr)
+    {
+        *indir_table_col = mdtFieldPtr_Field;
+        return true;
+    }
+    else if (table_id == mdtid_MethodPtr)
+    {
+        *indir_table_col = mdtMethodPtr_Method;
+        return true;
+    }
+    else if (table_id == mdtid_ParamPtr)
+    {
+        *indir_table_col = mdtParamPtr_Param;
+        return true;
+    }
+    else if (table_id == mdtid_EventPtr)
+    {
+        *indir_table_col = mdtEventPtr_Event;
+        return true;
+    }
+    else if (table_id == mdtid_PropertyPtr)
+    {
+        *indir_table_col = mdtPropertyPtr_Property;
+        return true;
+    }
+
+    return false;
+}

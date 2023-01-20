@@ -378,6 +378,9 @@ bool md_is_field_sig(uint8_t const* sig, size_t sig_len);
 // If the return value is true, def_sig will be a pointer to malloc-d memory containing the MethodDefSig for the MethodRefSig.
 bool md_get_methoddefsig_from_methodrefsig(uint8_t const* sig, size_t ref_sig_len, uint8_t** def_sig, size_t* def_sig_len);
 
+// Determine if the given column on the cursor's table points to an indirect table.
+bool md_column_is_indirect(mdcursor_t c, col_index_t col_idx, col_index_t* indir_table_col);
+
 #ifdef __cplusplus
 }
 #endif
