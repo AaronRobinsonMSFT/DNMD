@@ -427,7 +427,7 @@ public: // IMetaDataImport
     STDMETHOD(GetCustomAttributeByName)(
         mdToken     tkObj,
         LPCWSTR     szName,
-        const void  **ppData,
+        void const  **ppData,
         ULONG       *pcbData) override;
 
     STDMETHOD_(BOOL, IsValidToken)(
@@ -503,7 +503,7 @@ public: // IMetaDataImport2
 public: // IMetaDataAssemblyImport
     STDMETHOD(GetAssemblyProps)(
         mdAssembly  mda,
-        const void  **ppbPublicKey,
+        void const  **ppbPublicKey,
         ULONG       *pcbPublicKey,
         ULONG       *pulHashAlgId,
         _Out_writes_to_opt_(cchName, *pchName) LPWSTR  szName,
@@ -514,13 +514,13 @@ public: // IMetaDataAssemblyImport
 
     STDMETHOD(GetAssemblyRefProps)(
         mdAssemblyRef mdar,
-        const void  **ppbPublicKeyOrToken,
+        void const  **ppbPublicKeyOrToken,
         ULONG       *pcbPublicKeyOrToken,
         _Out_writes_to_opt_(cchName, *pchName)LPWSTR szName,
         ULONG       cchName,
         ULONG       *pchName,
         ASSEMBLYMETADATA *pMetaData,
-        const void  **ppbHashValue,
+        void const  **ppbHashValue,
         ULONG       *pcbHashValue,
         DWORD       *pdwAssemblyRefFlags) override;
 
@@ -529,7 +529,7 @@ public: // IMetaDataAssemblyImport
         _Out_writes_to_opt_(cchName, *pchName) LPWSTR      szName,
         ULONG       cchName,
         ULONG       *pchName,
-        const void  **ppbHashValue,
+        void const  **ppbHashValue,
         ULONG       *pcbHashValue,
         DWORD       *pdwFileFlags) override;
 
