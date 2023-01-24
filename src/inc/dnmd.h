@@ -88,7 +88,7 @@ typedef enum
     mdtid_CustomDebugInformation = 0x37,
 #endif // DNMD_PORTABLE_PDB
 
-    mdtid_Last,
+    mdtid_End,
     mdtid_First = mdtid_Module,
 } mdtable_id_t;
 
@@ -139,6 +139,8 @@ bool md_walk_user_string_heap(mdhandle_t handle, mduserstringcursor_t* cursor, m
 #define MDTABLE_COLUMN(table, col, value) mdt ## table ## _ ## col = (value)
 #endif // DEBUG_TABLE_COLUMN_LOOKUP && !MDTABLES_BUILD
 
+#define MDTABLE_COLUMN_COUNT(table, value) mdt ## table ## _ ## ColCount = (value)
+
 //
 // Column indexes for tables
 //
@@ -149,10 +151,12 @@ typedef enum
     MDTABLE_COLUMN(Module, Mvid, 2),
     MDTABLE_COLUMN(Module, EncId, 3),
     MDTABLE_COLUMN(Module, EncBaseId, 4),
+    MDTABLE_COLUMN_COUNT(Module, 5),
 
     MDTABLE_COLUMN(TypeRef, ResolutionScope, 0),
     MDTABLE_COLUMN(TypeRef, TypeName, 1),
     MDTABLE_COLUMN(TypeRef, TypeNamespace, 2),
+    MDTABLE_COLUMN_COUNT(TypeRef, 3),
 
     MDTABLE_COLUMN(TypeDef, Flags, 0),
     MDTABLE_COLUMN(TypeDef, TypeName, 1),
@@ -160,14 +164,18 @@ typedef enum
     MDTABLE_COLUMN(TypeDef, Extends, 3),
     MDTABLE_COLUMN(TypeDef, FieldList, 4),
     MDTABLE_COLUMN(TypeDef, MethodList, 5),
+    MDTABLE_COLUMN_COUNT(TypeDef, 6),
 
     MDTABLE_COLUMN(FieldPtr, Field, 0),
+    MDTABLE_COLUMN_COUNT(FieldPtr, 1),
 
     MDTABLE_COLUMN(Field, Flags, 0),
     MDTABLE_COLUMN(Field, Name, 1),
     MDTABLE_COLUMN(Field, Signature, 2),
+    MDTABLE_COLUMN_COUNT(Field, 3),
 
     MDTABLE_COLUMN(MethodPtr, Method, 0),
+    MDTABLE_COLUMN_COUNT(MethodPtr, 1),
 
     MDTABLE_COLUMN(MethodDef, Rva, 0),
     MDTABLE_COLUMN(MethodDef, ImplFlags, 1),
@@ -175,81 +183,105 @@ typedef enum
     MDTABLE_COLUMN(MethodDef, Name, 3),
     MDTABLE_COLUMN(MethodDef, Signature, 4),
     MDTABLE_COLUMN(MethodDef, ParamList, 5),
+    MDTABLE_COLUMN_COUNT(MethodDef, 6),
 
     MDTABLE_COLUMN(ParamPtr, Param, 0),
+    MDTABLE_COLUMN_COUNT(ParamPtr, 1),
 
     MDTABLE_COLUMN(Param, Flags, 0),
     MDTABLE_COLUMN(Param, Sequence, 1),
     MDTABLE_COLUMN(Param, Name, 2),
+    MDTABLE_COLUMN_COUNT(Param, 3),
 
     MDTABLE_COLUMN(InterfaceImpl, Class, 0),
     MDTABLE_COLUMN(InterfaceImpl, Interface, 1),
+    MDTABLE_COLUMN_COUNT(InterfaceImpl, 2),
 
     MDTABLE_COLUMN(MemberRef, Class, 0),
     MDTABLE_COLUMN(MemberRef, Name, 1),
     MDTABLE_COLUMN(MemberRef, Signature, 2),
+    MDTABLE_COLUMN_COUNT(MemberRef, 3),
 
     MDTABLE_COLUMN(Constant, Type, 0),
     MDTABLE_COLUMN(Constant, Parent, 1),
     MDTABLE_COLUMN(Constant, Value, 2),
+    MDTABLE_COLUMN_COUNT(Constant, 3),
 
     MDTABLE_COLUMN(CustomAttribute, Parent, 0),
     MDTABLE_COLUMN(CustomAttribute, Type, 1),
     MDTABLE_COLUMN(CustomAttribute, Value, 2),
+    MDTABLE_COLUMN_COUNT(CustomAttribute, 3),
 
     MDTABLE_COLUMN(FieldMarshal, Parent, 0),
     MDTABLE_COLUMN(FieldMarshal, NativeType, 1),
+    MDTABLE_COLUMN_COUNT(FieldMarshal, 2),
 
     MDTABLE_COLUMN(DeclSecurity, Action, 0),
     MDTABLE_COLUMN(DeclSecurity, Parent, 1),
     MDTABLE_COLUMN(DeclSecurity, PermissionSet, 2),
+    MDTABLE_COLUMN_COUNT(DeclSecurity, 3),
 
     MDTABLE_COLUMN(ClassLayout, PackingSize, 0),
     MDTABLE_COLUMN(ClassLayout, ClassSize, 1),
     MDTABLE_COLUMN(ClassLayout, Parent, 2),
+    MDTABLE_COLUMN_COUNT(ClassLayout, 3),
 
     MDTABLE_COLUMN(FieldLayout, Offset, 0),
     MDTABLE_COLUMN(FieldLayout, Field, 1),
+    MDTABLE_COLUMN_COUNT(FieldLayout, 2),
 
     MDTABLE_COLUMN(StandAloneSig, Signature, 0),
+    MDTABLE_COLUMN_COUNT(StandAloneSig, 1),
 
     MDTABLE_COLUMN(EventMap, Parent, 0),
     MDTABLE_COLUMN(EventMap, EventList, 1),
+    MDTABLE_COLUMN_COUNT(EventMap, 2),
 
     MDTABLE_COLUMN(EventPtr, Event, 0),
+    MDTABLE_COLUMN_COUNT(EventPtr, 1),
 
     MDTABLE_COLUMN(Event, EventFlags, 0),
     MDTABLE_COLUMN(Event, Name, 1),
     MDTABLE_COLUMN(Event, EventType, 2),
+    MDTABLE_COLUMN_COUNT(Event, 3),
 
     MDTABLE_COLUMN(PropertyMap, Parent, 0),
     MDTABLE_COLUMN(PropertyMap, PropertyList, 1),
+    MDTABLE_COLUMN_COUNT(PropertyMap, 2),
 
     MDTABLE_COLUMN(PropertyPtr, Property, 0),
+    MDTABLE_COLUMN_COUNT(PropertyPtr, 1),
 
     MDTABLE_COLUMN(Property, Flags, 0),
     MDTABLE_COLUMN(Property, Name, 1),
     MDTABLE_COLUMN(Property, Type, 2),
+    MDTABLE_COLUMN_COUNT(Property, 3),
 
     MDTABLE_COLUMN(MethodSemantics, Semantics, 0),
     MDTABLE_COLUMN(MethodSemantics, Method, 1),
     MDTABLE_COLUMN(MethodSemantics, Association, 2),
+    MDTABLE_COLUMN_COUNT(MethodSemantics, 3),
 
     MDTABLE_COLUMN(MethodImpl, Class, 0),
     MDTABLE_COLUMN(MethodImpl, MethodBody, 1),
     MDTABLE_COLUMN(MethodImpl, MethodDeclaration, 2),
+    MDTABLE_COLUMN_COUNT(MethodImpl, 3),
 
     MDTABLE_COLUMN(ModuleRef, Name, 0),
+    MDTABLE_COLUMN_COUNT(ModuleRef, 1),
 
     MDTABLE_COLUMN(TypeSpec, Signature, 0),
+    MDTABLE_COLUMN_COUNT(TypeSpec, 1),
 
     MDTABLE_COLUMN(ImplMap, MappingFlags, 0),
     MDTABLE_COLUMN(ImplMap, MemberForwarded, 1),
     MDTABLE_COLUMN(ImplMap, ImportName, 2),
     MDTABLE_COLUMN(ImplMap, ImportScope, 3),
+    MDTABLE_COLUMN_COUNT(ImplMap, 4),
 
     MDTABLE_COLUMN(FieldRva, Rva, 0),
     MDTABLE_COLUMN(FieldRva, Field, 1),
+    MDTABLE_COLUMN_COUNT(FieldRva, 2),
 
     MDTABLE_COLUMN(Assembly, HashAlgId, 0),
     MDTABLE_COLUMN(Assembly, MajorVersion, 1),
@@ -260,6 +292,7 @@ typedef enum
     MDTABLE_COLUMN(Assembly, PublicKey, 6),
     MDTABLE_COLUMN(Assembly, Name, 7),
     MDTABLE_COLUMN(Assembly, Culture, 8),
+    MDTABLE_COLUMN_COUNT(Assembly, 9),
 
     MDTABLE_COLUMN(AssemblyRef, MajorVersion, 0),
     MDTABLE_COLUMN(AssemblyRef, MinorVersion, 1),
@@ -270,35 +303,43 @@ typedef enum
     MDTABLE_COLUMN(AssemblyRef, Name, 6),
     MDTABLE_COLUMN(AssemblyRef, Culture, 7),
     MDTABLE_COLUMN(AssemblyRef, HashValue, 8),
+    MDTABLE_COLUMN_COUNT(AssemblyRef, 9),
 
     MDTABLE_COLUMN(File, Flags, 0),
     MDTABLE_COLUMN(File, Name, 1),
     MDTABLE_COLUMN(File, HashValue, 2),
+    MDTABLE_COLUMN_COUNT(File, 3),
 
     MDTABLE_COLUMN(ExportedType, Flags, 0),
     MDTABLE_COLUMN(ExportedType, TypeDefId, 1),
     MDTABLE_COLUMN(ExportedType, TypeName, 2),
     MDTABLE_COLUMN(ExportedType, TypeNamespace, 3),
     MDTABLE_COLUMN(ExportedType, Implementation, 4),
+    MDTABLE_COLUMN_COUNT(ExportedType, 5),
 
     MDTABLE_COLUMN(ManifestResource, Offset, 0),
     MDTABLE_COLUMN(ManifestResource, Flags, 1),
     MDTABLE_COLUMN(ManifestResource, Name, 2),
     MDTABLE_COLUMN(ManifestResource, Implementation, 3),
+    MDTABLE_COLUMN_COUNT(ManifestResource, 4),
 
     MDTABLE_COLUMN(NestedClass, NestedClass, 0),
     MDTABLE_COLUMN(NestedClass, EnclosingClass, 1),
+    MDTABLE_COLUMN_COUNT(NestedClass, 2),
 
     MDTABLE_COLUMN(GenericParam, Number, 0),
     MDTABLE_COLUMN(GenericParam, Flags, 1),
     MDTABLE_COLUMN(GenericParam, Owner, 2),
     MDTABLE_COLUMN(GenericParam, Name, 3),
+    MDTABLE_COLUMN_COUNT(GenericParam, 4),
 
     MDTABLE_COLUMN(MethodSpec, Method, 0),
     MDTABLE_COLUMN(MethodSpec, Instantiation, 1),
+    MDTABLE_COLUMN_COUNT(MethodSpec, 2),
 
     MDTABLE_COLUMN(GenericParamConstraint, Owner, 0),
     MDTABLE_COLUMN(GenericParamConstraint, Constraint, 1),
+    MDTABLE_COLUMN_COUNT(GenericParamConstraint, 2),
 
 #ifdef DNMD_PORTABLE_PDB
     // https://github.com/dotnet/runtime/blob/main/docs/design/specs/PortablePdb-Metadata.md
@@ -306,9 +347,11 @@ typedef enum
     MDTABLE_COLUMN(Document, HashAlgorithm, 1),
     MDTABLE_COLUMN(Document, Hash, 2),
     MDTABLE_COLUMN(Document, Language, 3),
+    MDTABLE_COLUMN_COUNT(Document, 4),
 
     MDTABLE_COLUMN(MethodDebugInformation, Document, 0),
     MDTABLE_COLUMN(MethodDebugInformation, SequencePoints, 1),
+    MDTABLE_COLUMN_COUNT(MethodDebugInformation, 2),
 
     MDTABLE_COLUMN(LocalScope, Method, 0),
     MDTABLE_COLUMN(LocalScope, ImportScope, 1),
@@ -316,23 +359,29 @@ typedef enum
     MDTABLE_COLUMN(LocalScope, ConstantList, 3),
     MDTABLE_COLUMN(LocalScope, StartOffset, 4),
     MDTABLE_COLUMN(LocalScope, Length, 5),
+    MDTABLE_COLUMN_COUNT(LocalScope, 6),
 
     MDTABLE_COLUMN(LocalVariable, Attributes, 0),
     MDTABLE_COLUMN(LocalVariable, Index, 1),
     MDTABLE_COLUMN(LocalVariable, Name, 2),
+    MDTABLE_COLUMN_COUNT(LocalVariable, 3),
 
     MDTABLE_COLUMN(LocalConstant, Name, 0),
     MDTABLE_COLUMN(LocalConstant, Signature, 1),
+    MDTABLE_COLUMN_COUNT(LocalConstant, 2),
 
     MDTABLE_COLUMN(ImportScope, Parent, 0),
     MDTABLE_COLUMN(ImportScope, Imports, 1),
+    MDTABLE_COLUMN_COUNT(ImportScope, 2),
 
     MDTABLE_COLUMN(StateMachineMethod, MoveNextMethod, 0),
     MDTABLE_COLUMN(StateMachineMethod, KickoffMethod, 1),
+    MDTABLE_COLUMN_COUNT(StateMachineMethod, 2),
 
     MDTABLE_COLUMN(CustomDebugInformation, Parent, 0),
     MDTABLE_COLUMN(CustomDebugInformation, Kind, 1),
     MDTABLE_COLUMN(CustomDebugInformation, Value, 2),
+    MDTABLE_COLUMN_COUNT(CustomDebugInformation, 3),
 #endif // DNMD_PORTABLE_PDB
 
 } col_index_t;
@@ -373,10 +422,10 @@ bool md_find_cursor_of_range_element(mdcursor_t element, mdcursor_t* cursor);
 
 bool md_is_field_sig(uint8_t const* sig, size_t sig_len);
 
-// Get the equivalent MethodDefSig (II.23.2.1) from a MethodRefSig (II.23.2.2).
-// sig is a pointer to a MethodRefSig blob.
+// Create the equivalent MethodDefSig (II.23.2.1) from a MethodRefSig (II.23.2.2).
+// ref_sig is a pointer to a MethodRefSig blob.
 // If the return value is true, def_sig will be a pointer to malloc-d memory containing the MethodDefSig for the MethodRefSig.
-bool md_get_methoddefsig_from_methodrefsig(uint8_t const* sig, size_t ref_sig_len, uint8_t** def_sig, size_t* def_sig_len);
+bool md_create_methoddefsig_from_methodrefsig(uint8_t const* ref_sig, size_t ref_sig_len, uint8_t** def_sig, size_t* def_sig_len);
 
 // Determine if the given column on the cursor's table points to an indirect table.
 bool md_column_is_indirect(mdcursor_t c, col_index_t col_idx, col_index_t* indir_table_col);

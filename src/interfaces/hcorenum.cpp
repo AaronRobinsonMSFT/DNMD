@@ -276,11 +276,9 @@ HRESULT HCORENUMImpl::ReadTableTokens(
             _curr = currData;
         }
 
-        mdcursor_t target = currData->Table.Current;
-
         if (currData->Table.IsIndirect)
         {
-            if (!md_get_column_value_as_token(currData->Table.Table, target, currData->Table.IndirectionColumn, &rTokens[count]))
+            if (1 != md_get_column_value_as_token(currData->Table.Current, currData->Table.IndirectionColumn, 1, &rTokens[count]))
                 break;
         }
         else
