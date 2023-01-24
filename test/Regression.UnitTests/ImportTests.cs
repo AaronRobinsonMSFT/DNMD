@@ -7,6 +7,7 @@ using Xunit;
 using Xunit.Abstractions;
 
 using Common;
+using System.Reflection.Metadata;
 
 namespace Regression.UnitTests
 {
@@ -108,8 +109,10 @@ namespace Regression.UnitTests
         private void ImportAPIs(string filename, PEReader managedLibrary)
         {
             Debug.WriteLine($"{nameof(ImportAPIs)} - {filename}");
-            using var _ = managedLibrary;
+            using var peReader = managedLibrary;
             PEMemoryBlock block = managedLibrary.GetMetadata();
+            var metadataReader = new MetadataReader(block.Pointer, block.Length);
+            bool isAssembly = metadataReader.IsAssembly;
 
             // Load metadata
             IMetaDataImport2 baselineImport = GetIMetaDataImport(Dispensers.Baseline, ref block);
@@ -253,6 +256,52 @@ namespace Regression.UnitTests
             }
 
             Assert.Equal(GetVersionString(baselineImport), GetVersionString(currentImport));
+
+            IMetaDataAssemblyImport baselineAssembly = (IMetaDataAssemblyImport)baselineImport;
+            IMetaDataAssemblyImport currentAssembly = (IMetaDataAssemblyImport)currentImport;
+
+            var mdAssembly = AssertAndReturn(GetAssemblyFromScope(baselineAssembly, isAssembly), GetAssemblyFromScope(currentAssembly, isAssembly));
+
+            if (isAssembly)
+            {
+                Assert.Equal(GetAssemblyProps(baselineAssembly, mdAssembly), GetAssemblyProps(currentAssembly, mdAssembly));
+            }
+
+            var assemblyRefs = AssertAndReturn(EnumAssemblyRefs(baselineAssembly), EnumAssemblyRefs(currentAssembly));
+            foreach (var assemblyRef in assemblyRefs)
+            {
+                Assert.Equal(GetAssemblyRefProps(baselineAssembly, assemblyRef), GetAssemblyRefProps(currentAssembly, assemblyRef));
+            }
+
+            var files = AssertAndReturn(EnumFiles(baselineAssembly), EnumFiles(currentAssembly));
+            foreach (var file in files)
+            {
+                Assert.Equal(GetFileProps(baselineAssembly, file), GetFileProps(currentAssembly, file));
+            }
+
+            var exports = AssertAndReturn(EnumExportedTypes(baselineAssembly), EnumExportedTypes(currentAssembly));
+            foreach (var export in exports)
+            {
+                Assert.Equal(GetExportedTypeProps(baselineAssembly, export, out string name, out uint tkImplementation), GetExportedTypeProps(currentAssembly, export, out _, out _));
+
+                if (name.Length < CharBuffer)
+                {
+                    // We don't handle truncation well, so just skip any cases where we might have a truncated name.
+                    Assert.Equal(FindExportedTypeByName(baselineAssembly, name, tkImplementation), FindExportedTypeByName(currentAssembly, name, tkImplementation));
+                }
+            }
+
+            var resources = AssertAndReturn(EnumManifestResources(baselineAssembly), EnumManifestResources(currentAssembly));
+            foreach (var res in resources)
+            {
+                Assert.Equal(GetManifestResourceProps(baselineAssembly, res, out string name), GetManifestResourceProps(currentAssembly, res, out _));
+
+                if (name.Length < CharBuffer)
+                {
+                    // We don't handle truncation well, so just skip any cases where we might have a truncated name.
+                    Assert.Equal(FindManifestResourceByName(baselineAssembly, name), FindManifestResourceByName(currentAssembly, name));
+                }
+            }
         }
 
         /// <summary>
@@ -1801,6 +1850,278 @@ namespace Regression.UnitTests
             return new string(buffer, 0, Math.Min(written, buffer.Length));
         }
 
+        private static uint GetAssemblyFromScope(IMetaDataAssemblyImport import, bool isAssembly)
+        {
+            Assert.Equal(isAssembly, 0 == import.GetAssemblyFromScope(out uint pmdAsm));
+            return pmdAsm;
+        }
+
+        private static List<nuint> GetAssemblyProps(IMetaDataAssemblyImport import, uint mdAsm)
+        {
+            List<nuint> values = new();
+
+            char[] name = new char[CharBuffer];
+            char[] locale = new char[CharBuffer];
+            uint[] processor = new uint[1];
+            OSINFO[] osInfo = new OSINFO[1];
+
+            fixed (char* pLocale = locale)
+            fixed (uint* pProcessor = processor)
+            fixed (OSINFO* pOSInfo = osInfo)
+            {
+                ASSEMBLYMETADATA metadata = new()
+                {
+                    szLocale = (nint)pLocale,
+                    cbLocale = (uint)locale.Length,
+                    rProcessor = (nint)pProcessor,
+                    ulProcessor = (uint)processor.Length,
+                    rOS = (nint)pOSInfo,
+                    ulOS = (uint)osInfo.Length,
+                };
+                int hr = import.GetAssemblyProps(mdAsm, out IntPtr publicKey, out uint publicKeyLength, out uint hashAlgId, name, name.Length, out int nameLength, ref metadata, out uint flags);
+                values.Add((uint)hr);
+
+                if (hr >= 0)
+                {
+                    values.Add((nuint)publicKey);
+                    values.Add(publicKeyLength);
+                    values.Add(hashAlgId);
+                    values.Add(HashCharArray(name, nameLength));
+                    values.Add((uint)nameLength);
+                    values.Add(metadata.usMajorVersion);
+                    values.Add(metadata.usMinorVersion);
+                    values.Add(metadata.usBuildNumber);
+                    values.Add(metadata.usRevisionNumber);
+                    values.Add(HashCharArray(locale, (int)metadata.cbLocale));
+                    values.Add(metadata.cbLocale);
+                    values.Add(HashArray(processor, (int)metadata.ulProcessor));
+                    values.Add(metadata.ulProcessor);
+                    values.Add(HashArray(osInfo, (int)metadata.ulOS));
+                    values.Add(metadata.ulOS);
+                    values.Add(flags);
+                }
+            }
+            return values;
+        }
+
+        private static List<uint> EnumAssemblyRefs(IMetaDataAssemblyImport import)
+        {
+            List<uint> tokens = new();
+            var tokensBuffer = new uint[EnumBuffer];
+            nint hcorenum = 0;
+            try
+            {
+                while (0 == import.EnumAssemblyRefs(ref hcorenum, tokensBuffer, tokensBuffer.Length, out uint returned)
+                    && returned != 0)
+                {
+                    for (int i = 0; i < returned; ++i)
+                    {
+                        tokens.Add(tokensBuffer[i]);
+                    }
+                }
+            }
+            finally
+            {
+                Assert.Equal(0, ((IMetaDataImport2)import).CountEnum(hcorenum, out int count));
+                Assert.Equal(count, tokens.Count);
+                import.CloseEnum(hcorenum);
+            }
+            return tokens;
+        }
+
+        private static List<nuint> GetAssemblyRefProps(IMetaDataAssemblyImport import, uint mdAsm)
+        {
+            List<nuint> values = new();
+
+            char[] name = new char[CharBuffer];
+            char[] locale = new char[CharBuffer];
+            uint[] processor = new uint[1];
+            OSINFO[] osInfo = new OSINFO[1];
+
+            fixed (char* pLocale = locale)
+            fixed (uint* pProcessor = processor)
+            fixed (OSINFO* pOSInfo = osInfo)
+            {
+                ASSEMBLYMETADATA metadata = new()
+                {
+                    szLocale = (nint)pLocale,
+                    cbLocale = (uint)locale.Length,
+                    rProcessor = (nint)pProcessor,
+                    ulProcessor = (uint)processor.Length,
+                    rOS = (nint)pOSInfo,
+                    ulOS = (uint)osInfo.Length,
+                };
+                int hr = import.GetAssemblyRefProps(mdAsm, out nint publicKeyOrToken, out uint publicKeyOrTokenLength, name, name.Length, out int nameLength, ref metadata, out nint hash, out uint hashLength, out uint flags);
+                values.Add((uint)hr);
+
+                if (hr >= 0)
+                {
+                    values.Add(publicKeyOrTokenLength == 0 ? 0 : (nuint)publicKeyOrToken);
+                    values.Add(publicKeyOrTokenLength);
+                    values.Add(HashCharArray(name, nameLength));
+                    values.Add((uint)nameLength);
+                    values.Add(metadata.usMajorVersion);
+                    values.Add(metadata.usMinorVersion);
+                    values.Add(metadata.usBuildNumber);
+                    values.Add(metadata.usRevisionNumber);
+                    values.Add(HashCharArray(locale, (int)metadata.cbLocale));
+                    values.Add(metadata.cbLocale);
+                    values.Add(HashArray(processor, (int)metadata.ulProcessor));
+                    values.Add(metadata.ulProcessor);
+                    values.Add(HashArray(osInfo, (int)metadata.ulOS));
+                    values.Add(metadata.ulOS);
+                    values.Add(hashLength == 0 ? 0 : (nuint)hash);
+                    values.Add(hashLength);
+                    values.Add(flags);
+                }
+            }
+            return values;
+        }
+
+        private static List<uint> EnumFiles(IMetaDataAssemblyImport import)
+        {
+            List<uint> tokens = new();
+            var tokensBuffer = new uint[EnumBuffer];
+            nint hcorenum = 0;
+            try
+            {
+                while (0 == import.EnumFiles(ref hcorenum, tokensBuffer, tokensBuffer.Length, out uint returned)
+                    && returned != 0)
+                {
+                    for (int i = 0; i < returned; ++i)
+                    {
+                        tokens.Add(tokensBuffer[i]);
+                    }
+                }
+            }
+            finally
+            {
+                Assert.Equal(0, ((IMetaDataImport2)import).CountEnum(hcorenum, out int count));
+                Assert.Equal(count, tokens.Count);
+                import.CloseEnum(hcorenum);
+            }
+            return tokens;
+        }
+
+        private static List<nuint> GetFileProps(IMetaDataAssemblyImport import, uint mdfile)
+        {
+            List<nuint> values = new();
+            var name = new char[CharBuffer];
+            int hr = import.GetFileProps(mdfile, name, name.Length, out int nameLength, out nint hashValue, out uint hashLength, out uint flags);
+            values.Add((nuint)hr);
+            if (hr >= 0)
+            {
+                values.Add(HashCharArray(name, nameLength));
+                values.Add((uint)nameLength);
+                values.Add(hashLength == 0 ? 0 : (nuint)hashValue);
+                values.Add(hashLength);
+                values.Add(flags);
+            }
+            return values;
+        }
+
+        private static List<uint> EnumExportedTypes(IMetaDataAssemblyImport import)
+        {
+            List<uint> tokens = new();
+            var tokensBuffer = new uint[EnumBuffer];
+            nint hcorenum = 0;
+            try
+            {
+                while (0 == import.EnumExportedTypes(ref hcorenum, tokensBuffer, tokensBuffer.Length, out uint returned)
+                    && returned != 0)
+                {
+                    for (int i = 0; i < returned; ++i)
+                    {
+                        tokens.Add(tokensBuffer[i]);
+                    }
+                }
+            }
+            finally
+            {
+                Assert.Equal(0, ((IMetaDataImport2)import).CountEnum(hcorenum, out int count));
+                Assert.Equal(count, tokens.Count);
+                import.CloseEnum(hcorenum);
+            }
+            return tokens;
+        }
+
+        private static List<nuint> GetExportedTypeProps(IMetaDataAssemblyImport import, uint mdExportedType, out string name, out uint tkImplementation)
+        {
+            name = null!;
+            List<nuint> values = new();
+            var nameBuffer = new char[CharBuffer];
+
+            int hr = import.GetExportedTypeProps(mdExportedType, nameBuffer, nameBuffer.Length, out int nameLength, out tkImplementation, out uint tkTypeDef, out uint exportedTypeFlags);
+
+            values.Add((uint)hr);
+            if (hr >= 0)
+            {
+                name = new string(nameBuffer.AsSpan(0, Math.Min(nameBuffer.Length, nameLength)));
+                values.Add(HashCharArray(nameBuffer, nameLength));
+                values.Add((uint)nameLength);
+                values.Add(tkImplementation);
+                values.Add(tkTypeDef);
+                values.Add(exportedTypeFlags);
+            }
+            return values;
+        }
+
+        private static List<uint> EnumManifestResources(IMetaDataAssemblyImport import)
+        {
+            List<uint> tokens = new();
+            var tokensBuffer = new uint[EnumBuffer];
+            nint hcorenum = 0;
+            try
+            {
+                while (0 == import.EnumManifestResources(ref hcorenum, tokensBuffer, tokensBuffer.Length, out uint returned)
+                    && returned != 0)
+                {
+                    for (int i = 0; i < returned; ++i)
+                    {
+                        tokens.Add(tokensBuffer[i]);
+                    }
+                }
+            }
+            finally
+            {
+                Assert.Equal(0, ((IMetaDataImport2)import).CountEnum(hcorenum, out int count));
+                Assert.Equal(count, tokens.Count);
+                import.CloseEnum(hcorenum);
+            }
+            return tokens;
+        }
+
+        private static List<nuint> GetManifestResourceProps(IMetaDataAssemblyImport import, uint mdManifestResource, out string name)
+        {
+            name = null!;
+            List<nuint> values = new();
+            var nameBuffer = new char[CharBuffer];
+            int hr = import.GetManifestResourceProps(mdManifestResource, nameBuffer, nameBuffer.Length, out int nameLength, out uint tkImplementation, out uint offset, out uint flags);
+            values.Add((uint)hr);
+            if (hr >= 0)
+            {
+                name = new string(nameBuffer.AsSpan(0, Math.Min(nameBuffer.Length, nameLength)));
+                values.Add(HashCharArray(nameBuffer, nameLength));
+                values.Add((uint)nameLength);
+                values.Add(tkImplementation);
+                values.Add(offset);
+                values.Add(flags);
+            }
+            return values;
+        }
+
+        private static uint FindExportedTypeByName(IMetaDataAssemblyImport import, string name, uint tkImplementation)
+        {
+            Assert.Equal(0, import.FindExportedTypeByName(name, tkImplementation, out uint exportedType));
+            return exportedType;
+        }
+
+        private static uint FindManifestResourceByName(IMetaDataAssemblyImport import, string name)
+        {
+            Assert.Equal(0, import.FindManifestResourceByName(name, out uint manifestResource));
+            return manifestResource;
+        }
+
         private static string GetUserString(IMetaDataImport2 import, uint tk)
         {
             var buffer = new char[CharBuffer];
@@ -1811,6 +2132,16 @@ namespace Regression.UnitTests
         private static uint HashCharArray(char[] arr, int written)
         {
             return (uint)new string(arr, 0, Math.Min(written, arr.Length)).GetHashCode();
+        }
+
+        private static uint HashArray<T>(T[] arr, int written)
+        {
+            HashCode hash = new();
+            for (int i = 0; i < written; i++)
+            {
+                hash.Add(arr[i]);
+            }
+            return (uint)hash.ToHashCode();
         }
     }
 }
