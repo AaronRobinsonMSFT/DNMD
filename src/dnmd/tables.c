@@ -339,7 +339,7 @@ bool initialize_table_details(
         break;
     case mdtid_ParamPtr: // Not in ECMA
         table->column_details[mdtParamPtr_Param] = compute_table_index(TABLE_INDEX_ARGS(mdtid_Param));
-        assert(1 == get_table_column_count(id));
+        assert(mdtParamPtr_ColCount == get_table_column_count(id));
         break;
     case mdtid_Param: // II.22.33
         table->column_details[mdtParam_Flags] = mdtc_constant | mdtc_b2;
@@ -418,7 +418,7 @@ bool initialize_table_details(
         break;
     case mdtid_PropertyPtr: // Not in ECMA
         table->column_details[mdtPropertyPtr_Property] = compute_table_index(TABLE_INDEX_ARGS(mdtid_Property));
-        assert(mdtProperty_ColCount == get_table_column_count(id));
+        assert(mdtPropertyPtr_ColCount == get_table_column_count(id));
         break;
     case mdtid_Property: // II.22.34
         table->column_details[mdtProperty_Flags] = mdtc_constant | mdtc_b2;
@@ -641,4 +641,42 @@ bool consume_table_rows(mdtable_t* table, uint8_t const** data, size_t* data_len
     table->data.ptr = rows;
     table->data.size = rows_len;
     return true;
+}
+
+bool table_column_target_is_indirect_table(mdtable_t* table, uint8_t col_index, mdtable_id_t* indir_table, col_index_t* indir_table_col)
+{
+    mdtable_id_t table_id = ExtractTable(table->column_details[col_index]);
+
+    if (table_id == mdtid_FieldPtr)
+    {
+        *indir_table = table_id;
+        *indir_table_col = mdtFieldPtr_Field;
+        return true;
+    }
+    else if (table_id == mdtid_MethodPtr)
+    {
+        *indir_table = table_id;
+        *indir_table_col = mdtMethodPtr_Method;
+        return true;
+    }
+    else if (table_id == mdtid_ParamPtr)
+    {
+        *indir_table = table_id;
+        *indir_table_col = mdtParamPtr_Param;
+        return true;
+    }
+    else if (table_id == mdtid_EventPtr)
+    {
+        *indir_table = table_id;
+        *indir_table_col = mdtEventPtr_Event;
+        return true;
+    }
+    else if (table_id == mdtid_PropertyPtr)
+    {
+        *indir_table = table_id;
+        *indir_table_col = mdtPropertyPtr_Property;
+        return true;
+    }
+
+    return false;
 }

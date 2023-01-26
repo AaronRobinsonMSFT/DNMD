@@ -430,6 +430,9 @@ bool md_create_methoddefsig_from_methodrefsig(uint8_t const* ref_sig, size_t ref
 // Determine if the given column on the cursor's table points to an indirect table.
 bool md_column_is_indirect(mdcursor_t c, col_index_t col_idx, col_index_t* indir_table_col);
 
+// Determine if the cursor's table is sorted.
+bool md_cursor_table_is_sorted(mdcursor_t c);
+
 #ifdef __cplusplus
 }
 #endif

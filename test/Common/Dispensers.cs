@@ -36,6 +36,12 @@ namespace Common
         /// </summary>
         public static IMetaDataDispenser Current { get; } = GetCurrent();
 
+        /// <summary>
+        /// Get the IMetaDataDispenser implementation that can be used to build images
+        /// with deltas to fill the pointer tables.
+        /// </summary>
+        public static IMetaDataDispenser DeltaImageBuilder { get; } = GetDeltaImageBuilder();
+
         private static unsafe nint GetBaselineRaw()
         {
 #if NETFX_20_BASELINE
@@ -44,11 +50,11 @@ namespace Common
             var baseline = Path.Combine(GetNetFx40Install(), "clr.dll");
 #else
             var runtimeName =
-                OperatingSystem.IsWindows() ? "coreclr.dll"
+                OperatingSystem.IsWindows() ? "coreclr2.dll"
                 : OperatingSystem.IsMacOS() ? "libcorclr.dylib"
                 : "libcoreclr.so";
 
-            var baseline = Path.Combine(Path.GetDirectoryName(typeof(object).Assembly.Location)!, runtimeName);
+            var baseline = Path.Combine(Path.GetDirectoryName(typeof(Dispensers).Assembly.Location)!, runtimeName);
 #endif
 
             nint mod = NativeLibrary.Load(baseline);
@@ -69,6 +75,16 @@ namespace Common
         {
             nint ptr = GetBaselineRaw();
             var dispenser = (IMetaDataDispenser)Marshal.GetObjectForIUnknown(ptr);
+            _ = Marshal.Release(ptr);
+            return dispenser;
+        }
+
+        private static unsafe IMetaDataDispenser GetDeltaImageBuilder()
+        {
+            nint ptr = GetBaselineRaw();
+            var dispenser = (IMetaDataDispenser)Marshal.GetObjectForIUnknown(ptr);
+            var dispenserEx = (IMetaDataDispenserEx)Marshal.GetObjectForIUnknown(ptr);
+            dispenserEx.SetOption(MetaDataDispenserOptions.MetaDataSetENC, CorSetENC.MDUpdateExtension);
             _ = Marshal.Release(ptr);
             return dispenser;
         }

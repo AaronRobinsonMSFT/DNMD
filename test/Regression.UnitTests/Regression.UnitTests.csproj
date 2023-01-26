@@ -12,6 +12,7 @@
     <Compile Include="../Common/Dispensers.cs" Link="Dispensers.cs" />
     <Compile Include="../Common/IMetaDataDispenser.cs" Link="IMetaDataDispenser.cs" />
     <Compile Include="../Common/IMetaDataImport2.cs" Link="IMetaDataImport2.cs" />
+    <Compile Include="../Common/IMetaDataEmit.cs" Link="IMetaDataEmit.cs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -19,7 +20,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../Regression.TargetAssembly/Regression.TargetAssembly.ilproj" />
+    <ProjectReference Include="../Regression.TargetAssembly/Regression.TargetAssembly.ilproj" OutputItemType="Content" ReferenceOutputAssembly="false" CopyToOutputDirectory="PreserveNewest" />
+    <ProjectReference Include="../Regression.DeltaAssembly/Regression.DeltaAssembly.csproj" OutputItemType="DeltaAssembly" ReferenceOutputAssembly="false" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
@@ -34,5 +36,16 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
   </ItemGroup>
+
+  <Target Name="CopyDeltaFiles" AfterTargets="ResolveProjectReferences">
+    <PropertyGroup>
+      <DeltaAssemblyFolder>@(DeltaAssembly->'%(RootDir)%(Directory)')</DeltaAssemblyFolder>
+    </PropertyGroup>
+    <ItemGroup>
+      <Content Include="$(DeltaAssemblyFolder)/*">
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      </Content>
+    </ItemGroup>
+  </Target>
 
 </Project>

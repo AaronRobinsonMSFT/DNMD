@@ -1,0 +1,12 @@
+{
+  "changes": [
+    {
+      "document": "Class1.cs",
+      "update": "Class1.v1.cs"
+    },
+    {
+      "document": "Class2.cs",
+      "update": "Class2.v1.cs"
+    }
+  ]
+}

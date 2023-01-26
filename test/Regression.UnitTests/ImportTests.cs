@@ -7,6 +7,8 @@ using Xunit;
 using Xunit.Abstractions;
 
 using Common;
+using System.Reflection.Metadata;
+using System.Runtime.CompilerServices;
 
 namespace Regression.UnitTests
 {
@@ -93,6 +95,26 @@ namespace Regression.UnitTests
             }
         }
 
+        public static IEnumerable<object[]> AssembliesWithDelta()
+        {
+            var dir = Path.GetDirectoryName(typeof(ImportTests).Assembly.Location)!;
+            var deltaAssembly = Path.Combine(dir, "Regression.DeltaAssembly.dll");
+            PEReader deltaBaseline = new(File.OpenRead(deltaAssembly));
+            List<byte[]> diffsRawData = new();
+            List<MetadataReader> diffs = new();
+            foreach (var dmetaPath in Directory.EnumerateFiles(dir, "Regression.DeltaAssembly.*.dmeta"))
+            {
+                var dmeta = File.OpenRead(dmetaPath);
+                var pinnedData = GC.AllocateUninitializedArray<byte>((int)dmeta.Length, pinned: true);
+                dmeta.ReadExactly(pinnedData);
+                diffsRawData.Add(pinnedData);
+                // We've ensured that the allocated array is pinned, so we can take the address freely.
+                diffs.Add(new MetadataReader((byte*)Unsafe.AsPointer(ref pinnedData[0]), pinnedData.Length));
+            }
+
+            return new[] { new object[] { Path.GetFileName(deltaAssembly), deltaBaseline, diffs, diffsRawData } };
+        }
+
         [Theory]
         [MemberData(nameof(CoreFrameworkLibraries))]
         public void ImportAPIs_Core(string filename, PEReader managedLibrary) => ImportAPIs(filename, managedLibrary);
@@ -105,6 +127,31 @@ namespace Regression.UnitTests
         [MemberData(nameof(Net40FrameworkLibraries))]
         public void ImportAPIs_Net40(string filename, PEReader managedLibrary) => ImportAPIs(filename, managedLibrary);
 
+        [Theory]
+        [MemberData(nameof(AssembliesWithDelta))]
+        public unsafe void ImportAPIs_AssembliesWithAppliedDeltas(string filename, PEReader deltaBaseline, IEnumerable<MetadataReader> diffs, IEnumerable<byte[]> diffsRawData)
+        {
+            using var _ = deltaBaseline;
+            PEMemoryBlock block = deltaBaseline.GetMetadata();
+            IMetaDataEmit baselineEmit = GetIMetaDataEmit(Dispensers.DeltaImageBuilder, ref block);
+
+            foreach (var diff in diffs)
+            {
+                IMetaDataImport2 import = GetIMetaDataImport(Dispensers.DeltaImageBuilder, diff);
+                Assert.Equal(0, baselineEmit.ApplyEditAndContinue(import));
+            }
+
+            Assert.Equal(0, baselineEmit.GetSaveSize(CorSaveSize.Accurate, out uint saveSize));
+            byte[] imageWithAppliedDeltas = GC.AllocateUninitializedArray<byte>((int)saveSize, pinned: true);
+            Assert.Equal(0, baselineEmit.SaveToMemory(imageWithAppliedDeltas, (uint)imageWithAppliedDeltas.Length));
+
+            ImportAPIs(filename, new MetadataReader((byte*)Unsafe.AsPointer(ref imageWithAppliedDeltas[0]), imageWithAppliedDeltas.Length));
+
+            // Keep the raw data arrays alive. The only thing referencing them is the unmanaged pointer in the diff MetadataReaders.
+            GC.KeepAlive(diffsRawData);
+            GC.KeepAlive(imageWithAppliedDeltas);
+        }
+
         private void ImportAPIs(string filename, PEReader managedLibrary)
         {
             Debug.WriteLine($"{nameof(ImportAPIs)} - {filename}");
@@ -115,6 +162,22 @@ namespace Regression.UnitTests
             IMetaDataImport2 baselineImport = GetIMetaDataImport(Dispensers.Baseline, ref block);
             IMetaDataImport2 currentImport = GetIMetaDataImport(Dispensers.Current, ref block);
 
+            ImportAPIs(baselineImport, currentImport);
+        }
+
+        private void ImportAPIs(string filename, MetadataReader managedLibrary)
+        {
+            Debug.WriteLine($"{nameof(ImportAPIs)} - {filename}");
+
+            // Load metadata
+            IMetaDataImport2 baselineImport = GetIMetaDataImport(Dispensers.Baseline, managedLibrary);
+            IMetaDataImport2 currentImport = GetIMetaDataImport(Dispensers.Current, managedLibrary);
+
+            ImportAPIs(baselineImport, currentImport);
+        }
+
+        private void ImportAPIs(IMetaDataImport2 baselineImport, IMetaDataImport2 currentImport)
+        {
             // Verify APIs
             Assert.Equal(ResetEnum(baselineImport), ResetEnum(currentImport));
 
@@ -455,6 +518,33 @@ namespace Regression.UnitTests
             var import = (IMetaDataImport2)Marshal.GetObjectForIUnknown((nint)pUnk);
             Marshal.Release((nint)pUnk);
             return import;
+        }
+
+        private static IMetaDataImport2 GetIMetaDataImport(IMetaDataDispenser disp, MetadataReader reader)
+        {
+            var flags = CorOpenFlags.ReadOnly;
+            var iid = typeof(IMetaDataImport2).GUID;
+
+            void* pUnk;
+            int hr = disp.OpenScopeOnMemory(reader.MetadataPointer, reader.MetadataLength, flags, &iid, &pUnk);
+            Assert.Equal(0, hr);
+            Assert.NotEqual(0, (nint)pUnk);
+            var import = (IMetaDataImport2)Marshal.GetObjectForIUnknown((nint)pUnk);
+            Marshal.Release((nint)pUnk);
+            return import;
+        }
+
+        private static IMetaDataEmit GetIMetaDataEmit(IMetaDataDispenser disp, ref PEMemoryBlock block)
+        {
+            var iid = typeof(IMetaDataEmit).GUID;
+
+            void* pUnk;
+            int hr = disp.OpenScopeOnMemory(block.Pointer, block.Length, 0, &iid, &pUnk);
+            Assert.Equal(0, hr);
+            Assert.NotEqual(0, (nint)pUnk);
+            var emit = (IMetaDataEmit)Marshal.GetObjectForIUnknown((nint)pUnk);
+            Marshal.Release((nint)pUnk);
+            return emit;
         }
 
         private static List<uint> GetScopeProps(IMetaDataImport2 import)

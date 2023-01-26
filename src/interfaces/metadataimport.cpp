@@ -122,12 +122,12 @@ namespace
                     if (1 != md_get_column_value_as_cursor(curr, indirectionTableColumn, 1, &target))
                         return CLDB_E_FILE_CORRUPT;
                 }
-                if (1 != md_get_column_value_as_utf8(curr, filter->FilterColumn, 1, &toMatch))
+                if (1 != md_get_column_value_as_utf8(target, filter->FilterColumn, 1, &toMatch))
                     return CLDB_E_FILE_CORRUPT;
 
                 if (0 == ::strcmp(toMatch, cvt))
                 {
-                    (void)md_cursor_to_token(curr, &matchedTk);
+                    (void)md_cursor_to_token(target, &matchedTk);
                     RETURN_IF_FAILED(HCORENUMImpl::AddToDynamicEnum(*enumImpl, matchedTk));
                 }
                 (void)md_cursor_next(&curr);
@@ -138,6 +138,70 @@ namespace
 
         *pEnumImpl = enumImpl;
         return S_OK;
+    }
+
+    HRESULT CreateEnumTokenRangeForSortedTableKey(
+        mdhandle_t mdhandle,
+        mdtable_id_t table,
+        col_index_t keyColumn,
+        mdToken token,
+        HCORENUMImpl** pEnumImpl)
+    {
+        HRESULT hr;
+        mdcursor_t cursor;
+        uint32_t tableCount;
+        if (!md_create_cursor(mdhandle, table, &cursor, &tableCount))
+            return CLDB_E_INDEX_NOTFOUND;
+
+        if (md_cursor_table_is_sorted(cursor))
+        {
+            mdcursor_t begin;
+            uint32_t count;
+            if (!md_find_range_from_cursor(cursor, keyColumn, token, &begin, &count))
+                return HCORENUMImpl::CreateDynamicEnum(pEnumImpl);
+
+            HCORENUMImpl* enumImpl;
+            RETURN_IF_FAILED(HCORENUMImpl::CreateTableEnum(1, &enumImpl));
+            HCORENUMImpl::InitTableEnum(*enumImpl, 0, begin, count);
+            *pEnumImpl = enumImpl;
+            return S_OK;
+        }
+        else
+        {
+            // Unsorted so we need to search across the entire table
+            HCORENUMImpl* enumImpl;
+            RETURN_IF_FAILED(HCORENUMImpl::CreateDynamicEnum(&enumImpl));
+            HCORENUMImpl_ptr cleanup{ enumImpl };
+            mdcursor_t curr = cursor;
+            uint32_t currCount = tableCount;
+
+            // Read in for matching in bulk
+            mdToken matchedGroup[64];
+            uint32_t i = 0;
+            while (i < currCount)
+            {
+                int32_t read = md_get_column_value_as_token(curr, keyColumn, ARRAYSIZE(matchedGroup), matchedGroup);
+                if (read == 0)
+                    break;
+
+                assert(read > 0);
+                for (int32_t j = 0; j < read; ++j)
+                {
+                    if (matchedGroup[j] == token)
+                    {
+                        mdToken matchedTk;
+                        if (!md_cursor_to_token(curr, &matchedTk))
+                            return CLDB_E_FILE_CORRUPT;
+                        RETURN_IF_FAILED(HCORENUMImpl::AddToDynamicEnum(*enumImpl, matchedTk));
+                    }
+                    (void)md_cursor_next(&curr);
+                }
+                i += read;
+            }
+
+            enumImpl = cleanup.release();
+            return S_OK;
+        }
     }
 
     HRESULT ConvertAndReturnStringOutput(
@@ -245,14 +309,17 @@ namespace
     {
         mdcursor_t curr;
         uint32_t currCount;
-        if (md_find_range_from_cursor(begin, lookupRange, lookupTk, &curr, &currCount))
+        if (md_cursor_table_is_sorted(begin))
         {
-            // Table is sorted and subset found
-            for (uint32_t i = 0; i < currCount; ++i)
+            if (md_find_range_from_cursor(begin, lookupRange, lookupTk, &curr, &currCount))
             {
-                if (op(curr))
-                    return;
-                (void)md_cursor_next(&curr);
+                // Table is sorted and subset found
+                for (uint32_t i = 0; i < currCount; ++i)
+                {
+                    if (op(curr))
+                        return;
+                    (void)md_cursor_next(&curr);
+                }
             }
         }
         else
@@ -332,12 +399,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumInterfaceImpls(
             return CLDB_E_RECORD_NOTFOUND;
 
         uint32_t id = RidFromToken(td);
-        if (!md_find_range_from_cursor(cursor, mdtInterfaceImpl_Class, id, &cursor, &rows))
-            return CLDB_E_FILE_CORRUPT;
-
-        RETURN_IF_FAILED(HCORENUMImpl::CreateTableEnum(1, &enumImpl));
-        HCORENUMImpl::InitTableEnum(*enumImpl, 0, cursor, rows);
-        *phEnum = enumImpl;
+        RETURN_IF_FAILED(CreateEnumTokenRangeForSortedTableKey(_md_ptr.get(), mdtid_InterfaceImpl, mdtInterfaceImpl_Class, id, &enumImpl));
     }
     return enumImpl->ReadTokens(rImpls, cMax, pcImpls);
 }
@@ -753,7 +815,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumMembersWithName(
             mdcursor_t fieldCursor = fieldList;
             if (fieldListIndirect)
             {
-                if (1 != md_get_column_value_as_cursor(methodList, fieldIndirectColumn, 1, &fieldCursor))
+                if (1 != md_get_column_value_as_cursor(fieldList, fieldIndirectColumn, 1, &fieldCursor))
                     return CLDB_E_FILE_CORRUPT;
             }
             if (1 != md_get_column_value_as_utf8(fieldCursor, mdtField_Name, 1, &toMatch))
@@ -988,13 +1050,13 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumPermissionSets(
         if (!md_create_cursor(_md_ptr.get(), mdtid_DeclSecurity, &cursor, &count))
             return CLDB_E_RECORD_NOTFOUND;
 
-        if (!IsNilToken(tk))
+        if (!IsNilToken(tk) && md_cursor_table_is_sorted(cursor))
         {
             if (!md_find_range_from_cursor(cursor, mdtDeclSecurity_Parent, tk, &cursor, &count))
                 return CLDB_E_RECORD_NOTFOUND;
         }
 
-        if (IsDclActionNil(dwActions))
+        if (IsNilToken(tk) && IsDclActionNil(dwActions))
         {
             RETURN_IF_FAILED(HCORENUMImpl::CreateTableEnum(1, &enumImpl));
             HCORENUMImpl::InitTableEnum(*enumImpl, 0, cursor, count);
@@ -1002,6 +1064,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumPermissionSets(
         else
         {
             uint32_t action;
+            mdToken parent;
             mdToken toAdd;
             RETURN_IF_FAILED(HCORENUMImpl::CreateDynamicEnum(&enumImpl));
 
@@ -1009,7 +1072,9 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumPermissionSets(
             for (uint32_t i = 0; i < count; ++i)
             {
                 if (1 == md_get_column_value_as_constant(cursor, mdtDeclSecurity_Action, 1, &action)
-                    && action == dwActions)
+                    && action == dwActions
+                    && 1 == md_get_column_value_as_token(cursor, mdtDeclSecurity_Parent, 1, &parent)
+                    && parent == tk)
                 {
                     (void)md_cursor_to_token(cursor, &toAdd);
                     RETURN_IF_FAILED(HCORENUMImpl::AddToDynamicEnum(*enumImpl, toAdd));
@@ -2168,11 +2233,19 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumCustomAttributes(
             HCORENUMImpl::InitTableEnum(*enumImpl, 0, cursor, count);
         }
         else if (IsNilToken(tkType)
-            && md_find_range_from_cursor(cursor, mdtCustomAttribute_Parent, tk, &curr, &currCount))
+            && md_cursor_table_is_sorted(cursor))
         {
             // Caller is looking for all associated attributes or the list is sorted.
-            RETURN_IF_FAILED(HCORENUMImpl::CreateTableEnum(1, &enumImpl));
-            HCORENUMImpl::InitTableEnum(*enumImpl, 0, curr, currCount);
+            if (md_find_range_from_cursor(cursor, mdtCustomAttribute_Parent, tk, &curr, &currCount))
+            {
+                RETURN_IF_FAILED(HCORENUMImpl::CreateTableEnum(1, &enumImpl));
+                HCORENUMImpl::InitTableEnum(*enumImpl, 0, curr, currCount);
+            }
+            else
+            {
+                // If there are no tokens found, create an empty enumeration.
+                RETURN_IF_FAILED(HCORENUMImpl::CreateDynamicEnum(&enumImpl));
+            }
         }
         else
         {
@@ -2682,86 +2755,111 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetCustomAttributeByName(
     if (!md_create_cursor(_md_ptr.get(), mdtid_CustomAttribute, &cursor, &count))
         return CLDB_E_RECORD_NOTFOUND;
 
-    mdcursor_t custAttrCurr;
-    uint32_t custAttrCount;
-    if (!md_find_range_from_cursor(cursor, mdtCustomAttribute_Parent, tkObj, &custAttrCurr, &custAttrCount))
-    {
-        *ppData = nullptr;
-        *pcbData = 0;
-        return S_FALSE;
-    }
-
     char buffer[1024];
     pal::StringConvert<WCHAR, char> cvt{ szName, buffer };
     if (!cvt.Success())
         return E_INVALIDARG;
 
-    HRESULT hr;
-    char const* nspace;
-    char const* name;
-
-    mdcursor_t type;
-    mdcursor_t tgtType;
-    mdToken typeTk;
-    size_t len;
-    char const* curr;
-    for (uint32_t i = 0; i < custAttrCount; (void)md_cursor_next(&custAttrCurr), ++i)
+    struct
     {
-        if (1 != md_get_column_value_as_cursor(custAttrCurr, mdtCustomAttribute_Type, 1, &type))
-            return CLDB_E_FILE_CORRUPT;
+        HRESULT hr;
+        const void** ppData;
+        ULONG* pcbData;
+        pal::StringConvert<WCHAR, char> const& cvt;
 
-        // Cursor was returned so must be valid.
-        (void)md_cursor_to_token(type, &typeTk);
-
-        // Resolve the cursor based on its type.
-        switch (TypeFromToken(typeTk))
+        bool operator()(mdcursor_t custAttrCurr)
         {
-        case mdtMethodDef:
-            if (!md_find_cursor_of_range_element(type, &tgtType))
-                return CLDB_E_FILE_CORRUPT;
-            break;
-        case mdtMemberRef:
-            if (1 != md_get_column_value_as_cursor(type, mdtMemberRef_Class, 1, &tgtType))
-                return CLDB_E_FILE_CORRUPT;
-            break;
-        default:
-            assert(!"Unexpected token in GetCustomAttributeByName");
-            return COR_E_BADIMAGEFORMAT;
-        }
+            char const* nspace;
+            char const* name;
 
-        if (SUCCEEDED(hr = ResolveTypeDefRefSpecToName(tgtType, &nspace, &name)))
-        {
-            curr = cvt;
-            if (nspace[0] != '\0')
+            mdcursor_t type;
+            mdcursor_t tgtType;
+            mdToken typeTk;
+            size_t len;
+            char const* curr;
+
+            if (1 != md_get_column_value_as_cursor(custAttrCurr, mdtCustomAttribute_Type, 1, &type))
             {
-                len = ::strlen(nspace);
-                if (0 != ::strncmp(cvt, nspace, len))
-                    continue;
-                curr += len;
-
-                // Check for overrun and next character
-                if (cvt.Length() <= len || curr[0] != '.')
-                    continue;
-                curr += 1;
+                hr = CLDB_E_FILE_CORRUPT;
+                return true;
             }
 
-            if (0 == ::strcmp(curr, name))
+            // Cursor was returned so must be valid.
+            (void)md_cursor_to_token(type, &typeTk);
+
+            // Resolve the cursor based on its type.
+            switch (TypeFromToken(typeTk))
             {
-                uint8_t const* data;
-                uint32_t dataLen;
-                if (1 != md_get_column_value_as_blob(custAttrCurr, mdtCustomAttribute_Value, 1, &data, &dataLen))
-                    return CLDB_E_FILE_CORRUPT;
-                *ppData = data;
-                *pcbData = dataLen;
-                return S_OK;
+            case mdtMethodDef:
+                if (!md_find_cursor_of_range_element(type, &tgtType))
+                {
+                    hr = CLDB_E_FILE_CORRUPT;
+                    return true;
+                }
+                break;
+            case mdtMemberRef:
+                if (1 != md_get_column_value_as_cursor(type, mdtMemberRef_Class, 1, &tgtType))
+                {
+                    hr = CLDB_E_FILE_CORRUPT;
+                    return true;
+                }
+                break;
+            default:
+                assert(!"Unexpected token in GetCustomAttributeByName");
+                {
+                    hr = COR_E_BADIMAGEFORMAT;
+                    return true;
+                }
             }
+
+            if (FAILED(hr = ResolveTypeDefRefSpecToName(tgtType, &nspace, &name)))
+            {
+                return true;
+            }
+            else
+            {
+                hr = S_FALSE;
+                curr = cvt;
+                if (nspace[0] != '\0')
+                {
+                    len = ::strlen(nspace);
+                    if (0 != ::strncmp(cvt, nspace, len))
+                        return false;
+                    curr += len;
+
+                    // Check for overrun and next character
+                    if (cvt.Length() <= len || curr[0] != '.')
+                        return false;
+                    curr += 1;
+                }
+
+                if (0 == ::strcmp(curr, name))
+                {
+                    uint8_t const* data;
+                    uint32_t dataLen;
+                    if (1 != md_get_column_value_as_blob(custAttrCurr, mdtCustomAttribute_Value, 1, &data, &dataLen))
+                    {
+                        hr = CLDB_E_FILE_CORRUPT;
+                        return true;
+                    }
+                    *ppData = data;
+                    *pcbData = dataLen;
+                    hr = S_OK;
+                    return true;
+                }
+            }
+            return false;
         }
-        RETURN_IF_FAILED(hr);
+    } finder {S_FALSE, ppData, pcbData, cvt};
+
+    EnumTableRange(cursor, count, mdtCustomAttribute_Parent, tkObj, finder);
+    
+    if (finder.hr != S_OK)
+    {
+        *ppData = nullptr;
+        *pcbData = 0;
     }
-
-    *ppData = nullptr;
-    *pcbData = 0;
-    return S_FALSE;
+    return finder.hr;
 }
 
 BOOL STDMETHODCALLTYPE MetadataImportRO::IsValidToken(

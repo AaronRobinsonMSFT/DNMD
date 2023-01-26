@@ -1,0 +1,31 @@
+﻿<Project>
+	<Import Project="Sdk.props" Sdk="Microsoft.NET.Sdk" />
+	<PropertyGroup>
+		<TargetFramework>$(TargetFrameworkLatest)</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+		<IsPackable>false</IsPackable>
+		<DeltaScript>deltascript.json</DeltaScript>
+		<!-- to enable applying EnC diffs, we need Optimize=false, EmitDebugInformation=true in all configurations -->
+		<Optimize>false</Optimize>
+		<EmitDebugInformation>true</EmitDebugInformation>
+		<!-- We need to manually include source files as many of them are just for versioning -->
+		<EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+
+		<Deterministic>true</Deterministic>
+		<DeterministicSourcePaths>false</DeterministicSourcePaths>
+		<NoWarn>CS8933</NoWarn>
+	</PropertyGroup>
+	<ItemGroup>
+		<Compile Include="Class1.cs" />
+		<Compile Include="Class2.cs" />
+		<None Include="**/*.cs" />
+	</ItemGroup>
+	<ItemGroup>
+		<PackageReference Include="Microsoft.DotNet.HotReload.Utils.Generator.BuildTool" Version="1.1.0-alpha.0.22628.1" />
+	</ItemGroup>
+
+	<Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk" />
+	<Target Name="HotReloadDeltaGeneratorContentForOutputs" />
+</Project>

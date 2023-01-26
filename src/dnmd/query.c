@@ -856,6 +856,30 @@ static bool find_range_element(mdcursor_t element, mdcursor_t* tgt_cursor)
 
     mdtable_t* tgt_table = type_to_table(table->cxt, tgt_table_id);
 
+    uint8_t col_index = col_to_index(tgt_col, tgt_table);
+
+    mdtable_id_t indir_table_id;
+    col_index_t indir_col;
+    // If the column in the target table is pointing not pointing to the starting table,
+    // then it is pointing to the corresponding indirection table.
+    // We need to find the element in the indirection table that points to the cursor
+    // and then find the element in the target table that points to the indirection table.
+    if (table_column_target_is_indirect_table(tgt_table, col_index, &indir_table_id, &indir_col))
+    {
+        mdcursor_t indir_table_cursor;
+        uint32_t indir_table_row_count;
+        if (!md_create_cursor(table->cxt, indir_table_id, &indir_table_cursor, &indir_table_row_count))
+            return false;
+
+        mdcursor_t indir_row;
+        if (!find_row_from_cursor(indir_table_cursor, indir_col, &row, &indir_row))
+            return false;
+        
+        // Now that we've found the indirection cell, we can look in the target table for the
+        // element that contains the indirection cell in its range.
+        row = CursorRow(&indir_row);
+    }
+
     find_cxt_t fcxt;
     if (!create_find_context(tgt_table, tgt_col, &fcxt))
         return false;
@@ -935,34 +959,15 @@ bool md_column_is_indirect(mdcursor_t cursor, col_index_t col, col_index_t* indi
     mdtable_t* table = CursorTable(&cursor);
     if (table == NULL)
         return false;
-    uint8_t idx = col_to_index(col, table);
-    mdtable_id_t table_id = ExtractTable(table->column_details[idx]);
+    
+    mdtable_id_t indir_table_id;
+    return table_column_target_is_indirect_table(table, col_to_index(col, table), &indir_table_id, indir_table_col);
+}
 
-    if (table_id == mdtid_FieldPtr)
-    {
-        *indir_table_col = mdtFieldPtr_Field;
-        return true;
-    }
-    else if (table_id == mdtid_MethodPtr)
-    {
-        *indir_table_col = mdtMethodPtr_Method;
-        return true;
-    }
-    else if (table_id == mdtid_ParamPtr)
-    {
-        *indir_table_col = mdtParamPtr_Param;
-        return true;
-    }
-    else if (table_id == mdtid_EventPtr)
-    {
-        *indir_table_col = mdtEventPtr_Event;
-        return true;
-    }
-    else if (table_id == mdtid_PropertyPtr)
-    {
-        *indir_table_col = mdtPropertyPtr_Property;
-        return true;
-    }
-
-    return false;
+bool md_cursor_table_is_sorted(mdcursor_t cursor)
+{
+    mdtable_t* table = CursorTable(&cursor);
+    if (table == NULL)
+        return false;
+    return table->is_sorted;
 }
