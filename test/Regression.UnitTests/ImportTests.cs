@@ -9,6 +9,10 @@ using Xunit.Abstractions;
 using Common;
 using System.Reflection.Metadata;
 using System.Runtime.CompilerServices;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.Emit;
+using System.Buffers;
 
 namespace Regression.UnitTests
 {
@@ -97,22 +101,122 @@ namespace Regression.UnitTests
 
         public static IEnumerable<object[]> AssembliesWithDelta()
         {
-            var dir = Path.GetDirectoryName(typeof(ImportTests).Assembly.Location)!;
-            var deltaAssembly = Path.Combine(dir, "Regression.DeltaAssembly.dll");
-            PEReader deltaBaseline = new(File.OpenRead(deltaAssembly));
-            List<byte[]> diffsRawData = new();
-            List<MetadataReader> diffs = new();
-            foreach (var dmetaPath in Directory.EnumerateFiles(dir, "Regression.DeltaAssembly.*.dmeta"))
+            yield return DeltaAssembly1();
+            static unsafe object[] DeltaAssembly1()
             {
-                var dmeta = File.OpenRead(dmetaPath);
-                var pinnedData = GC.AllocateUninitializedArray<byte>((int)dmeta.Length, pinned: true);
-                dmeta.ReadExactly(pinnedData);
-                diffsRawData.Add(pinnedData);
-                // We've ensured that the allocated array is pinned, so we can take the address freely.
-                diffs.Add(new MetadataReader((byte*)Unsafe.AsPointer(ref pinnedData[0]), pinnedData.Length));
+                Compilation baselineCompilation = CSharpCompilation.Create("DeltaAssembly1")
+                    .WithReferences(Basic.Reference.Assemblies.NetStandard20.ReferenceInfos.netstandard.Reference)
+                    .WithOptions(new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+                SyntaxTree sourceBase = CSharpSyntaxTree.ParseText("""
+                        using System;
+                        public class Class1
+                        {
+                            private int field;
+                            public void Method(int x)
+                            {
+                            }
+
+                            public int Property { get; set; }
+
+                            public event EventHandler? Event;
+                        }
+                        """);
+                baselineCompilation = baselineCompilation.AddSyntaxTrees(
+                    sourceBase,
+                    CSharpSyntaxTree.ParseText("""
+                        using System;
+                        public class Class2
+                        {
+                            private int field;
+                            public void Method(int x)
+                            {
+                            }
+
+                            public int Property { get; set; }
+
+                            public event EventHandler? Event;
+                        }
+                        """));
+
+                Compilation diffCompilation = baselineCompilation.ReplaceSyntaxTree(
+                    sourceBase,
+                    CSharpSyntaxTree.ParseText("""
+                        using System;
+                        public class Class1
+                        {
+                            private class Attr : Attribute { }
+
+                            private short field2;
+                            private int field;
+
+                            [return:Attr]
+                            public void Method(int x)
+                            {
+                            }
+
+                            public int Property { get; set; }
+
+                            public short Property2 { get; set; }
+
+                            public event EventHandler? Event;
+
+                            public event EventHandler? Event2;
+                        }
+                        """));
+
+                var diagnostics = baselineCompilation.GetDiagnostics();
+                MemoryStream baselineImage = new();
+                baselineCompilation.Emit(baselineImage);
+                baselineImage.Seek(0, SeekOrigin.Begin);
+
+                ModuleMetadata metadata = ModuleMetadata.CreateFromStream(baselineImage);
+                EmitBaseline baseline = EmitBaseline.CreateInitialBaseline(metadata, _ => default);
+
+                MemoryStream mddiffStream = new();
+
+                diffCompilation.EmitDifference(
+                    baseline,
+                    new[]
+                    {
+                        CreateSemanticEdit(SemanticEditKind.Update, baselineCompilation, diffCompilation, c => c.GetTypeByMetadataName("Class1")),
+                        CreateSemanticEdit(SemanticEditKind.Insert, baselineCompilation, diffCompilation, c => c.GetTypeByMetadataName("Class1").GetMembers("field2").FirstOrDefault()),
+                        CreateSemanticEdit(SemanticEditKind.Insert, baselineCompilation, diffCompilation, c => c.GetTypeByMetadataName("Class1").GetMembers("Property2").FirstOrDefault()),
+                        CreateSemanticEdit(SemanticEditKind.Insert, baselineCompilation, diffCompilation, c => c.GetTypeByMetadataName("Class1").GetMembers("Event2").FirstOrDefault()),
+                        CreateSemanticEdit(SemanticEditKind.Update, baselineCompilation, diffCompilation, c => c.GetTypeByMetadataName("Class1").GetMembers("Method").FirstOrDefault()),
+                        CreateSemanticEdit(SemanticEditKind.Insert, baselineCompilation, diffCompilation, c => c.GetTypeByMetadataName("Class1").GetTypeMembers("Attr").FirstOrDefault()),
+                    },
+                    s =>
+                    {
+                        return false;
+                    },
+                    mddiffStream,
+                    new MemoryStream(), // il stream
+                    new MemoryStream() // pdb diff stream
+                );
+
+                baselineImage.Seek(0, SeekOrigin.Begin);
+                PEReader baselineReader = new PEReader(baselineImage);
+                Memory<byte> mdDiffData = mddiffStream.ToArray();
+                MemoryHandle pin = mdDiffData.Pin();
+                return new object[]
+                {
+                    nameof(DeltaAssembly1),
+                    baselineReader,
+                    new[]
+                    {
+                        new MetadataReader((byte*)pin.Pointer, mdDiffData.Length)
+                    },
+                    new[]
+                    {
+                        pin
+                    }
+                };
             }
 
-            return new[] { new object[] { Path.GetFileName(deltaAssembly), deltaBaseline, diffs, diffsRawData } };
+            static SemanticEdit CreateSemanticEdit(SemanticEditKind editKind, Compilation baseline, Compilation diff, Func<Compilation, ISymbol?> findSymbol)
+            {
+                return new SemanticEdit(editKind, findSymbol(baseline), findSymbol(diff));
+            }
         }
 
         [Theory]
@@ -129,16 +233,18 @@ namespace Regression.UnitTests
 
         [Theory]
         [MemberData(nameof(AssembliesWithDelta))]
-        public unsafe void ImportAPIs_AssembliesWithAppliedDeltas(string filename, PEReader deltaBaseline, IEnumerable<MetadataReader> diffs, IEnumerable<byte[]> diffsRawData)
+        public unsafe void ImportAPIs_AssembliesWithAppliedDeltas(string filename, PEReader deltaBaseline, IList<MetadataReader> diffs, IList<MemoryHandle> diffRawDataHandles)
         {
             using var _ = deltaBaseline;
             PEMemoryBlock block = deltaBaseline.GetMetadata();
             IMetaDataEmit baselineEmit = GetIMetaDataEmit(Dispensers.DeltaImageBuilder, ref block);
 
-            foreach (var diff in diffs)
+            for (int i = 0; i < diffs.Count; i++)
             {
+                MetadataReader? diff = diffs[i];
                 IMetaDataImport2 import = GetIMetaDataImport(Dispensers.DeltaImageBuilder, diff);
                 Assert.Equal(0, baselineEmit.ApplyEditAndContinue(import));
+                diffRawDataHandles[i].Dispose();
             }
 
             Assert.Equal(0, baselineEmit.GetSaveSize(CorSaveSize.Accurate, out uint saveSize));
@@ -148,7 +254,6 @@ namespace Regression.UnitTests
             ImportAPIs(filename, new MetadataReader((byte*)Unsafe.AsPointer(ref imageWithAppliedDeltas[0]), imageWithAppliedDeltas.Length));
 
             // Keep the raw data arrays alive. The only thing referencing them is the unmanaged pointer in the diff MetadataReaders.
-            GC.KeepAlive(diffsRawData);
             GC.KeepAlive(imageWithAppliedDeltas);
         }
 

@@ -50,11 +50,11 @@ namespace Common
             var baseline = Path.Combine(GetNetFx40Install(), "clr.dll");
 #else
             var runtimeName =
-                OperatingSystem.IsWindows() ? "coreclr2.dll"
+                OperatingSystem.IsWindows() ? "coreclr.dll"
                 : OperatingSystem.IsMacOS() ? "libcorclr.dylib"
                 : "libcoreclr.so";
 
-            var baseline = Path.Combine(Path.GetDirectoryName(typeof(Dispensers).Assembly.Location)!, runtimeName);
+            var baseline = Path.Combine(Path.GetDirectoryName(typeof(object).Assembly.Location)!, runtimeName);
 #endif
 
             nint mod = NativeLibrary.Load(baseline);
