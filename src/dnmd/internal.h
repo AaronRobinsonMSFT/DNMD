@@ -86,6 +86,7 @@ typedef enum
     mdc_extra_data        = 0x0040,
     mdc_image_flags       = 0xffff,
     mdc_minimal_delta     = 0x00010000,
+    mdc_editable          = 0x00020000,
 } mdcxt_flag_t;
 
 // Macros used to insert/extract the column offset.
@@ -117,10 +118,40 @@ typedef struct _mdtable_t
 
 typedef mdcdata_t mdstream_t;
 
+typedef struct _mdtable_editor_t
+{
+    mddata_t data; // If non-null, points to allocated data for the table.
+    mdtable_t* table; // The read-only table that corresponds to this editor.
+} mdtable_editor_t;
+
+typedef struct _md_heap_editor_t
+{
+    mddata_t heap; // If non-null, points to allocated data for the heap.
+    mdstream_t* stream; // The read-only stream that corresponds to this editor.
+} md_heap_editor_t;
+
+typedef struct _mdeditor_t
+{
+    struct _mdcxt_t* cxt; // Non-null is indication of complete initialization
+
+    // Metadata heaps - II.24.2.2
+    md_heap_editor_t strings_heap;
+    md_heap_editor_t guid_heap;
+    md_heap_editor_t blob_heap;
+    md_heap_editor_t user_string_heap;
+
+    // Metadata tables - II.22
+    mdtable_editor_t* tables;
+} mdeditor_t;
+
 typedef struct _mdcxt_t
 {
     uint32_t magic; // mdlib magic
-    mdcdata_t data; // metadata raw bytes
+    union
+    {
+        mdcdata_t raw_metadata; // metadata raw bytes
+        mdeditor_t* editor; // metadata editor
+    };
     mdcxt_flag_t context_flags;
 
     // Metadata root details - II.24.2.1

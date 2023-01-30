@@ -222,8 +222,8 @@ bool md_create_handle(void const* data, size_t data_len, mdhandle_t* handle)
 
     // Header initialization is complete.
     cxt.magic = MDLIB_MAGIC_NUMBER;
-    cxt.data.ptr = data;
-    cxt.data.size = data_len;
+    cxt.raw_metadata.ptr = data;
+    cxt.raw_metadata.size = data_len;
     // Allocate and initialize a context
 
     mdcxt_t* pcxt = allocate_full_context(&cxt);
@@ -246,11 +246,89 @@ bool md_create_handle(void const* data, size_t data_len, mdhandle_t* handle)
     return true;
 }
 
+static mdeditor_t* allocate_editor(mdcxt_t* cxt)
+{
+    // The intent here is to call the allocator once.
+    // Therefore we compute the full size and then call
+    // malloc a single time. The following needs to be
+    // done:
+    //  1. Compute total amount of needed memory:
+    //     - sizeof(mdeditor_t)
+    //     - table count
+    //     - column count for each table
+    //  3. Determine table array offset
+    //  4. Set table pointer in mdcxt_t
+    //  5. Determine column details array offsets
+    //  6. Set column details array in each table
+    //  7. Return the newly allocated context
+
+    uint32_t table_col_sizes[MDTABLE_MAX_COUNT];
+    uint32_t total_col_size = 0;
+    for (mdtable_id_t id = mdtid_First; id < mdtid_End; ++id)
+    {
+        table_col_sizes[id] = sizeof(mdtcol_t) * get_table_column_count(id);
+        total_col_size += table_col_sizes[id];
+    }
+
+    // Ensure all sections of the allocation are pointer aligned.
+    size_t editor_mem = align_to(sizeof(mdeditor_t), sizeof(void*));
+    size_t tables_mem = MDTABLE_MAX_COUNT * align_to(sizeof(mdtable_editor_t), sizeof(void*));
+
+    size_t total_mem = editor_mem + tables_mem;
+    uint8_t* mem = (uint8_t*)malloc(total_mem);
+    if (mem == NULL)
+        return NULL;
+
+    memset(mem, 0, sizeof(total_mem));
+    mdeditor_t* editor = (mdeditor_t*)mem;
+    editor->strings_heap.stream = &cxt->strings_heap;
+    editor->guid_heap.stream = &cxt->guid_heap;
+    editor->blob_heap.stream = &cxt->blob_heap;
+    editor->user_string_heap.stream = &cxt->user_string_heap;
+
+    mem += editor_mem;
+    editor->tables = (mdtable_editor_t*)mem;
+    mem += tables_mem;
+
+    // Update each table editor to point to its table view.
+    for (mdtable_id_t id = mdtid_First; id < mdtid_End; ++id)
+    {
+        editor->tables[id].table = &cxt->tables[id];
+    }
+
+    assert(mem <= (uint8_t*)(editor + total_mem));
+    editor->cxt = cxt;
+    return editor;
+}
+
+bool md_create_writable_handle(void const* data, size_t data_len, mdhandle_t* handle)
+{
+    mdhandle_t read_only_handle;
+    if (!md_create_handle(data, data_len, &read_only_handle))
+        return false;
+    
+    mdcxt_t* pcxt = extract_mdcxt(handle);
+    pcxt->context_flags |= mdc_editable;
+    pcxt->editor = allocate_editor(pcxt);
+    if (pcxt->editor == NULL)
+    {
+        md_destroy_handle(read_only_handle);
+        return false;
+    }
+
+    *handle = pcxt;
+    return true;
+}
+
 void md_destroy_handle(mdhandle_t handle)
 {
     mdcxt_t* cxt = extract_mdcxt(handle);
     if (cxt == NULL)
         return;
+    
+    if (cxt->flags & mdc_editable)
+        free(cxt->editor);
+
     free(cxt);
 }
 

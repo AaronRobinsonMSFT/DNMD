@@ -36,6 +36,12 @@ typedef void* mdhandle_t;
 // handles created with the data have been destroyed.
 bool md_create_handle(void const* data, size_t data_len, mdhandle_t* handle);
 
+// Create a metadata handle that can be used to parse and modify the supplied metadata.
+//
+// The supplied data is expected to be unmoved and available until all handles created
+// with the data have been destroyed. This data will not be updated in place.
+bool md_create_writable_handle(void const* data, size_t data_len, mdhandle_t* handle);
+
 // Destroy the metadata handle and free all associated memory.
 void md_destroy_handle(mdhandle_t handle);
 
