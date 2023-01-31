@@ -1,17 +1,17 @@
-#ifndef _SRC_INTERFACES_IMPL_HPP_
-#define _SRC_INTERFACES_IMPL_HPP_
+#ifndef _SRC_INTERFACES_METADATAIMPORTRO_HPP_
+#define _SRC_INTERFACES_METADATAIMPORTRO_HPP_
 
-#include <cstddef>
+#include <dnmd.hpp>
+
+#include <external/cor.h>
+#include <external/corhdr.h>
+
 #include <cstdint>
-#include <cstring>
 #include <atomic>
 
-#include <internal/dnmd_platform.hpp>
 
-// C++ lifetime wrapper for CoTaskMemAlloc'd memory
-using cotaskmem_ptr = dncp::cotaskmem_ptr<void>;
 
-class MetadataImportRO final : public IMetaDataImport2, public IMetaDataAssemblyImport
+class MetadataImportRO final : public IMetaDataImport2
 {
     std::atomic_uint32_t _refCount;
     mdhandle_ptr _md_ptr;
@@ -429,7 +429,7 @@ public: // IMetaDataImport
     STDMETHOD(GetCustomAttributeByName)(
         mdToken     tkObj,
         LPCWSTR     szName,
-        void const  **ppData,
+        const void  **ppData,
         ULONG       *pcbData) override;
 
     STDMETHOD_(BOOL, IsValidToken)(
@@ -502,101 +502,6 @@ public: // IMetaDataImport2
         ULONG       cMax,
         ULONG       *pcMethodSpecs) override;
 
-public: // IMetaDataAssemblyImport
-    STDMETHOD(GetAssemblyProps)(
-        mdAssembly  mda,
-        void const  **ppbPublicKey,
-        ULONG       *pcbPublicKey,
-        ULONG       *pulHashAlgId,
-        _Out_writes_to_opt_(cchName, *pchName) LPWSTR  szName,
-        ULONG       cchName,
-        ULONG       *pchName,
-        ASSEMBLYMETADATA *pMetaData,
-        DWORD       *pdwAssemblyFlags) override;
-
-    STDMETHOD(GetAssemblyRefProps)(
-        mdAssemblyRef mdar,
-        void const  **ppbPublicKeyOrToken,
-        ULONG       *pcbPublicKeyOrToken,
-        _Out_writes_to_opt_(cchName, *pchName)LPWSTR szName,
-        ULONG       cchName,
-        ULONG       *pchName,
-        ASSEMBLYMETADATA *pMetaData,
-        void const  **ppbHashValue,
-        ULONG       *pcbHashValue,
-        DWORD       *pdwAssemblyRefFlags) override;
-
-    STDMETHOD(GetFileProps)(
-        mdFile      mdf,
-        _Out_writes_to_opt_(cchName, *pchName) LPWSTR      szName,
-        ULONG       cchName,
-        ULONG       *pchName,
-        void const  **ppbHashValue,
-        ULONG       *pcbHashValue,
-        DWORD       *pdwFileFlags) override;
-
-    STDMETHOD(GetExportedTypeProps)(
-        mdExportedType   mdct,
-        _Out_writes_to_opt_(cchName, *pchName) LPWSTR      szName,
-        ULONG       cchName,
-        ULONG       *pchName,
-        mdToken     *ptkImplementation,
-        mdTypeDef   *ptkTypeDef,
-        DWORD       *pdwExportedTypeFlags) override;
-
-    STDMETHOD(GetManifestResourceProps)(
-        mdManifestResource  mdmr,
-        _Out_writes_to_opt_(cchName, *pchName)LPWSTR      szName,
-        ULONG       cchName,
-        ULONG       *pchName,
-        mdToken     *ptkImplementation,
-        DWORD       *pdwOffset,
-        DWORD       *pdwResourceFlags) override;
-
-    STDMETHOD(EnumAssemblyRefs)(
-        HCORENUM    *phEnum,
-        mdAssemblyRef rAssemblyRefs[],
-        ULONG       cMax,
-        ULONG       *pcTokens) override;
-
-    STDMETHOD(EnumFiles)(
-        HCORENUM    *phEnum,
-        mdFile      rFiles[],
-        ULONG       cMax,
-        ULONG       *pcTokens) override;
-
-    STDMETHOD(EnumExportedTypes)(
-        HCORENUM    *phEnum,
-        mdExportedType   rExportedTypes[],
-        ULONG       cMax,
-        ULONG       *pcTokens) override;
-
-    STDMETHOD(EnumManifestResources)(
-        HCORENUM    *phEnum,
-        mdManifestResource  rManifestResources[],
-        ULONG       cMax,
-        ULONG       *pcTokens) override;
-
-    STDMETHOD(GetAssemblyFromScope)(
-        mdAssembly  *ptkAssembly) override;
-
-    STDMETHOD(FindExportedTypeByName)(
-        LPCWSTR     szName,
-        mdToken     mdtExportedType,
-        mdExportedType   *ptkExportedType) override;
-
-    STDMETHOD(FindManifestResourceByName)(
-        LPCWSTR     szName,
-        mdManifestResource *ptkManifestResource) override;
-
-    STDMETHOD(FindAssembliesByName)(
-        LPCWSTR  szAppBase,
-        LPCWSTR  szPrivateBin,
-        LPCWSTR  szAssemblyName,
-        IUnknown *ppIUnk[],
-        ULONG    cMax,
-        ULONG    *pcAssemblies) override;
-
 public: // IUnknown
     virtual HRESULT STDMETHODCALLTYPE QueryInterface(
         /* [in] */ REFIID riid,
@@ -607,15 +512,11 @@ public: // IUnknown
 
         if (riid == IID_IUnknown)
         {
-            *ppvObject = static_cast<IUnknown*>(static_cast<IMetaDataImport2*>(this));
+            *ppvObject = static_cast<IUnknown*>(this);
         }
         else if (riid == IID_IMetaDataImport ||riid == IID_IMetaDataImport2)
         {
             *ppvObject = static_cast<IMetaDataImport2*>(this);
-        }
-        else if (riid == IID_IMetaDataAssemblyImport)
-        {
-            *ppvObject = static_cast<IMetaDataAssemblyImport*>(this);
         }
         else
         {
@@ -641,100 +542,4 @@ public: // IUnknown
     }
 };
 
-enum class HCORENUMType : uint32_t
-{
-    Table = 1, Dynamic
-};
-
-// Represents a singly linked list or dynamic uint32_t array enumerator
-class HCORENUMImpl final
-{
-    HCORENUMType _type;
-    uint32_t _entrySpan; // The number of entries equal to a single unit.
-
-    struct EnumData final
-    {
-        union
-        {
-            // Enumerate for tables
-            struct
-            {
-                mdcursor_t Current;
-                mdcursor_t Start;
-            } Table;
-
-            // Enumerate for dynamic uint32_t array
-            struct
-            {
-                uint32_t Page[16];
-            } Dynamic;
-        };
-
-        uint32_t ReadIn;
-        uint32_t Total;
-        EnumData* Next;
-    };
-
-    EnumData _data;
-    EnumData* _curr;
-    EnumData* _last;
-
-public: // static
-    // Lifetime operations
-    static HRESULT CreateTableEnum(_In_ uint32_t count, _Out_ HCORENUMImpl** impl) noexcept;
-    static void InitTableEnum(_Inout_ HCORENUMImpl& impl, _In_ uint32_t index, _In_ mdcursor_t cursor, _In_ uint32_t rows) noexcept;
-
-    // If multiple values represent a single entry, the "entrySpan" argument
-    // can be used to indicate the count for a single entry.
-    static HRESULT CreateDynamicEnum(_Out_ HCORENUMImpl** impl, _In_ uint32_t entrySpan = 1) noexcept;
-    static HRESULT AddToDynamicEnum(_Inout_ HCORENUMImpl& impl, uint32_t value) noexcept;
-
-    static void Destroy(_In_ HCORENUMImpl* impl) noexcept;
-
-public: // instance
-    // Get the total items for this enumeration
-    uint32_t Count() const noexcept;
-
-    // Read in the tokens for this enumeration
-    HRESULT ReadTokens(
-        mdToken rTokens[],
-        ULONG cMax,
-        ULONG* pcTokens) noexcept;
-
-    HRESULT ReadTokenPairs(
-        mdToken rTokens1[],
-        mdToken rTokens2[],
-        ULONG cMax,
-        ULONG* pcTokens) noexcept;
-
-    // Reset the enumeration to a specific position
-    HRESULT Reset(_In_ ULONG position) noexcept;
-
-private:
-    HRESULT ReadOneToken(mdToken& rToken, uint32_t& count) noexcept;
-    HRESULT ReadTableTokens(
-        mdToken rTokens[],
-        uint32_t cMax,
-        uint32_t& tokenCount) noexcept;
-    HRESULT ReadDynamicTokens(
-        mdToken rTokens[],
-        uint32_t cMax,
-        uint32_t& tokenCount) noexcept;
-
-    HRESULT ResetTableEnum(_In_ uint32_t position) noexcept;
-    HRESULT ResetDynamicEnum(_In_ uint32_t position) noexcept;
-};
-
-struct HCORENUMImplDeleter
-{
-    using pointer = HCORENUMImpl*;
-    void operator()(HCORENUMImpl* mem)
-    {
-        HCORENUMImpl::Destroy(mem);
-    }
-};
-
-// C++ lifetime wrapper for HCORENUMImpl memory
-using HCORENUMImpl_ptr = std::unique_ptr<HCORENUMImpl, HCORENUMImplDeleter>;
-
-#endif // _SRC_INTERFACES_IMPL_HPP_
+#endif

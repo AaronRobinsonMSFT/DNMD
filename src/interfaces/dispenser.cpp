@@ -10,7 +10,7 @@
 
 #include <dnmd_interfaces.hpp>
 
-#include <cstdlib>
+#include "metadataimportro.hpp"
 
 namespace
 {
