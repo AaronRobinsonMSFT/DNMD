@@ -8,6 +8,8 @@
 
 ## Build
 
+> `git submodule update --init --recursive`
+
 > `cmake -S . -B artifacts`
 
 > `cmake --build artifacts --target install`

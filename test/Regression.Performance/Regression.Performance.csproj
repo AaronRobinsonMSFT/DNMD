@@ -11,13 +11,11 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Content Include="$(NativeOutputPath)/*regperf*" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="$(NativeOutputPath)/*regnative*" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="$(NativeOutputPath)/*dnmd_interfaces*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
     <Compile Include="../Common/Dispensers.cs" Link="Dispensers.cs" />
-    <Compile Include="../Common/IMetaDataDispenser.cs" Link="IMetaDataDispenser.cs" />
-    <Compile Include="../Common/IMetaDataImport2.cs" Link="IMetaDataImport2.cs" />
   </ItemGroup>
 </Project>

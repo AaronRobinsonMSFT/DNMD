@@ -258,7 +258,7 @@ namespace
             uint32_t i = 0;
             while (i < currCount)
             {
-                int32_t read = md_get_column_value_as_token(curr, lookupRange, ARRAYSIZE(matchedGroup), matchedGroup);
+                int32_t read = md_get_column_value_as_token(curr, lookupRange, ARRAY_SIZE(matchedGroup), matchedGroup);
                 if (read == 0)
                     break;
 
@@ -854,7 +854,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumMemberRefs(
         uint32_t i = 0;
         while (i < count)
         {
-            int32_t read = md_get_column_value_as_token(cursor, mdtMemberRef_Class, ARRAYSIZE(toMatch), toMatch);
+            int32_t read = md_get_column_value_as_token(cursor, mdtMemberRef_Class, ARRAY_SIZE(toMatch), toMatch);
             if (read == 0)
                 break;
 
@@ -1006,9 +1006,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::FindMember(
 {
     HRESULT hr = FindMethod(td, szName, pvSigBlob, cbSigBlob, (mdMethodDef*)pmb);
     if (hr == CLDB_E_RECORD_NOTFOUND)
-    {
         hr = FindField(td, szName, pvSigBlob, cbSigBlob, (mdFieldDef*)pmb);
-    }
     return hr;
 }
 
@@ -1150,6 +1148,18 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::FindMemberRef(
     ULONG       cbSigBlob,
     mdMemberRef* pmr)
 {
+    if (TypeFromToken(td) != mdtTypeRef
+        && TypeFromToken(td) != mdtMethodDef
+        && TypeFromToken(td) != mdtModuleRef
+        && TypeFromToken(td) != mdtTypeDef
+        && TypeFromToken(td) != mdtTypeSpec)
+    {
+        return E_INVALIDARG;
+    }
+
+    if (szName == nullptr || pmr == nullptr)
+        return CLDB_E_RECORD_NOTFOUND;
+
     if (IsNilToken(td))
         td = MD_GLOBAL_PARENT_TOKEN;
 
@@ -1494,7 +1504,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumMethodSemantics(
         uint32_t i = 0;
         while (i < count)
         {
-            int32_t read = md_get_column_value_as_token(cursor, mdtMethodSemantics_Method, ARRAYSIZE(toMatch), toMatch);
+            int32_t read = md_get_column_value_as_token(cursor, mdtMethodSemantics_Method, ARRAY_SIZE(toMatch), toMatch);
             if (read == 0)
                 break;
 
@@ -1832,48 +1842,37 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetNameFromToken(            // Not 
     if (pszUtf8NamePtr == nullptr)
         return E_INVALIDARG;
 
-    mdtable_id_t table_id;
     col_index_t col_idx;
     switch (TypeFromToken(tk))
     {
     case mdtModule:
-        table_id = mdtid_Module;
         col_idx = mdtModule_Name;
         break;
     case mdtTypeRef:
-        table_id = mdtid_TypeRef;
         col_idx = mdtTypeRef_TypeName;
         break;
     case mdtTypeDef:
-        table_id = mdtid_TypeDef;
         col_idx = mdtTypeDef_TypeName;
         break;
     case mdtFieldDef:
-        table_id = mdtid_Field;
         col_idx = mdtField_Name;
         break;
     case mdtMethodDef:
-        table_id = mdtid_MethodDef;
         col_idx = mdtMethodDef_Name;
         break;
     case mdtParamDef:
-        table_id = mdtid_Param;
         col_idx = mdtParam_Name;
         break;
     case mdtMemberRef:
-        table_id = mdtid_MemberRef;
         col_idx = mdtMemberRef_Name;
         break;
     case mdtEvent:
-        table_id = mdtid_Event;
         col_idx = mdtEvent_Name;
         break;
     case mdtProperty:
-        table_id = mdtid_Property;
         col_idx = mdtProperty_Name;
         break;
     case mdtModuleRef:
-        table_id = mdtid_ModuleRef;
         col_idx = mdtModuleRef_Name;
         break;
     default:
@@ -2134,7 +2133,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumCustomAttributes(
             uint32_t i = 0;
             while (i < currCount)
             {
-                int32_t read = md_get_column_value_as_token(curr, mdtCustomAttribute_Parent, ARRAYSIZE(toMatch), toMatch);
+                int32_t read = md_get_column_value_as_token(curr, mdtCustomAttribute_Parent, ARRAY_SIZE(toMatch), toMatch);
                 if (read == 0)
                     break;
 
@@ -3543,7 +3542,9 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetExportedTypeProps(
 
     if (ptkTypeDef != nullptr)
     {
-        if (1 != md_get_column_value_as_token(cursor, mdtExportedType_TypeDefId, 1, ptkTypeDef))
+        // This column points into the TypeDef table of another module,
+        // so it isn't a true column reference here.
+        if (1 != md_get_column_value_as_constant(cursor, mdtExportedType_TypeDefId, 1, ptkTypeDef))
             return CLDB_E_FILE_CORRUPT;
     }
 
