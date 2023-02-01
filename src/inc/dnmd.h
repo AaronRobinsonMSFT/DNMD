@@ -34,7 +34,7 @@ typedef enum
     mdtid_Module = 0x0,
     mdtid_TypeRef = 0x01,
     mdtid_TypeDef = 0x02,
-    mdtid_FieldPtr = 0x3,
+    mdtid_FieldPtr = 0x03,
     mdtid_Field = 0x04,
     mdtid_MethodPtr = 0x05,
     mdtid_MethodDef = 0x06,
@@ -61,7 +61,8 @@ typedef enum
     mdtid_TypeSpec = 0x1b,
     mdtid_ImplMap = 0x1c,
     mdtid_FieldRva = 0x1d,
-
+    mdtid_ENCLog = 0x1e,
+    mdtid_ENCMap = 0x1f,
     mdtid_Assembly = 0x20,
     mdtid_AssemblyProcessor = 0x21,
     mdtid_AssemblyOS = 0x22,

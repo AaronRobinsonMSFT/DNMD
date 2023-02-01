@@ -1,13 +1,15 @@
 #ifndef _SRC_INTERFACES_PAL_HPP_
 #define _SRC_INTERFACES_PAL_HPP_
 
+#include <cstddef>
 #include <cstdint>
-#include <platform.h>
-#include <dnmd.hpp>
+#include <internal/dnmd_platform.hpp>
 
 namespace pal
 {
     // Convert the UTF-16 string into UTF-8
+    // Buffer length should include null terminator.
+    // Written length includes null terminator.
     HRESULT ConvertUtf16ToUtf8(
         WCHAR const* str,
         char* buffer,
@@ -15,6 +17,8 @@ namespace pal
         _Out_opt_ uint32_t* writtenOrNeeded);
 
     // Convert the UTF-8 string into UTF-16
+    // Buffer length should include null terminator.
+    // Written length includes null terminator.
     HRESULT ConvertUtf8ToUtf16(
         char const* str,
         WCHAR* buffer,
@@ -105,10 +109,11 @@ namespace pal
     };
 }
 
-#ifdef BUILD_WINDOWS
-#define W(str) L##str
-#else
-#define W(str) u##str
-#endif
+// Implementations for missing bounds checking APIs.
+// See https://en.cppreference.com/w/c/error#Bounds_checking
+#if !defined(__STDC_LIB_EXT1__) && !defined(BUILD_WINDOWS)
+using rsize_t = size_t;
+int strcat_s(char* dest, rsize_t destsz, char const* src);
+#endif // !defined(__STDC_LIB_EXT1__) && !defined(BUILD_WINDOWS)
 
 #endif // _SRC_INTERFACES_PAL_HPP_

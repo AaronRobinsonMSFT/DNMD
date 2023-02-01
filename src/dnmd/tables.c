@@ -287,8 +287,6 @@ bool initialize_table_details(
 
 #define CODED_INDEX_ARGS(x) is_minimal_delta, all_table_row_counts, (x)
 #define TABLE_INDEX_ARGS(x) is_minimal_delta, all_table_row_counts, (x)
-#pragma warning(push)
-#pragma warning(disable:4063)
     switch (id)
     {
     case mdtid_Module: // II.22.30
@@ -458,12 +456,12 @@ bool initialize_table_details(
         table->column_details[mdtFieldRva_Field] = compute_table_index(TABLE_INDEX_ARGS(mdtid_Field));
         assert(mdtFieldRva_ColCount == get_table_column_count(id));
         break;
-    case 0x1e: // ENCLog
+    case mdtid_ENCLog:
         table->column_details[0] = mdtc_constant | mdtc_b4;
         table->column_details[1] = mdtc_constant | mdtc_b4;
         assert(2 == get_table_column_count(id));
         break;
-    case 0x1f: // ENCMap
+    case mdtid_ENCMap:
         table->column_details[0] = mdtc_constant | mdtc_b4;
         assert(1 == get_table_column_count(id));
         break;
@@ -613,7 +611,6 @@ bool initialize_table_details(
         assert(!"Unknown metadata table ID");
         return false;
     }
-#pragma warning(pop)
 #undef TABLE_INDEX_ARGS
 #undef CODED_INDEX_ARGS
 

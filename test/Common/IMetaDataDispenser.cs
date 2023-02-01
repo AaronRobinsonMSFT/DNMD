@@ -16,27 +16,24 @@ namespace Common
     [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     internal unsafe interface IMetaDataDispenser
     {
-        [PreserveSig]
-        int DefineScope(
+        [return: MarshalAs(UnmanagedType.Interface, IidParameterIndex = 2)]
+        object DefineScope(
             in Guid rclsid,
             uint dwCreateFlags,
-            in Guid riid,
-            [MarshalAs(UnmanagedType.Interface)] out object ppIUnk);
+            in Guid riid);
 
-        [PreserveSig]
-        int OpenScope(
+        [return: MarshalAs(UnmanagedType.Interface, IidParameterIndex = 2)]
+        object OpenScope(
             [MarshalAs(UnmanagedType.LPWStr)] string szScope,
             uint dwCreateFlags,
-            in Guid riid,
-            [MarshalAs(UnmanagedType.Interface)] out object ppIUnk);
+            in Guid riid);
 
-        [PreserveSig]
-        int OpenScopeOnMemory(
+        [return:MarshalAs(UnmanagedType.Interface, IidParameterIndex = 3)]
+        object OpenScopeOnMemory(
             void* pData,
             int cbData,
             CorOpenFlags dwOpenFlags,
-            Guid* riid,
-            void** ppIUnk);
+            in Guid riid);
     }
 
     internal static class MetaDataDispenserOptions
@@ -87,27 +84,24 @@ namespace Common
     [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     internal unsafe interface IMetaDataDispenserEx : IMetaDataDispenser
     {
-        [PreserveSig]
-        new int DefineScope(
+        [return: MarshalAs(UnmanagedType.Interface, IidParameterIndex = 2)]
+        new object DefineScope(
             in Guid rclsid,
             uint dwCreateFlags,
-            in Guid riid,
-            [MarshalAs(UnmanagedType.Interface)] out object ppIUnk);
+            in Guid riid);
 
-        [PreserveSig]
-        new int OpenScope(
+        [return: MarshalAs(UnmanagedType.Interface, IidParameterIndex = 2)]
+        new object OpenScope(
             [MarshalAs(UnmanagedType.LPWStr)] string szScope,
             uint dwCreateFlags,
-            in Guid riid,
-            [MarshalAs(UnmanagedType.Interface)] out object ppIUnk);
+            in Guid riid);
 
-        [PreserveSig]
-        new int OpenScopeOnMemory(
+        [return: MarshalAs(UnmanagedType.Interface, IidParameterIndex = 3)]
+        new object OpenScopeOnMemory(
             void* pData,
             int cbData,
             CorOpenFlags dwOpenFlags,
-            Guid* riid,
-            void** ppIUnk);
+            in Guid riid);
 
         [PreserveSig]
         int SetOption(

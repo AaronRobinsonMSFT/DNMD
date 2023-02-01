@@ -1,13 +1,12 @@
 #ifndef _SRC_INTERFACES_IMPL_HPP_
 #define _SRC_INTERFACES_IMPL_HPP_
 
+#include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <atomic>
 
-#include <external/cor.h>
-#include <external/corhdr.h>
-
-#include <dnmd.hpp>
+#include <internal/dnmd_platform.hpp>
 
 class MetadataImportRO final : public IMetaDataImport2
 {

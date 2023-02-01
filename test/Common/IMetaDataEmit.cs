@@ -11,6 +11,11 @@ namespace Common
     }
 
     [ComImport]
+    [Guid("7DAC8207-D3AE-4c75-9B67-92801A497D44")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    public interface IMetaDataImport { }
+
+    [ComImport]
     [Guid("BA3FEE4C-ECB9-4e41-83B7-183FA41CD859")]
     [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     public interface IMetaDataEmit
@@ -349,7 +354,7 @@ namespace Common
             [MarshalAs(UnmanagedType.U4)] uint ulImportToken,
             [MarshalAs(UnmanagedType.LPArray, SizeParamIndex = 5)] byte[] pbSigBlob,
             [MarshalAs(UnmanagedType.U4)] uint cbSigBlob,
-            [MarshalAs(UnmanagedType.Interface)] IMetaDataImport2 pAssemImport2,
+            [MarshalAs(UnmanagedType.Interface)] IMetaDataImport pAssemImport2,
             [MarshalAs(UnmanagedType.LPArray, SizeParamIndex = 8)] byte[] pbHashValue2,
             [MarshalAs(UnmanagedType.U4)] uint cbHashValue2,
             [MarshalAs(UnmanagedType.U4)] uint ulImportToken2,
@@ -371,7 +376,7 @@ namespace Common
         int Merge(
             [MarshalAs(UnmanagedType.Interface)] object pImport,
             [MarshalAs(UnmanagedType.U4)] uint tkMergeTarget,
-            [MarshalAs(UnmanagedType.Interface)] IMetaDataImport2 pHostImport,
+            [MarshalAs(UnmanagedType.Interface)] IMetaDataImport pHostImport,
             [MarshalAs(UnmanagedType.Interface)] object pHandler);
         
         [PreserveSig]

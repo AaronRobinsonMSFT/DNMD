@@ -6,19 +6,16 @@
 		<Nullable>enable</Nullable>
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 		<IsPackable>false</IsPackable>
-		<EnableDefaultCompileItems>false</EnableDefaultCompileItems>
 	</PropertyGroup>
 
 	<ItemGroup>
 		<Compile Include="../Common/Dispensers.cs" Link="Dispensers.cs" />
 		<Compile Include="../Common/IMetaDataDispenser.cs" Link="IMetaDataDispenser.cs" />
-		<Compile Include="../Common/IMetaDataImport2.cs" Link="IMetaDataImport2.cs" />
 		<Compile Include="../Common/IMetaDataEmit.cs" Link="IMetaDataEmit.cs" />
-		<Compile Include="**/*.cs" Exclude="DeltaAssemblySources/*.cs" />
-		<EmbeddedResource Include="DeltaAssemblySources/**/*.cs" />
 	</ItemGroup>
 
 	<ItemGroup>
+		<Content Include="$(NativeOutputPath)/*regnative*" CopyToOutputDirectory="PreserveNewest" />
 		<Content Include="$(NativeOutputPath)/*dnmd_interfaces*" CopyToOutputDirectory="PreserveNewest" />
 	</ItemGroup>
 
