@@ -12,7 +12,7 @@ class ControllingIUnknown final : public IUnknown
 {
 private:
     std::atomic<int32_t> _refCount;
-    std::vector<TearOffBase*> _tearOffs;
+    std::vector<TearOffUnknown*> _tearOffs;
 public:
     ControllingIUnknown() = default;
 
@@ -41,7 +41,7 @@ public: // IUnknown
             return S_OK;
         }
 
-        for (TearOffBase* tearOff: _tearOffs)
+        for (TearOffUnknown* tearOff: _tearOffs)
         {
             if (tearOff->TryGetInterfaceOnThis(riid, ppvObject) == S_OK)
             {
@@ -64,7 +64,7 @@ public: // IUnknown
         uint32_t c = --_refCount;
         if (c == 0)
         {
-            for (TearOffBase* tearOff: _tearOffs)
+            for (TearOffUnknown* tearOff: _tearOffs)
             {
                 delete tearOff;
             }

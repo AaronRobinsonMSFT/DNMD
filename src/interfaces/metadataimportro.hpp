@@ -11,7 +11,7 @@
 #include <cstdint>
 #include <atomic>
 
-class MetadataImportRO final : public IMetaDataImport2, public TearOffBase
+class MetadataImportRO final : public TearOffBase<IMetaDataImport2>
 {
     mdhandle_ptr _md_ptr;
     malloc_ptr<void> _malloc_to_free;
@@ -29,8 +29,6 @@ protected:
     }
 
 public:
-    TEAR_OFF_IUNKNOWN_IMPLEMENTATION()
-
     MetadataImportRO(IUnknown* controllingUnknown, mdhandle_ptr md_ptr, malloc_ptr<void> mallocMem, cotaskmem_ptr cotaskmemMem)
         : TearOffBase(controllingUnknown)
         , _md_ptr{ std::move(md_ptr) }

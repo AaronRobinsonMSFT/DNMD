@@ -11,7 +11,7 @@
 #include <cstdint>
 #include <atomic>
 
-class MetadataEmit final : public IMetaDataEmit2, public IMetaDataAssemblyEmit, public TearOffBase
+class MetadataEmit final : public TearOffBase<IMetaDataEmit2, IMetaDataAssemblyEmit>
 {
     mdhandle_t _md_ptr;
 
@@ -32,8 +32,6 @@ protected:
     }
 
 public:
-    TEAR_OFF_IUNKNOWN_IMPLEMENTATION()
-
     MetadataEmit(IUnknown* controllingUnknown, mdhandle_t md_ptr)
         : TearOffBase(controllingUnknown)
         , _md_ptr{ md_ptr }

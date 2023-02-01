@@ -7,7 +7,7 @@
 
 class ControllingIUnknown;
 
-class TearOffBase : public IUnknown
+class TearOffUnknown : public IUnknown
 {
     friend class ControllingIUnknown;
 private:
@@ -17,13 +17,13 @@ protected:
     STDMETHOD(TryGetInterfaceOnThis)(REFIID riid, void** ppvObject) PURE;
 
 public:
-    TearOffBase(IUnknown* outer)
+    TearOffUnknown(IUnknown* outer)
         :_pUnkOuter(outer)
     {
 
     }
 
-    virtual ~TearOffBase() = default;
+    virtual ~TearOffUnknown() = default;
 
 public: // IUnknown
     STDMETHODIMP_(ULONG) AddRef() override
@@ -63,19 +63,27 @@ public: // IUnknown
     }
 };
 
-#define TEAR_OFF_IUNKNOWN_IMPLEMENTATION() \
-    STDMETHODIMP_(ULONG) AddRef() override final \
-    { \
-        return TearOffBase::AddRef(); \
-    } \
-    STDMETHODIMP_(ULONG) Release() override final \
-    { \
-        return TearOffBase::Release(); \
-    } \
-    STDMETHODIMP QueryInterface(REFIID riid, void** ppvObject) override final \
-    { \
-        return TearOffBase::QueryInterface(riid, ppvObject); \
+template<typename... T>
+class TearOffBase : public TearOffUnknown, public T...
+{
+public:
+    using TearOffUnknown::TearOffUnknown;
+
+    STDMETHODIMP_(ULONG) AddRef() override final
+    {
+        return TearOffUnknown::AddRef();
     }
+    STDMETHODIMP_(ULONG) Release() override final
+    {
+        return TearOffUnknown::Release();
+    }
+    STDMETHODIMP QueryInterface(REFIID riid, void** ppvObject) override final
+    {
+        return TearOffUnknown::QueryInterface(riid, ppvObject);
+    }
+};
+
+#define TEAR_OFF_IUNKNOWN_IMPLEMENTATION()
 
 template<typename T>
 struct ComReleaser
