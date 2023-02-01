@@ -2,6 +2,8 @@
 #define _SRC_INTERFACES_METADATAIMPORTRO_HPP_
 
 #include <dnmd.hpp>
+#include "tearoffbase.hpp"
+#include "controllingiunknown.hpp"
 
 #include <external/cor.h>
 #include <external/corhdr.h>
@@ -9,18 +11,28 @@
 #include <cstdint>
 #include <atomic>
 
-
-
-class MetadataImportRO final : public IMetaDataImport2
+class MetadataImportRO final : public IMetaDataImport2, public TearOffBase
 {
-    std::atomic_uint32_t _refCount;
     mdhandle_ptr _md_ptr;
     malloc_ptr<void> _malloc_to_free;
     cotaskmem_ptr _cotaskmem_to_free;
 
+protected:
+    STDMETHODIMP TryGetInterfaceOnThis(REFIID riid, void** ppvObject) override
+    {
+        if (riid == IID_IMetaDataImport || riid == IID_IMetaDataImport2)
+        {
+            *ppvObject = static_cast<IMetaDataImport2*>(this);
+            return S_OK;
+        }
+        return E_NOINTERFACE;
+    }
+
 public:
-    MetadataImportRO(mdhandle_ptr md_ptr, malloc_ptr<void> mallocMem, cotaskmem_ptr cotaskmemMem)
-        : _refCount{ 1 }
+    TEAR_OFF_IUNKNOWN_IMPLEMENTATION()
+
+    MetadataImportRO(IUnknown* controllingUnknown, mdhandle_ptr md_ptr, malloc_ptr<void> mallocMem, cotaskmem_ptr cotaskmemMem)
+        : TearOffBase(controllingUnknown)
         , _md_ptr{ std::move(md_ptr) }
         , _malloc_to_free{ std::move(mallocMem) }
         , _cotaskmem_to_free{ std::move(cotaskmemMem) }
@@ -501,45 +513,6 @@ public: // IMetaDataImport2
         mdMethodSpec rMethodSpecs[],
         ULONG       cMax,
         ULONG       *pcMethodSpecs) override;
-
-public: // IUnknown
-    virtual HRESULT STDMETHODCALLTYPE QueryInterface(
-        /* [in] */ REFIID riid,
-        /* [iid_is][out] */ _COM_Outptr_ void __RPC_FAR* __RPC_FAR* ppvObject) override
-    {
-        if (ppvObject == nullptr)
-            return E_POINTER;
-
-        if (riid == IID_IUnknown)
-        {
-            *ppvObject = static_cast<IUnknown*>(this);
-        }
-        else if (riid == IID_IMetaDataImport ||riid == IID_IMetaDataImport2)
-        {
-            *ppvObject = static_cast<IMetaDataImport2*>(this);
-        }
-        else
-        {
-            *ppvObject = nullptr;
-            return E_NOINTERFACE;
-        }
-
-        (void)AddRef();
-        return S_OK;
-    }
-
-    virtual ULONG STDMETHODCALLTYPE AddRef(void) override
-    {
-        return ++_refCount;
-    }
-
-    virtual ULONG STDMETHODCALLTYPE Release(void) override
-    {
-        uint32_t c = --_refCount;
-        if (c == 0)
-            delete this;
-        return c;
-    }
 };
 
 #endif

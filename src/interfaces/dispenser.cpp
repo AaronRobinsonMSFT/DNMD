@@ -10,6 +10,7 @@
 
 #include <dnmd_interfaces.hpp>
 
+#include "controllingiunknown.hpp"
 #include "metadataimportro.hpp"
 
 namespace
@@ -77,12 +78,15 @@ namespace
                 return CLDB_E_FILE_CORRUPT;
 
             mdhandle_ptr md_ptr{ mdhandle };
-            MetadataImportRO* md = new (std::nothrow) MetadataImportRO(std::move(md_ptr), std::move(copiedMem), std::move(nowOwned));
-            if (md == nullptr)
+
+            com_ptr<ControllingIUnknown> obj { new (std::nothrow) ControllingIUnknown() };
+            if (obj == nullptr)
                 return E_OUTOFMEMORY;
 
-            HRESULT hr = md->QueryInterface(riid, (void**)ppIUnk);
-            (void)md->Release();
+            if (!obj->CreateAndAddTearOff<MetadataImportRO>(std::move(md_ptr), std::move(copiedMem), std::move(nowOwned)))
+                return E_OUTOFMEMORY;
+
+            HRESULT hr = obj->QueryInterface(riid, (void**)ppIUnk);
             return hr;
         }
 
