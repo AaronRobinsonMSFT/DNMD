@@ -1,6 +1,8 @@
 #ifndef _INC_DNMD_INTERFACES_HPP_
 #define _INC_DNMD_INTERFACES_HPP_
 
+#include "internal/dnmd_platform.hpp"
+
 #ifndef DNMD_EXPORT
 #define DNMD_EXPORT
 #endif // !DNMD_EXPORT

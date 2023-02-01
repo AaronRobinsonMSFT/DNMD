@@ -1,7 +1,7 @@
 #ifndef _SRC_INTERFACES_TEAROFFBASE_HPP_
 #define _SRC_INTERFACES_TEAROFFBASE_HPP_
 
-#include <platform.h>
+#include "internal/dnmd_platform.hpp"
 #include <atomic>
 #include <memory>
 

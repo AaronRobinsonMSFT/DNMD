@@ -1,6 +1,7 @@
 #ifndef _SRC_DNMD_INTERNAL_H_
 #define _SRC_DNMD_INTERNAL_H_
 
+
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdbool.h>
@@ -14,7 +15,6 @@
 #if !defined(__STDC_LIB_EXT1__) && !defined(BUILD_WINDOWS)
 typedef size_t rsize_t;
 #endif // !__STDC_LIB_EXT1__
-
 
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof(*a))
 
@@ -57,6 +57,9 @@ typedef enum
     // Size of the constant or index
     mdtc_b2         = 0x00000010, // 2-bytes
     mdtc_b4         = 0x00000020, // 4-bytes
+    // Width of column flags 
+    mdtc_widthmask  = 0x00000030,
+
     //mdtc_unused1  = 0x00000040,
     //mdtc_unused2  = 0x00000080,
 
@@ -254,6 +257,7 @@ typedef struct _coded_index_entry
 // Manipulators for coded indices - II.24.2.6
 bool compose_coded_index(mdToken tk, mdtcol_t col_details, uint32_t* coded_index);
 bool decompose_coded_index(uint32_t cidx, mdtcol_t col_details, mdtable_id_t* table_id, uint32_t* table_row);
+bool is_coded_index_target(mdtcol_t col_details, mdtable_id_t table);
 
 // Get the column count for a table.
 uint8_t get_table_column_count(mdtable_id_t id);
@@ -298,6 +302,15 @@ bool read_i32(uint8_t const** data, size_t* data_len, int32_t* o);
 bool read_u64(uint8_t const** data, size_t* data_len, uint64_t* o);
 bool read_i64(uint8_t const** data, size_t* data_len, int64_t* o);
 
+bool write_u8(uint8_t const** data, size_t* data_len, uint8_t o);
+bool write_i8(uint8_t const** data, size_t* data_len, int8_t o);
+bool write_u16(uint8_t const** data, size_t* data_len, uint16_t o);
+bool write_i16(uint8_t const** data, size_t* data_len, int16_t o);
+bool write_u32(uint8_t const** data, size_t* data_len, uint32_t o);
+bool write_i32(uint8_t const** data, size_t* data_len, int32_t o);
+bool write_u64(uint8_t const** data, size_t* data_len, uint64_t o);
+bool write_i64(uint8_t const** data, size_t* data_len, int64_t o);
+
 // II.23.2
 bool decompress_u32(uint8_t const** data, size_t* data_len, uint32_t* o);
 bool decompress_i32(uint8_t const** data, size_t* data_len, int32_t* o);
@@ -305,5 +318,15 @@ bool decompress_i32(uint8_t const** data, size_t* data_len, int32_t* o);
 // compressed_len is an in/out parameter. If compress_u32 returns true, then
 // compressed_len is set to the number of bytes written to compressed.
 bool compress_u32(uint32_t data, uint8_t* compressed, size_t* compressed_len);
+
+
+// Editing
+uint8_t* get_writable_table_data(mdtable_t* table, bool make_writable);
+bool initialize_new_table_details(mdtable_id_t id, mdtable_t* table);
+int32_t update_shifted_row_references(mdcursor_t* c, uint32_t count, uint8_t col_index, mdtable_id_t updated_table, uint32_t original_starting_table_index, uint32_t new_starting_table_index);
+
+// Editing (Public in the future)
+int32_t md_set_column_value_as_token(mdcursor_t* c, col_index_t col, mdToken* tk, uint32_t in_length);
+int32_t md_set_column_value_as_cursor(mdcursor_t* c, col_index_t col, mdcursor_t* cursor, uint32_t in_length);
 
 #endif // _SRC_DNMD_INTERNAL_H_

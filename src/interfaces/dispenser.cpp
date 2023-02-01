@@ -6,8 +6,6 @@
 #endif // !_MSC_VER
 #endif // DNMD_BUILD_SHARED
 
-#include "impl.hpp"
-
 #include <dnmd_interfaces.hpp>
 
 #include "controllingiunknown.hpp"

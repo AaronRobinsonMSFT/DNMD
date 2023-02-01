@@ -30,6 +30,23 @@ typedef struct md_guid_t {
 
 typedef void* mdhandle_t;
 
+// Reused .NET data type
+typedef uint32_t mdToken;
+
+// Reused Win32 data types
+typedef uint16_t WCHAR;
+
+#ifndef GUID_DEFINED
+#define GUID_DEFINED
+typedef struct _GUID
+{
+    uint32_t Data1;
+    uint16_t Data2;
+    uint16_t Data3;
+    uint8_t  Data4[8];
+} GUID;
+#endif
+
 // Create a metadata handle that can be used to parse the supplied metadata.
 //
 // The supplied data is expected to be unmoved and available until all
