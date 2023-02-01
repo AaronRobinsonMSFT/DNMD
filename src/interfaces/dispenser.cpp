@@ -12,6 +12,7 @@
 
 #include "controllingiunknown.hpp"
 #include "metadataimportro.hpp"
+#include "metadataemit.hpp"
 
 namespace
 {
@@ -74,8 +75,16 @@ namespace
             }
 
             mdhandle_t mdhandle;
-            if (!md_create_handle(pData, cbData, &mdhandle))
-                return CLDB_E_FILE_CORRUPT;
+            if (dwOpenFlags & ofReadOnly)
+            {
+                if (!md_create_handle(pData, cbData, &mdhandle))
+                    return CLDB_E_FILE_CORRUPT;
+            }
+            else
+            {
+                if (!md_create_writable_handle(pData, cbData, &mdhandle))
+                    return CLDB_E_FILE_CORRUPT;
+            }
 
             mdhandle_ptr md_ptr{ mdhandle };
 
@@ -85,6 +94,12 @@ namespace
 
             if (!obj->CreateAndAddTearOff<MetadataImportRO>(std::move(md_ptr), std::move(copiedMem), std::move(nowOwned)))
                 return E_OUTOFMEMORY;
+            
+            if (!(dwOpenFlags & ofReadOnly))
+            {
+                if (!obj->CreateAndAddTearOff<MetadataEmit>(mdhandle))
+                    return E_OUTOFMEMORY;
+            }
 
             HRESULT hr = obj->QueryInterface(riid, (void**)ppIUnk);
             return hr;
