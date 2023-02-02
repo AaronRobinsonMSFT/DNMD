@@ -5,6 +5,7 @@ set(SOURCES
   streams.c
   tables.c
   sig.c
+  editor.c
 )
 
 set(HEADERS

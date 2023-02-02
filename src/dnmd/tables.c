@@ -557,7 +557,7 @@ bool initialize_table_details(
         break;
 
 #ifdef DNMD_PORTABLE_PDB
-    // https://github.com/dotnet/runtime/blob/main/docs/design/specs/PortablePdb-Metadata.md
+        // https://github.com/dotnet/runtime/blob/main/docs/design/specs/PortablePdb-Metadata.md
     case mdtid_Document:
         table->column_details[mdtDocument_Name] = blob_index;
         table->column_details[mdtDocument_HashAlgorithm] = guid_index;
@@ -621,6 +621,26 @@ bool initialize_table_details(
     uint32_t size_bytes = compute_row_offsets_size(table->column_details, table->column_count);
     assert(size_bytes <= UINT8_MAX);
     table->row_size_bytes = (uint8_t)size_bytes;
+    return true;
+}
+
+bool initialize_new_table_details(
+    mdtable_id_t id,
+    mdtable_t* table
+)
+{
+    // Use fake sizes that will ensure we create a table that will not need to be resized later.
+    uint32_t fake_table_row_counts[MDTABLE_MAX_COUNT] = { UINT32_MAX };
+    uint8_t fake_heap_sizes = 0x7;
+    if (!initialize_table_details(
+        fake_table_row_counts,
+        fake_heap_sizes,
+        id,
+        false,
+        table))
+        return false;
+
+    table->row_count = 0;
     return true;
 }
 
