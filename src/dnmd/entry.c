@@ -327,7 +327,23 @@ void md_destroy_handle(mdhandle_t handle)
         return;
     
     if (cxt->flags & mdc_editable)
+    {
+        if (cxt->editor->blob_heap.heap.ptr != NULL)
+            free(cxt->editor->blob_heap.heap.ptr);
+        if (cxt->editor->strings_heap.heap.ptr != NULL)
+            free(cxt->editor->strings_heap.heap.ptr);
+        if (cxt->editor->user_string_heap.heap.ptr != NULL)
+            free(cxt->editor->user_string_heap.heap.ptr);
+        if (cxt->editor->guid_heap.heap.ptr != NULL)
+            free(cxt->editor->guid_heap.heap.ptr);
+        
+        for (mdtable_id_t id = mdtid_First; id < mdtid_End; ++id)
+        {
+            if (cxt->editor->tables[id].data.ptr != NULL)
+                free(cxt->editor->tables[id].data.ptr);
+        }
         free(cxt->editor);
+    }
 
     free(cxt);
 }
