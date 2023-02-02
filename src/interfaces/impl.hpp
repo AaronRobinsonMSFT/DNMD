@@ -548,7 +548,7 @@ public: // IMetaDataAssemblyImport
         ULONG       *pchName,
         mdToken     *ptkImplementation,
         DWORD       *pdwOffset,
-        DWORD       *pdwResourceFlags) override;// [OUT] Flags.
+        DWORD       *pdwResourceFlags) override;
 
     STDMETHOD(EnumAssemblyRefs)(
         HCORENUM    *phEnum,

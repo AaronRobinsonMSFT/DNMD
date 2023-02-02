@@ -1425,9 +1425,7 @@ namespace
         mdAssembly mdAsm;
         HRESULT hr = import->GetAssemblyFromScope(&mdAsm);
         if (hr == S_OK)
-        {
             values.push_back(mdAsm);
-        }
         return values;
     }
 
@@ -1452,7 +1450,7 @@ namespace
         ULONG hashAlgId;
         ULONG nameLength;
         ULONG flags;
-        int hr = import->GetAssemblyProps(mda, &publicKey, &publicKeyLength, &hashAlgId, name.data(), (ULONG)name.size(), &nameLength, &metadata, &flags);
+        HRESULT hr = import->GetAssemblyProps(mda, &publicKey, &publicKeyLength, &hashAlgId, name.data(), (ULONG)name.size(), &nameLength, &metadata, &flags);
         values.push_back(hr);
 
         if (hr == S_OK)
@@ -1466,7 +1464,7 @@ namespace
             values.push_back(metadata.usMinorVersion);
             values.push_back(metadata.usBuildNumber);
             values.push_back(metadata.usRevisionNumber);
-            values.push_back(HashCharArray(locale, (int)metadata.cbLocale));
+            values.push_back(HashCharArray(locale, metadata.cbLocale));
             values.push_back(metadata.cbLocale);
             values.push_back(metadata.ulProcessor);
             values.push_back(metadata.ulOS);
@@ -1516,7 +1514,7 @@ namespace
         void const* hash;
         ULONG hashLength;
         DWORD flags;
-        int hr = import->GetAssemblyRefProps(mdar, &publicKeyOrToken, &publicKeyOrTokenLength, name.data(), (ULONG)name.size(), &nameLength, &metadata, &hash, &hashLength, &flags);
+        HRESULT hr = import->GetAssemblyRefProps(mdar, &publicKeyOrToken, &publicKeyOrTokenLength, name.data(), (ULONG)name.size(), &nameLength, &metadata, &hash, &hashLength, &flags);
         values.push_back(hr);
 
         if (hr == S_OK)
@@ -1529,7 +1527,7 @@ namespace
             values.push_back(metadata.usMinorVersion);
             values.push_back(metadata.usBuildNumber);
             values.push_back(metadata.usRevisionNumber);
-            values.push_back(HashCharArray(locale, (int)metadata.cbLocale));
+            values.push_back(HashCharArray(locale, metadata.cbLocale));
             values.push_back(metadata.cbLocale);
             values.push_back(metadata.ulProcessor);
             values.push_back(metadata.ulOS);
@@ -1568,7 +1566,7 @@ namespace
         void const* hash;
         ULONG hashLength;
         DWORD flags;
-        int hr = import->GetFileProps(mdf, name.data(), (ULONG)name.size(), &nameLength, &hash, &hashLength, &flags);
+        HRESULT hr = import->GetFileProps(mdf, name.data(), (ULONG)name.size(), &nameLength, &hash, &hashLength, &flags);
         values.push_back(hr);
 
         if (hr == S_OK)
@@ -1610,7 +1608,7 @@ namespace
         mdToken implementation;
         mdTypeDef typeDef;
         DWORD flags;
-        int hr = import->GetExportedTypeProps(mdf, name.data(), (ULONG)name.size(), &nameLength, &implementation, &typeDef, &flags);
+        HRESULT hr = import->GetExportedTypeProps(mdf, name.data(), (ULONG)name.size(), &nameLength, &implementation, &typeDef, &flags);
         values.push_back(hr);
 
         if (hr == S_OK)
@@ -1655,7 +1653,7 @@ namespace
         ULONG offset;
         mdToken implementation;
         DWORD flags;
-        int hr = import->GetManifestResourceProps(mmr, name.data(), (ULONG)name.size(), &nameLength, &implementation, &offset, &flags);
+        HRESULT hr = import->GetManifestResourceProps(mmr, name.data(), (ULONG)name.size(), &nameLength, &implementation, &offset, &flags);
         values.push_back(hr);
 
         if (hr == S_OK)
@@ -1676,8 +1674,6 @@ namespace
         ASSERT_EQUAL(S_OK, hr);
         return exported;
     }
-
-
     uint32_t FindManifestResourceByName(IMetaDataAssemblyImport* import, LPCWSTR name)
     {
         mdManifestResource resource;
@@ -1899,34 +1895,29 @@ TestResult UnitImportAPIs(void const* data, uint32_t dataLen)
     ASSERT_EQUAL(S_OK, currentImport->QueryInterface(IID_IMetaDataAssemblyImport, (void**)&currentAssembly));
 
     auto assemblyTokens = ASSERT_AND_RETURN(GetAssemblyFromScope(baselineAssembly), GetAssemblyFromScope(currentAssembly));
-
     for (auto assembly : assemblyTokens)
     {
         ASSERT_EQUAL(GetAssemblyProps(baselineAssembly, assembly), GetAssemblyProps(currentAssembly, assembly));
     }
 
     auto assemblyRefs = ASSERT_AND_RETURN(EnumAssemblyRefs(baselineAssembly), EnumAssemblyRefs(currentAssembly));
-
     for (auto assemblyRef : assemblyRefs)
     {
         ASSERT_EQUAL(GetAssemblyRefProps(baselineAssembly, assemblyRef), GetAssemblyRefProps(currentAssembly, assemblyRef));
     }
 
     auto files = ASSERT_AND_RETURN(EnumFiles(baselineAssembly), EnumFiles(currentAssembly));
-
     for (auto file : files)
     {
         ASSERT_EQUAL(GetFileProps(baselineAssembly, file), GetFileProps(currentAssembly, file));
     }
 
     auto exports = ASSERT_AND_RETURN(EnumExportedTypes(baselineAssembly), EnumExportedTypes(currentAssembly));
-
     for (auto exportedType : exports)
     {
         std::vector<WCHAR> name;
         uint32_t implementation;
         ASSERT_EQUAL(GetExportedTypeProps(baselineAssembly, exportedType, name, implementation), GetExportedTypeProps(currentAssembly, exportedType, name, implementation));
-
         if (name.size() > 0 && name.size() < CharBuffer)
         {
             // We don't handle truncation well, so just skip any cases where we might have a truncated name.
@@ -1935,7 +1926,6 @@ TestResult UnitImportAPIs(void const* data, uint32_t dataLen)
     }
 
     auto resources = ASSERT_AND_RETURN(EnumManifestResources(baselineAssembly), EnumManifestResources(currentAssembly));
-
     for (auto resource : resources)
     {
         std::vector<WCHAR> name;

@@ -3613,8 +3613,6 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetManifestResourceProps(
 
         *pdwResourceFlags = resourceFlags;
     }
-
-
     if (szName != nullptr || pchName != nullptr)
     {
         char const* name;
@@ -3794,7 +3792,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::FindManifestResourceByName(
     if (!md_create_cursor(_md_ptr.get(), mdtid_ManifestResource, &cursor, &count))
         return CLDB_E_RECORD_NOTFOUND;
 
-    pal::StringConvert<WCHAR, char> cvt(szName);
+    pal::StringConvert<WCHAR, char> cvt{ szName };
     if (!cvt.Success())
         return E_INVALIDARG;
     
