@@ -307,7 +307,7 @@ bool md_create_writable_handle(void const* data, size_t data_len, mdhandle_t* ha
     if (!md_create_handle(data, data_len, &read_only_handle))
         return false;
     
-    mdcxt_t* pcxt = extract_mdcxt(handle);
+    mdcxt_t* pcxt = extract_mdcxt(read_only_handle);
     pcxt->context_flags |= mdc_editable;
     pcxt->editor = allocate_editor(pcxt);
     if (pcxt->editor == NULL)

@@ -53,10 +53,6 @@ namespace
             if (ppIUnk == nullptr)
                 return E_INVALIDARG;
 
-            // Only support the read-only state
-            if (!(dwOpenFlags & ofReadOnly))
-                return E_INVALIDARG;
-
             cotaskmem_ptr nowOwned;
             if (dwOpenFlags & ofTakeOwnership)
                 nowOwned.reset((void*)pData);

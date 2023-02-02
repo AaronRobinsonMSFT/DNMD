@@ -11,7 +11,7 @@
 class ControllingIUnknown final : public IUnknown
 {
 private:
-    std::atomic<int32_t> _refCount;
+    std::atomic<int32_t> _refCount = 1;
     std::vector<TearOffUnknown*> _tearOffs;
 public:
     ControllingIUnknown() = default;
