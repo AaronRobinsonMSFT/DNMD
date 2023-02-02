@@ -199,9 +199,22 @@ namespace
         return hash;
     }
 
-    std::vector<size_t> GetCustomAttributeByName(IMetaDataImport2* import, LPCWSTR customAttr, mdToken tkObj)
+    // Based on https://create.stephan-brumme.com/fnv-hash/
+    uint32_t HashByteArray(void const* arr, size_t byteLength)
     {
-        std::vector<size_t> values;
+        uint32_t hash = Seed;
+        auto curr = (uint8_t const*)arr;
+        auto end = curr + byteLength;
+        for (; curr < end; ++curr)
+        {
+            hash = fnv1a(*curr, hash);
+        }
+        return hash;
+    }
+
+    std::vector<uint32_t> GetCustomAttributeByName(IMetaDataImport2* import, LPCWSTR customAttr, mdToken tkObj)
+    {
+        std::vector<uint32_t> values;
 
         void const* ppData;
         ULONG pcbData;
@@ -213,19 +226,19 @@ namespace
         values.push_back(hr);
         if (hr == S_OK)
         {
-            values.push_back((size_t)ppData);
+            values.push_back(HashByteArray(ppData, pcbData));
             values.push_back(pcbData);
         }
         return values;
     }
 
-    std::vector<size_t> GetCustomAttribute_Nullable(IMetaDataImport2* import, mdToken tkObj)
+    std::vector<uint32_t> GetCustomAttribute_Nullable(IMetaDataImport2* import, mdToken tkObj)
     {
         auto NullableAttrName = W("System.Runtime.CompilerServices.NullableAttribute");
         return GetCustomAttributeByName(import, NullableAttrName, tkObj);
     }
 
-    std::vector<size_t> GetCustomAttribute_CompilerGenerated(IMetaDataImport2* import, mdToken tkObj)
+    std::vector<uint32_t> GetCustomAttribute_CompilerGenerated(IMetaDataImport2* import, mdToken tkObj)
     {
         auto CompilerGeneratedAttrName = W("System.Runtime.CompilerServices.CompilerGeneratedAttribute");
         return GetCustomAttributeByName(import, CompilerGeneratedAttrName, tkObj);
@@ -647,9 +660,9 @@ namespace
         return values;
     }
 
-    std::vector<size_t> EnumPermissionSetsAndGetProps(IMetaDataImport2* import, mdToken permTk)
+    std::vector<uint32_t> EnumPermissionSetsAndGetProps(IMetaDataImport2* import, mdToken permTk)
     {
-        std::vector<size_t> values;
+        std::vector<uint32_t> values;
         std::vector<uint32_t> tokensBuffer(EnumBuffer);
 
         // See CorDeclSecurity for actions definitions
@@ -680,7 +693,7 @@ namespace
                 if (hr != S_OK)
                 {
                     values.push_back(a);
-                    values.push_back((size_t)ppvPermission);
+                    values.push_back(HashByteArray(ppvPermission, pcbPermission));
                     values.push_back(pcbPermission);
                 }
             }
@@ -788,9 +801,9 @@ namespace
         return values;
     }
 
-    std::vector<size_t> GetMethodProps(IMetaDataImport2* import, mdToken tk, void const** sig = nullptr, ULONG* sigLen = nullptr)
+    std::vector<uint32_t> GetMethodProps(IMetaDataImport2* import, mdToken tk, void const** sig = nullptr, ULONG* sigLen = nullptr)
     {
-        std::vector<size_t> values;
+        std::vector<uint32_t> values;
 
         mdTypeDef pClass;
         std::vector<WCHAR> name(CharBuffer);
@@ -818,7 +831,7 @@ namespace
             values.push_back(hash);
             values.push_back(pchMethod);
             values.push_back(pdwAttr);
-            values.push_back((size_t)ppvSigBlob);
+            values.push_back(HashByteArray(ppvSigBlob, pcbSigBlob));
             values.push_back(pcbSigBlob);
             values.push_back(pulCodeRVA);
             values.push_back(pdwImplFlags);
@@ -831,9 +844,9 @@ namespace
         return values;
     }
 
-    std::vector<size_t> GetParamProps(IMetaDataImport2* import, mdToken tk)
+    std::vector<uint32_t> GetParamProps(IMetaDataImport2* import, mdToken tk)
     {
-        std::vector<size_t> values;
+        std::vector<uint32_t> values;
 
         mdMethodDef pmd;
         ULONG pulSequence;
@@ -867,15 +880,15 @@ namespace
 
             // Due to how the "null" pointer is computed, only add when non-zero
             if (pcchValue != 0)
-                values.push_back((size_t)ppValue);
+                values.push_back(HashByteArray(ppValue, pcchValue));
             values.push_back(pcchValue);
         }
         return values;
     }
 
-    std::vector<size_t> GetMethodSpecProps(IMetaDataImport2* import, mdMethodSpec methodSpec)
+    std::vector<uint32_t> GetMethodSpecProps(IMetaDataImport2* import, mdMethodSpec methodSpec)
     {
-        std::vector<size_t> values;
+        std::vector<uint32_t> values;
 
         mdToken parent;
         PCCOR_SIGNATURE sig;
@@ -889,15 +902,15 @@ namespace
         if (hr == S_OK)
         {
             values.push_back(parent);
-            values.push_back((size_t)sig);
+            values.push_back(HashByteArray(sig, sigLen));
             values.push_back(sigLen);
         }
         return values;
     }
 
-    std::vector<size_t> GetMemberRefProps(IMetaDataImport2* import, mdMemberRef mr, PCCOR_SIGNATURE* sig = nullptr, ULONG* sigLen = nullptr)
+    std::vector<uint32_t> GetMemberRefProps(IMetaDataImport2* import, mdMemberRef mr, PCCOR_SIGNATURE* sig = nullptr, ULONG* sigLen = nullptr)
     {
-        std::vector<size_t> values;
+        std::vector<uint32_t> values;
 
         mdToken ptk;
         std::vector<WCHAR> name(CharBuffer);
@@ -919,7 +932,7 @@ namespace
             uint32_t hash = HashCharArray(name, pchMember);
             values.push_back(hash);
             values.push_back(pchMember);
-            values.push_back((size_t)ppvSigBlob);
+            values.push_back(HashByteArray(ppvSigBlob, pcbSigBlob));
             values.push_back(pcbSigBlob);
 
             if (sig != nullptr)
@@ -987,9 +1000,9 @@ namespace
         return values;
     }
 
-    std::vector<size_t> GetPropertyProps(IMetaDataImport2* import, mdProperty tk, std::vector<mdMethodDef>* methoddefs = nullptr)
+    std::vector<uint32_t> GetPropertyProps(IMetaDataImport2* import, mdProperty tk, std::vector<mdMethodDef>* methoddefs = nullptr)
     {
-        std::vector<size_t> values;
+        std::vector<uint32_t> values;
 
         mdTypeDef pClass;
         std::vector<WCHAR> name(CharBuffer);
@@ -1028,10 +1041,10 @@ namespace
             values.push_back(hash);
             values.push_back(pchProperty);
             values.push_back(pdwPropFlags);
-            values.push_back((size_t)sig);
+            values.push_back(HashByteArray(sig, sigLen));
             values.push_back(sigLen);
             values.push_back(pdwCPlusTypeFlag);
-            values.push_back((size_t)ppDefaultValue);
+            values.push_back(HashByteArray(ppDefaultValue, pcchDefaultValue));
             values.push_back(pcchDefaultValue);
             values.push_back(pmdSetter);
             values.push_back(pmdGetter);
@@ -1052,9 +1065,9 @@ namespace
         return values;
     }
 
-    std::vector<size_t> GetFieldProps(IMetaDataImport2* import, mdFieldDef tk, void const** sig = nullptr, ULONG* sigLen = nullptr)
+    std::vector<uint32_t> GetFieldProps(IMetaDataImport2* import, mdFieldDef tk, void const** sig = nullptr, ULONG* sigLen = nullptr)
     {
-        std::vector<size_t> values;
+        std::vector<uint32_t> values;
 
         mdTypeDef pClass;
         std::vector<WCHAR> name(CharBuffer);
@@ -1085,7 +1098,7 @@ namespace
             values.push_back(hash);
             values.push_back(pchField);
             values.push_back(pdwAttr);
-            values.push_back((size_t)ppvSigBlob);
+            values.push_back(HashByteArray(ppvSigBlob, pcbSigBlob));
             values.push_back(pcbSigBlob);
             values.push_back(pdwCPlusTypeFlag);
 
@@ -1102,9 +1115,9 @@ namespace
         return values;
     }
 
-    std::vector<size_t> GetCustomAttributeProps(IMetaDataImport2* import, mdCustomAttribute cv)
+    std::vector<uint32_t> GetCustomAttributeProps(IMetaDataImport2* import, mdCustomAttribute cv)
     {
-        std::vector<size_t> values;
+        std::vector<uint32_t> values;
 
         mdToken ptkObj;
         mdToken ptkType;
@@ -1121,7 +1134,7 @@ namespace
         {
             values.push_back(ptkObj);
             values.push_back(ptkType);
-            values.push_back((size_t)sig);
+            values.push_back(HashByteArray(sig, sigLen));
             values.push_back(sigLen);
         }
         return values;
@@ -1224,9 +1237,9 @@ namespace
         return values;
     }
 
-    std::vector<size_t> GetTypeSpecFromToken(IMetaDataImport2* import, mdTypeSpec typespec)
+    std::vector<uint32_t> GetTypeSpecFromToken(IMetaDataImport2* import, mdTypeSpec typespec)
     {
-        std::vector<size_t> values;
+        std::vector<uint32_t> values;
 
         PCCOR_SIGNATURE sig;
         ULONG sigLen;
@@ -1234,15 +1247,15 @@ namespace
         values.push_back(hr);
         if (hr == S_OK)
         {
-            values.push_back((size_t)sig);
+            values.push_back(HashByteArray(sig, sigLen));
             values.push_back(sigLen);
         }
         return values;
     }
 
-    std::vector<size_t> GetSigFromToken(IMetaDataImport2* import, mdSignature tkSig)
+    std::vector<uint32_t> GetSigFromToken(IMetaDataImport2* import, mdSignature tkSig)
     {
-        std::vector<size_t> values;
+        std::vector<uint32_t> values;
 
         PCCOR_SIGNATURE sig;
         ULONG sigLen;
@@ -1250,7 +1263,7 @@ namespace
         values.push_back(hr);
         if (hr == S_OK)
         {
-            values.push_back((size_t)sig);
+            values.push_back(HashByteArray(sig, sigLen));
             values.push_back(sigLen);
         }
         return values;
@@ -1287,21 +1300,24 @@ namespace
         return values;
     }
 
-    std::vector<size_t> GetNameFromToken(IMetaDataImport2* import, mdToken tkObj)
+    std::vector<uint32_t> GetNameFromToken(IMetaDataImport2* import, mdToken tkObj)
     {
-        std::vector<size_t> values;
+        std::vector<uint32_t> values;
 
         MDUTF8CSTR pszUtf8NamePtr;
         HRESULT hr = import->GetNameFromToken(tkObj, &pszUtf8NamePtr);
         values.push_back(hr);
         if (hr == S_OK)
-            values.push_back((size_t)pszUtf8NamePtr);
+        {
+            std::string str(pszUtf8NamePtr);
+            values.push_back(HashByteArray(str.c_str(), str.length()));
+        }
         return values;
     }
 
-    std::vector<size_t> GetFieldMarshal(IMetaDataImport2* import, mdToken tk)
+    std::vector<uint32_t> GetFieldMarshal(IMetaDataImport2* import, mdToken tk)
     {
-        std::vector<size_t> values;
+        std::vector<uint32_t> values;
 
         PCCOR_SIGNATURE sig;
         ULONG sigLen;
@@ -1309,7 +1325,7 @@ namespace
         values.push_back(hr);
         if (hr == S_OK)
         {
-            values.push_back((size_t)sig);
+            values.push_back(HashByteArray(sig, sigLen));
             values.push_back(sigLen);
         }
         return values;
