@@ -1309,8 +1309,7 @@ namespace
         values.push_back(hr);
         if (hr == S_OK)
         {
-            std::string str(pszUtf8NamePtr);
-            values.push_back(HashByteArray(str.c_str(), str.length()));
+            values.push_back(HashByteArray(pszUtf8NamePtr, ::strlen(pszUtf8NamePtr) + 1));
         }
         return values;
     }
