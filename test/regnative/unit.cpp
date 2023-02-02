@@ -1601,7 +1601,7 @@ namespace
         return tokens;
     }
 
-    std::vector<uint32_t> GetExportedTypeProps(IMetaDataAssemblyImport* import, mdFile mdf, /* out */ std::basic_string<WCHAR>& nameBuffer, /* out */ uint32_t& implementationToken)
+    std::vector<uint32_t> GetExportedTypeProps(IMetaDataAssemblyImport* import, mdFile mdf, /* out */ std::vector<WCHAR>& nameBuffer, /* out */ uint32_t& implementationToken)
     {
         std::vector<uint32_t> values;
         std::vector<WCHAR> name(CharBuffer);
@@ -1621,7 +1621,7 @@ namespace
             values.push_back(typeDef);
             values.push_back(flags);
             
-            nameBuffer = { name.data(), nameLength };
+            nameBuffer = { name.begin(), name.begin() + nameLength };
             implementationToken = implementation;
         }
         return values;
@@ -1646,7 +1646,7 @@ namespace
         return tokens;
     }
 
-    std::vector<uint32_t> GetManifestResourceProps(IMetaDataAssemblyImport* import, mdManifestResource mmr, /* out */ std::basic_string<WCHAR>& nameBuffer)
+    std::vector<uint32_t> GetManifestResourceProps(IMetaDataAssemblyImport* import, mdManifestResource mmr, /* out */ std::vector<WCHAR>& nameBuffer)
     {
         std::vector<uint32_t> values;
         std::vector<WCHAR> name(CharBuffer);
@@ -1660,7 +1660,7 @@ namespace
 
         if (hr == S_OK)
         {
-            nameBuffer = { name.data(), nameLength };
+            nameBuffer = { name.begin(), name.begin() + nameLength };
             values.push_back(HashCharArray(name, nameLength));
             values.push_back(nameLength);
             values.push_back(implementation);
@@ -1923,7 +1923,7 @@ TestResult UnitImportAPIs(void const* data, uint32_t dataLen)
 
     for (auto exportedType : exports)
     {
-        std::basic_string<WCHAR> name;
+        std::vector<WCHAR> name;
         uint32_t implementation;
         ASSERT_EQUAL(GetExportedTypeProps(baselineAssembly, exportedType, name, implementation), GetExportedTypeProps(currentAssembly, exportedType, name, implementation));
 
@@ -1938,7 +1938,7 @@ TestResult UnitImportAPIs(void const* data, uint32_t dataLen)
 
     for (auto resource : resources)
     {
-        std::basic_string<WCHAR> name;
+        std::vector<WCHAR> name;
         ASSERT_EQUAL(GetManifestResourceProps(baselineAssembly, resource, name), GetManifestResourceProps(currentAssembly, resource, name));
 
         if (name.size() > 0 && name.size() < CharBuffer)
