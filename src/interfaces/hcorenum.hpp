@@ -1,8 +1,9 @@
 #ifndef _SRC_INTERFACES_HCORENUM_HPP_
 #define _SRC_INTERFACES_HCORENUM_HPP_
 
-#include <dnmd.hpp>
+#include "internal/dnmd_platform.hpp"
 #include <cstdint>
+
 
 enum class HCORENUMType : uint32_t
 {

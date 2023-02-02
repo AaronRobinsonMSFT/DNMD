@@ -1,5 +1,4 @@
 #include "hcorenum.hpp"
-#include "internal/dnmd_platform.hpp"
 #include <cassert>
 
 #define RETURN_IF_FAILED(exp) \

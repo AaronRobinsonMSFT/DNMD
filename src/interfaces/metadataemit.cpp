@@ -1,4 +1,4 @@
-#include "MetadataEmit.hpp"
+#include "metadataemit.hpp"
 
 HRESULT MetadataEmit::SetModuleProps(
         LPCWSTR     szName)
