@@ -1921,7 +1921,7 @@ TestResult UnitImportAPIs(void const* data, uint32_t dataLen)
         if (name.size() > 0 && name.size() < CharBuffer)
         {
             // We don't handle truncation well, so just skip any cases where we might have a truncated name.
-            ASSERT_EQUAL(FindExportedTypeByName(baselineAssembly, name.c_str(), implementation), FindExportedTypeByName(currentAssembly, name.c_str(), implementation));
+            ASSERT_EQUAL(FindExportedTypeByName(baselineAssembly, name.data(), implementation), FindExportedTypeByName(currentAssembly, name.data(), implementation));
         }
     }
 
@@ -1934,7 +1934,7 @@ TestResult UnitImportAPIs(void const* data, uint32_t dataLen)
         if (name.size() > 0 && name.size() < CharBuffer)
         {
             // We don't handle truncation well, so just skip any cases where we might have a truncated name.
-            ASSERT_EQUAL(FindManifestResourceByName(baselineAssembly, name.c_str()), FindManifestResourceByName(currentAssembly, name.c_str()));
+            ASSERT_EQUAL(FindManifestResourceByName(baselineAssembly, name.data()), FindManifestResourceByName(currentAssembly, name.data()));
         }
     }
 
