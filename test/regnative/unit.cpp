@@ -880,10 +880,7 @@ namespace
             values.push_back(pchName);
             values.push_back(pdwAttr);
             values.push_back(pdwCPlusTypeFlag);
-
-            // Due to how the "null" pointer is computed, only add when non-zero
-            if (pcchValue != 0)
-                values.push_back(HashByteArray(ppValue, pcchValue));
+            values.push_back(HashByteArray(ppValue, pcchValue));
             values.push_back(pcchValue);
         }
         return values;
@@ -1104,10 +1101,7 @@ namespace
             values.push_back(HashByteArray(ppvSigBlob, pcbSigBlob));
             values.push_back(pcbSigBlob);
             values.push_back(pdwCPlusTypeFlag);
-
-            // Due to how the "null" pointer is computed, only add when non-zero
-            if (pcchValue != 0)
-                values.push_back((size_t)ppValue);
+            values.push_back(HashByteArray(ppValue, pcchValue));
             values.push_back(pcchValue);
 
             if (sig != nullptr)
