@@ -170,8 +170,11 @@ HRESULT UnitInitialize(IMetaDataDispenser* baseline)
 
 namespace
 {
-    int const EnumBuffer = 32;
-    int const CharBuffer = 64;
+    template<typename T>
+    using static_enum_buffer = std::array<T, 32>;
+
+    template<typename T>
+    using static_char_buffer = std::array<T, 64>;
 
     // default values recommended by http://isthe.com/chongo/tech/comp/fnv/
     uint32_t const Prime = 0x01000193; //   16777619
@@ -183,7 +186,7 @@ namespace
     }
 
     // Based on https://create.stephan-brumme.com/fnv-hash/
-    uint32_t HashCharArray(std::vector<WCHAR> const& arr, uint32_t written)
+    uint32_t HashCharArray(static_char_buffer<WCHAR> const& arr, uint32_t written)
     {
         uint32_t hash = Seed;
         auto curr = std::begin(arr);
@@ -255,7 +258,7 @@ namespace
     std::vector<uint32_t> EnumTypeDefs(IMetaDataImport2* import)
     {
         std::vector<uint32_t> tokens;
-        std::vector<uint32_t> tokensBuffer(EnumBuffer);
+        static_enum_buffer<uint32_t> tokensBuffer{};
         HCORENUM hcorenum{};
         ULONG returned;
         while (0 == import->EnumTypeDefs(&hcorenum, tokensBuffer.data(), (ULONG)tokensBuffer.size(), &returned)
@@ -273,7 +276,7 @@ namespace
     std::vector<uint32_t> EnumTypeRefs(IMetaDataImport2* import)
     {
         std::vector<uint32_t> tokens;
-        std::vector<uint32_t> tokensBuffer(EnumBuffer);
+        static_enum_buffer<uint32_t> tokensBuffer{};
         HCORENUM hcorenum{};
         ULONG returned;
         while (0 == import->EnumTypeRefs(&hcorenum, tokensBuffer.data(), (ULONG)tokensBuffer.size(), &returned)
@@ -289,7 +292,7 @@ namespace
     std::vector<uint32_t> EnumTypeSpecs(IMetaDataImport2* import)
     {
         std::vector<uint32_t> tokens;
-        std::vector<uint32_t> tokensBuffer(EnumBuffer);
+        static_enum_buffer<uint32_t> tokensBuffer{};
         HCORENUM hcorenum{};
         ULONG returned;
         while (0 == import->EnumTypeSpecs(&hcorenum, tokensBuffer.data(), (ULONG)tokensBuffer.size(), &returned)
@@ -305,7 +308,7 @@ namespace
     std::vector<uint32_t> EnumModuleRefs(IMetaDataImport2* import)
     {
         std::vector<uint32_t> tokens;
-        std::vector<uint32_t> tokensBuffer(EnumBuffer);
+        static_enum_buffer<uint32_t> tokensBuffer{};
         HCORENUM hcorenum{};
         ULONG returned;
         while (0 == import->EnumModuleRefs(&hcorenum, tokensBuffer.data(), (ULONG)tokensBuffer.size(), &returned)
@@ -321,7 +324,7 @@ namespace
     std::vector<uint32_t> EnumInterfaceImpls(IMetaDataImport2* import, mdTypeDef typdef)
     {
         std::vector<uint32_t> tokens;
-        std::vector<uint32_t> tokensBuffer(EnumBuffer);
+        static_enum_buffer<uint32_t> tokensBuffer{};
         HCORENUM hcorenum{};
         ULONG returned;
         while (0 == import->EnumInterfaceImpls(&hcorenum, typdef, tokensBuffer.data(), (ULONG)tokensBuffer.size(), &returned)
@@ -337,7 +340,7 @@ namespace
     std::vector<uint32_t> EnumMembers(IMetaDataImport2* import, mdTypeDef typdef)
     {
         std::vector<uint32_t> tokens;
-        std::vector<uint32_t> tokensBuffer(EnumBuffer);
+        static_enum_buffer<uint32_t> tokensBuffer{};
         HCORENUM hcorenum{};
         ULONG returned;
         while (0 == import->EnumMembers(&hcorenum, typdef, tokensBuffer.data(), (ULONG)tokensBuffer.size(), &returned)
@@ -353,7 +356,7 @@ namespace
     std::vector<uint32_t> EnumMembersWithName(IMetaDataImport2* import, mdTypeDef typdef, LPCWSTR memberName = W(".ctor"))
     {
         std::vector<uint32_t> tokens;
-        std::vector<uint32_t> tokensBuffer(EnumBuffer);
+        static_enum_buffer<uint32_t> tokensBuffer{};
         HCORENUM hcorenum{};
         ULONG returned;
         while (0 == import->EnumMembersWithName(&hcorenum, typdef, memberName, tokensBuffer.data(), (ULONG)tokensBuffer.size(), &returned)
@@ -369,7 +372,7 @@ namespace
     std::vector<uint32_t> EnumMemberRefs(IMetaDataImport2* import, mdToken tkParent)
     {
         std::vector<uint32_t> tokens;
-        std::vector<uint32_t> tokensBuffer(EnumBuffer);
+        static_enum_buffer<uint32_t> tokensBuffer{};
         HCORENUM hcorenum{};
         ULONG returned;
         while (0 == import->EnumMemberRefs(&hcorenum, tkParent, tokensBuffer.data(), (ULONG)tokensBuffer.size(), &returned)
@@ -385,7 +388,7 @@ namespace
     std::vector<uint32_t> EnumMethods(IMetaDataImport2* import, mdTypeDef typdef)
     {
         std::vector<uint32_t> tokens;
-        std::vector<uint32_t> tokensBuffer(EnumBuffer);
+        static_enum_buffer<uint32_t> tokensBuffer{};
         HCORENUM hcorenum{};
         ULONG returned;
         while (0 == import->EnumMethods(&hcorenum, typdef, tokensBuffer.data(), (ULONG)tokensBuffer.size(), &returned)
@@ -401,7 +404,7 @@ namespace
     std::vector<uint32_t> EnumMethodsWithName(IMetaDataImport2* import, mdToken typdef, LPCWSTR methodName = W(".ctor"))
     {
         std::vector<uint32_t> tokens;
-        std::vector<uint32_t> tokensBuffer(EnumBuffer);
+        static_enum_buffer<uint32_t> tokensBuffer{};
         HCORENUM hcorenum{};
         ULONG returned;
         while (0 == import->EnumMethodsWithName(&hcorenum, typdef, methodName, tokensBuffer.data(), (ULONG)tokensBuffer.size(), &returned)
@@ -417,8 +420,8 @@ namespace
     std::vector<uint32_t> EnumMethodImpls(IMetaDataImport2* import, mdTypeDef typdef)
     {
         std::vector<uint32_t> tokens;
-        std::vector<uint32_t> tokensBuffer1(EnumBuffer);
-        std::vector<uint32_t> tokensBuffer2(EnumBuffer);
+        static_enum_buffer<uint32_t> tokensBuffer1{};
+        static_enum_buffer<uint32_t> tokensBuffer2{};
         HCORENUM hcorenum{};
         ULONG returned;
         while (0 == import->EnumMethodImpls(&hcorenum, typdef, tokensBuffer1.data(), tokensBuffer2.data(), (ULONG)tokensBuffer1.size(), &returned)
@@ -437,7 +440,7 @@ namespace
     std::vector<uint32_t> EnumMethodSemantics(IMetaDataImport2* import, mdMethodDef mb)
     {
         std::vector<uint32_t> tokens;
-        std::vector<uint32_t> tokensBuffer(EnumBuffer);
+        static_enum_buffer<uint32_t> tokensBuffer{};
         HCORENUM hcorenum{};
         ULONG returned;
         while (0 == import->EnumMethodSemantics(&hcorenum, mb, tokensBuffer.data(), (ULONG)tokensBuffer.size(), &returned)
@@ -453,7 +456,7 @@ namespace
     std::vector<uint32_t> EnumParams(IMetaDataImport2* import, mdMethodDef methoddef)
     {
         std::vector<uint32_t> tokens;
-        std::vector<uint32_t> tokensBuffer(EnumBuffer);
+        static_enum_buffer<uint32_t> tokensBuffer{};
         HCORENUM hcorenum{};
         ULONG returned;
         while (0 == import->EnumParams(&hcorenum, methoddef, tokensBuffer.data(), (ULONG)tokensBuffer.size(), &returned)
@@ -469,7 +472,7 @@ namespace
     std::vector<uint32_t> EnumMethodSpecs(IMetaDataImport2* import, mdToken tk)
     {
         std::vector<uint32_t> tokens;
-        std::vector<uint32_t> tokensBuffer(EnumBuffer);
+        static_enum_buffer<uint32_t> tokensBuffer{};
         HCORENUM hcorenum{};
         ULONG returned;
         while (0 == import->EnumMethodSpecs(&hcorenum, tk, tokensBuffer.data(), (ULONG)tokensBuffer.size(), &returned)
@@ -485,7 +488,7 @@ namespace
     std::vector<uint32_t> EnumEvents(IMetaDataImport2* import, mdTypeDef tk)
     {
         std::vector<uint32_t> tokens;
-        std::vector<uint32_t> tokensBuffer(EnumBuffer);
+        static_enum_buffer<uint32_t> tokensBuffer{};
         HCORENUM hcorenum{};
         ULONG returned;
         while (0 == import->EnumEvents(&hcorenum, tk, tokensBuffer.data(), (ULONG)tokensBuffer.size(), &returned)
@@ -501,7 +504,7 @@ namespace
     std::vector<uint32_t> EnumProperties(IMetaDataImport2* import, mdTypeDef tk)
     {
         std::vector<uint32_t> tokens;
-        std::vector<uint32_t> tokensBuffer(EnumBuffer);
+        static_enum_buffer<uint32_t> tokensBuffer{};
         HCORENUM hcorenum{};
         ULONG returned;
         while (0 == import->EnumProperties(&hcorenum, tk, tokensBuffer.data(), (ULONG)tokensBuffer.size(), &returned)
@@ -517,7 +520,7 @@ namespace
     std::vector<uint32_t> EnumFields(IMetaDataImport2* import, mdTypeDef tk)
     {
         std::vector<uint32_t> tokens;
-        std::vector<uint32_t> tokensBuffer(EnumBuffer);
+        static_enum_buffer<uint32_t> tokensBuffer{};
         HCORENUM hcorenum{};
         ULONG returned;
         while (0 == import->EnumFields(&hcorenum, tk, tokensBuffer.data(), (ULONG)tokensBuffer.size(), &returned)
@@ -533,7 +536,7 @@ namespace
     std::vector<uint32_t> EnumFieldsWithName(IMetaDataImport2* import, mdTypeDef tk, LPCWSTR name = W("_name"))
     {
         std::vector<uint32_t> tokens;
-        std::vector<uint32_t> tokensBuffer(EnumBuffer);
+        static_enum_buffer<uint32_t> tokensBuffer{};
         HCORENUM hcorenum{};
         ULONG returned;
         while (0 == import->EnumFieldsWithName(&hcorenum, tk, name, tokensBuffer.data(), (ULONG)tokensBuffer.size(), &returned)
@@ -549,7 +552,7 @@ namespace
     std::vector<uint32_t> EnumSignatures(IMetaDataImport2* import)
     {
         std::vector<uint32_t> tokens;
-        std::vector<uint32_t> tokensBuffer(EnumBuffer);
+        static_enum_buffer<uint32_t> tokensBuffer{};
         HCORENUM hcorenum{};
         ULONG returned;
         while (0 == import->EnumSignatures(&hcorenum, tokensBuffer.data(), (ULONG)tokensBuffer.size(), &returned)
@@ -565,7 +568,7 @@ namespace
     std::vector<uint32_t> EnumUserStrings(IMetaDataImport2* import)
     {
         std::vector<uint32_t> tokens;
-        std::vector<uint32_t> tokensBuffer(EnumBuffer);
+        static_enum_buffer<uint32_t> tokensBuffer{};
         HCORENUM hcorenum{};
         ULONG returned;
         while (0 == import->EnumUserStrings(&hcorenum, tokensBuffer.data(), (ULONG)tokensBuffer.size(), &returned)
@@ -581,7 +584,7 @@ namespace
     std::vector<uint32_t> EnumCustomAttributes(IMetaDataImport2* import, mdToken tk = mdTokenNil, mdToken tkType = mdTokenNil)
     {
         std::vector<uint32_t> tokens;
-        std::vector<uint32_t> tokensBuffer(EnumBuffer);
+        static_enum_buffer<uint32_t> tokensBuffer{};
         HCORENUM hcorenum{};
         ULONG returned;
         while (0 == import->EnumCustomAttributes(&hcorenum, tk, tkType, tokensBuffer.data(), (ULONG)tokensBuffer.size(), &returned)
@@ -597,7 +600,7 @@ namespace
     std::vector<uint32_t> EnumGenericParams(IMetaDataImport2* import, mdToken tk)
     {
         std::vector<uint32_t> tokens;
-        std::vector<uint32_t> tokensBuffer(EnumBuffer);
+        static_enum_buffer<uint32_t> tokensBuffer{};
         HCORENUM hcorenum{};
         ULONG returned;
         while (0 == import->EnumGenericParams(&hcorenum, tk, tokensBuffer.data(), (ULONG)tokensBuffer.size(), &returned)
@@ -613,7 +616,7 @@ namespace
     std::vector<uint32_t> EnumGenericParamConstraints(IMetaDataImport2* import, mdGenericParam tk)
     {
         std::vector<uint32_t> tokens;
-        std::vector<uint32_t> tokensBuffer(EnumBuffer);
+        static_enum_buffer<uint32_t> tokensBuffer{};
         HCORENUM hcorenum{};
         ULONG returned;
         while (0 == import->EnumGenericParamConstraints(&hcorenum, tk, tokensBuffer.data(), (ULONG)tokensBuffer.size(), &returned)
@@ -663,7 +666,7 @@ namespace
     std::vector<uint32_t> EnumPermissionSetsAndGetProps(IMetaDataImport2* import, mdToken permTk)
     {
         std::vector<uint32_t> values;
-        std::vector<uint32_t> tokensBuffer(EnumBuffer);
+        static_enum_buffer<uint32_t> tokensBuffer{};
 
         // See CorDeclSecurity for actions definitions
         for (int32_t action = (int32_t)dclActionNil; action <= dclMaximumValue; ++action)
@@ -705,7 +708,7 @@ namespace
     {
         std::vector<uint32_t> values;
 
-        std::vector<WCHAR> name(CharBuffer);
+        static_char_buffer<WCHAR> name{};
         ULONG pchTypeDef;
         DWORD pdwTypeDefFlags;
         mdToken ptkExtends;
@@ -732,7 +735,7 @@ namespace
     {
         std::vector<uint32_t> values;
 
-        std::vector<WCHAR> name(CharBuffer);
+        static_char_buffer<WCHAR> name{};
         mdToken tkResolutionScope;
         ULONG pchTypeRef;
         HRESULT hr = import->GetTypeRefProps(typeref,
@@ -756,7 +759,7 @@ namespace
     {
         std::vector<uint32_t> values;
 
-        std::vector<WCHAR> name(CharBuffer);
+        static_char_buffer<WCHAR> name{};
         ULONG pchName;
         GUID mvid;
         HRESULT hr = import->GetScopeProps(
@@ -784,7 +787,7 @@ namespace
     {
         std::vector<uint32_t> values;
 
-        std::vector<WCHAR> name(CharBuffer);
+        static_char_buffer<WCHAR> name{};
         ULONG pchModuleRef;
         HRESULT hr = import->GetModuleRefProps(moduleref,
             name.data(),
@@ -806,7 +809,7 @@ namespace
         std::vector<uint32_t> values;
 
         mdTypeDef pClass;
-        std::vector<WCHAR> name(CharBuffer);
+        static_char_buffer<WCHAR> name{};
         ULONG pchMethod;
         DWORD pdwAttr;
         PCCOR_SIGNATURE ppvSigBlob;
@@ -850,7 +853,7 @@ namespace
 
         mdMethodDef pmd;
         ULONG pulSequence;
-        std::vector<WCHAR> name(CharBuffer);
+        static_char_buffer<WCHAR> name{};
         ULONG pchName;
         DWORD pdwAttr;
         DWORD pdwCPlusTypeFlag;
@@ -913,7 +916,7 @@ namespace
         std::vector<uint32_t> values;
 
         mdToken ptk;
-        std::vector<WCHAR> name(CharBuffer);
+        static_char_buffer<WCHAR> name{};
         ULONG pchMember;
         PCCOR_SIGNATURE ppvSigBlob;
         ULONG pcbSigBlob;
@@ -948,14 +951,14 @@ namespace
         std::vector<uint32_t> values;
 
         mdTypeDef pClass;
-        std::vector<WCHAR> name(CharBuffer);
+        static_char_buffer<WCHAR> name{};
         ULONG pchEvent;
         DWORD pdwEventFlags;
         mdToken ptkEventType;
         mdMethodDef pmdAddOn;
         mdMethodDef pmdRemoveOn;
         mdMethodDef pmdFire;
-        std::vector<mdMethodDef> rmdOtherMethod(CharBuffer);
+        static_enum_buffer<mdMethodDef> rmdOtherMethod;
         ULONG pcOtherMethod;
         HRESULT hr = import->GetEventProps(tk,
             &pClass,
@@ -1005,7 +1008,7 @@ namespace
         std::vector<uint32_t> values;
 
         mdTypeDef pClass;
-        std::vector<WCHAR> name(CharBuffer);
+        static_char_buffer<WCHAR> name{};
         ULONG pchProperty;
         DWORD pdwPropFlags;
         PCCOR_SIGNATURE sig;
@@ -1015,7 +1018,7 @@ namespace
         ULONG pcchDefaultValue;
         mdMethodDef pmdSetter;
         mdMethodDef pmdGetter;
-        std::vector<mdMethodDef> rmdOtherMethod(CharBuffer);
+        static_enum_buffer<mdMethodDef> rmdOtherMethod{};
         ULONG pcOtherMethod;
         HRESULT hr = import->GetPropertyProps(tk,
             &pClass,
@@ -1070,7 +1073,7 @@ namespace
         std::vector<uint32_t> values;
 
         mdTypeDef pClass;
-        std::vector<WCHAR> name(CharBuffer);
+        static_char_buffer<WCHAR> name{};
         ULONG pchField;
         DWORD pdwAttr;
         PCCOR_SIGNATURE ppvSigBlob;
@@ -1148,7 +1151,7 @@ namespace
         DWORD pdwParamFlags;
         mdToken ptOwner;
         DWORD reserved;
-        std::vector<WCHAR> name(CharBuffer);
+        static_char_buffer<WCHAR> name{};
         ULONG pchName;
         HRESULT hr = import->GetGenericParamProps(gp,
             &pulParamSeq,
@@ -1197,7 +1200,7 @@ namespace
         std::vector<uint32_t> values;
 
         DWORD pdwMappingFlags;
-        std::vector<WCHAR> name(CharBuffer);
+        static_char_buffer<WCHAR> name{};
         ULONG pchImportName;
         mdModuleRef pmrImportDLL;
         HRESULT hr = import->GetPinvokeMap(tk,
@@ -1287,7 +1290,7 @@ namespace
     {
         std::vector<uint32_t> values;
 
-        std::vector<WCHAR> name(CharBuffer);
+        static_char_buffer<WCHAR> name{};
         ULONG pchString;
         HRESULT hr = import->GetUserString(tkStr, name.data(), (ULONG)name.size(), &pchString);
         values.push_back(hr);
@@ -1419,7 +1422,7 @@ namespace
     {
         std::vector<uint32_t> values;
 
-        std::vector<WCHAR> name(CharBuffer);
+        static_char_buffer<WCHAR> name{};
         ULONG pccBufSize;
         HRESULT hr = import->GetVersionString(name.data(), (DWORD)name.size(), &pccBufSize);
         values.push_back(hr);
@@ -1448,7 +1451,7 @@ namespace
         {
             static auto ReadInMembers = [](IMetaDataImport2* import, HCORENUM& hcorenum, mdToken tk, std::vector<uint32_t>& tokens)
             {
-                std::vector<uint32_t> tokensBuffer(EnumBuffer);
+                static_enum_buffer<uint32_t> tokensBuffer{};
                 ULONG returned;
                 if (0 == import->EnumMembers(&hcorenum, tk, tokensBuffer.data(), (ULONG)tokensBuffer.size(), &returned)
                     && returned != 0)
@@ -1657,10 +1660,9 @@ TestResult UnitLongRunningAPIs(void const* data, uint32_t dataLen)
     static auto VerifyFindMemberRef = [](IMetaDataImport2* import, mdToken memberRef) -> std::vector<uint32_t>
     {
         std::vector<uint32_t> values;
-        std::vector<WCHAR> nameBuffer(CharBuffer);
 
         mdToken ptk;
-        std::vector<WCHAR> name(CharBuffer);
+        static_char_buffer<WCHAR> name{};
         ULONG pchMember;
         PCCOR_SIGNATURE ppvSigBlob;
         ULONG pcbSigBlob;
@@ -1752,7 +1754,7 @@ TestResult UnitFindAPIs(void const* data, uint32_t dataLen)
 
     static auto GetTypeDefBaseToken = [](IMetaDataImport2* import, mdTypeDef tk) -> mdToken
     {
-        std::vector<WCHAR> name(CharBuffer);
+        static_char_buffer<WCHAR> name{};
         ULONG pchTypeDef;
         DWORD pdwTypeDefFlags;
         mdToken ptkExtends;
