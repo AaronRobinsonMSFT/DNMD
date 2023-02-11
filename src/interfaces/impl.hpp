@@ -8,6 +8,9 @@
 
 #include <internal/dnmd_platform.hpp>
 
+// C++ lifetime wrapper for CoTaskMemAlloc'd memory
+using cotaskmem_ptr = dncp::cotaskmem_ptr<void>;
+
 class MetadataImportRO final : public IMetaDataImport2, public IMetaDataAssemblyImport
 {
     std::atomic_uint32_t _refCount;
