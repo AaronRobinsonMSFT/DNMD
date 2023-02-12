@@ -3287,28 +3287,29 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumMethodSpecs(
 }
 
 HRESULT STDMETHODCALLTYPE MetadataImportRO::GetAssemblyProps(
-        mdAssembly  mda,
-        void const  **ppbPublicKey,
-        ULONG       *pcbPublicKey,
-        ULONG       *pulHashAlgId,
-        _Out_writes_to_opt_(cchName, *pchName) LPWSTR  szName,
-        ULONG       cchName,
-        ULONG       *pchName,
-        ASSEMBLYMETADATA *pMetaData,
-        DWORD       *pdwAssemblyFlags)
+    mdAssembly  mda,
+    void const  **ppbPublicKey,
+    ULONG       *pcbPublicKey,
+    ULONG       *pulHashAlgId,
+    _Out_writes_to_opt_(cchName, *pchName)
+    LPWSTR      szName,
+    ULONG       cchName,
+    ULONG       *pchName,
+    ASSEMBLYMETADATA *pMetaData,
+    DWORD       *pdwAssemblyFlags)
 {
     mdcursor_t cursor;
 
     if (!md_token_to_cursor(_md_ptr.get(), mda, &cursor))
         return CLDB_E_RECORD_NOTFOUND;
-    
+
     if (ppbPublicKey != nullptr)
     {
         uint8_t const* publicKey;
         uint32_t publicKeySize;
         if (1 != md_get_column_value_as_blob(cursor, mdtAssembly_PublicKey, 1, &publicKey, &publicKeySize))
             return CLDB_E_FILE_CORRUPT;
-        
+
         *ppbPublicKey = publicKey;
         *pcbPublicKey = publicKeySize;
     }
@@ -3329,16 +3330,16 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetAssemblyProps(
         uint32_t patchNumber;
         if (1 != md_get_column_value_as_constant(cursor, mdtAssembly_MajorVersion, 1, &majorVersion))
             return CLDB_E_FILE_CORRUPT;
-        
+
         if (1 != md_get_column_value_as_constant(cursor, mdtAssembly_MinorVersion, 1, &minorVersion))
             return CLDB_E_FILE_CORRUPT;
-        
+
         if (1 != md_get_column_value_as_constant(cursor, mdtAssembly_BuildNumber, 1, &buildNumber))
             return CLDB_E_FILE_CORRUPT;
-        
+
         if (1 != md_get_column_value_as_constant(cursor, mdtAssembly_RevisionNumber, 1, &patchNumber))
             return CLDB_E_FILE_CORRUPT;
-        
+
         pMetaData->usMajorVersion = static_cast<uint16_t>(majorVersion);
         pMetaData->usMinorVersion = static_cast<uint16_t>(minorVersion);
         pMetaData->usBuildNumber = static_cast<uint16_t>(buildNumber);
@@ -3350,7 +3351,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetAssemblyProps(
 
         HRESULT hr;
         RETURN_IF_FAILED(ConvertAndReturnStringOutput(culture, pMetaData->szLocale, pMetaData->cbLocale, &pMetaData->cbLocale));
-        
+
         // We do not read the AssemblyOS or AssemblyProcessor tables to fill these arrays since neither .NET Framework or CoreCLR do.
         pMetaData->ulProcessor = 0;
         pMetaData->ulOS = 0;
@@ -3384,29 +3385,30 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetAssemblyProps(
 }
 
 HRESULT STDMETHODCALLTYPE MetadataImportRO::GetAssemblyRefProps(
-        mdAssemblyRef mdar,
-        void const  **ppbPublicKeyOrToken,
-        ULONG       *pcbPublicKeyOrToken,
-        _Out_writes_to_opt_(cchName, *pchName)LPWSTR szName,
-        ULONG       cchName,
-        ULONG       *pchName,
-        ASSEMBLYMETADATA *pMetaData,
-        void const  **ppbHashValue,
-        ULONG       *pcbHashValue,
-        DWORD       *pdwAssemblyRefFlags)
+    mdAssemblyRef mdar,
+    void const  **ppbPublicKeyOrToken,
+    ULONG       *pcbPublicKeyOrToken,
+    _Out_writes_to_opt_(cchName, *pchName)
+    LPWSTR      szName,
+    ULONG       cchName,
+    ULONG       *pchName,
+    ASSEMBLYMETADATA *pMetaData,
+    void const  **ppbHashValue,
+    ULONG       *pcbHashValue,
+    DWORD       *pdwAssemblyRefFlags)
 {
     mdcursor_t cursor;
 
     if (!md_token_to_cursor(_md_ptr.get(), mdar, &cursor))
         return CLDB_E_RECORD_NOTFOUND;
-    
+
     if (ppbPublicKeyOrToken != nullptr)
     {
         uint8_t const* publicKeyOrToken;
         uint32_t publicKeyOrTokenSize;
         if (1 != md_get_column_value_as_blob(cursor, mdtAssemblyRef_PublicKeyOrToken, 1, &publicKeyOrToken, &publicKeyOrTokenSize))
             return CLDB_E_FILE_CORRUPT;
-        
+
         *ppbPublicKeyOrToken = publicKeyOrToken;
         *pcbPublicKeyOrToken = publicKeyOrTokenSize;
     }
@@ -3429,16 +3431,16 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetAssemblyRefProps(
         uint32_t patchNumber;
         if (1 != md_get_column_value_as_constant(cursor, mdtAssemblyRef_MajorVersion, 1, &majorVersion))
             return CLDB_E_FILE_CORRUPT;
-        
+
         if (1 != md_get_column_value_as_constant(cursor, mdtAssemblyRef_MinorVersion, 1, &minorVersion))
             return CLDB_E_FILE_CORRUPT;
-        
+
         if (1 != md_get_column_value_as_constant(cursor, mdtAssemblyRef_BuildNumber, 1, &buildNumber))
             return CLDB_E_FILE_CORRUPT;
-        
+
         if (1 != md_get_column_value_as_constant(cursor, mdtAssemblyRef_RevisionNumber, 1, &patchNumber))
             return CLDB_E_FILE_CORRUPT;
-        
+
         pMetaData->usMajorVersion = static_cast<uint16_t>(majorVersion);
         pMetaData->usMinorVersion = static_cast<uint16_t>(minorVersion);
         pMetaData->usBuildNumber = static_cast<uint16_t>(buildNumber);
@@ -3450,7 +3452,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetAssemblyRefProps(
 
         HRESULT hr;
         RETURN_IF_FAILED(ConvertAndReturnStringOutput(culture, pMetaData->szLocale, pMetaData->cbLocale, &pMetaData->cbLocale));
-        
+
         // We do not read the AssemblyRefOS or AssemblyRefProcessor tables to fill these arrays since neither .NET Framework or CoreCLR do.
         pMetaData->ulProcessor = 0;
         pMetaData->ulOS = 0;
@@ -3477,13 +3479,14 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetAssemblyRefProps(
 }
 
 HRESULT STDMETHODCALLTYPE MetadataImportRO::GetFileProps(
-        mdFile      mdf,
-        _Out_writes_to_opt_(cchName, *pchName) LPWSTR      szName,
-        ULONG       cchName,
-        ULONG       *pchName,
-        void const  **ppbHashValue,
-        ULONG       *pcbHashValue,
-        DWORD       *pdwFileFlags)
+    mdFile      mdf,
+    _Out_writes_to_opt_(cchName, *pchName)
+    LPWSTR      szName,
+    ULONG       cchName,
+    ULONG       *pchName,
+    void const  **ppbHashValue,
+    ULONG       *pcbHashValue,
+    DWORD       *pdwFileFlags)
 {
     mdcursor_t cursor;
 
@@ -3521,13 +3524,14 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetFileProps(
 }
 
 HRESULT STDMETHODCALLTYPE MetadataImportRO::GetExportedTypeProps(
-        mdExportedType   mdct,
-        _Out_writes_to_opt_(cchName, *pchName) LPWSTR      szName,
-        ULONG       cchName,
-        ULONG       *pchName,
-        mdToken     *ptkImplementation,
-        mdTypeDef   *ptkTypeDef,
-        DWORD       *pdwExportedTypeFlags)
+    mdExportedType   mdct,
+    _Out_writes_to_opt_(cchName, *pchName)
+    LPWSTR      szName,
+    ULONG       cchName,
+    ULONG       *pchName,
+    mdToken     *ptkImplementation,
+    mdTypeDef   *ptkTypeDef,
+    DWORD       *pdwExportedTypeFlags)
 {
     mdcursor_t cursor;
 
@@ -3577,13 +3581,14 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetExportedTypeProps(
 }
 
 HRESULT STDMETHODCALLTYPE MetadataImportRO::GetManifestResourceProps(
-        mdManifestResource  mdmr,
-        _Out_writes_to_opt_(cchName, *pchName)LPWSTR      szName,
-        ULONG       cchName,
-        ULONG       *pchName,
-        mdToken     *ptkImplementation,
-        DWORD       *pdwOffset,
-        DWORD       *pdwResourceFlags)
+    mdManifestResource  mdmr,
+    _Out_writes_to_opt_(cchName, *pchName)
+    LPWSTR      szName,
+    ULONG       cchName,
+    ULONG       *pchName,
+    mdToken     *ptkImplementation,
+    DWORD       *pdwOffset,
+    DWORD       *pdwResourceFlags)
 {
     mdcursor_t cursor;
 
@@ -3625,95 +3630,71 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetManifestResourceProps(
 }
 
 HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumAssemblyRefs(
-        HCORENUM    *phEnum,
-        mdAssemblyRef rAssemblyRefs[],
-        ULONG       cMax,
-        ULONG       *pcTokens)
+    HCORENUM    *phEnum,
+    mdAssemblyRef rAssemblyRefs[],
+    ULONG       cMax,
+    ULONG       *pcTokens)
 {
     HRESULT hr;
     HCORENUMImpl* enumImpl = ToHCORENUMImpl(*phEnum);
     if (enumImpl == nullptr)
     {
-        mdcursor_t cursor;
-        uint32_t rows;
-        if (!md_create_cursor(_md_ptr.get(), mdtid_AssemblyRef, &cursor, &rows))
-            return CLDB_E_RECORD_NOTFOUND;
-
-        RETURN_IF_FAILED(HCORENUMImpl::CreateTableEnum(1, &enumImpl));
-        HCORENUMImpl::InitTableEnum(*enumImpl, 0, cursor, rows);
+        RETURN_IF_FAILED(CreateEnumTokens(_md_ptr.get(), mdtid_AssemblyRef, &enumImpl));
         *phEnum = enumImpl;
     }
     return enumImpl->ReadTokens(rAssemblyRefs, cMax, pcTokens);
 }
 
 HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumFiles(
-        HCORENUM    *phEnum,
-        mdFile      rFiles[],
-        ULONG       cMax,
-        ULONG       *pcTokens)
+    HCORENUM    *phEnum,
+    mdFile      rFiles[],
+    ULONG       cMax,
+    ULONG       *pcTokens)
 {
     HRESULT hr;
     HCORENUMImpl* enumImpl = ToHCORENUMImpl(*phEnum);
     if (enumImpl == nullptr)
     {
-        mdcursor_t cursor;
-        uint32_t rows;
-        if (!md_create_cursor(_md_ptr.get(), mdtid_File, &cursor, &rows))
-            return CLDB_E_RECORD_NOTFOUND;
-
-        RETURN_IF_FAILED(HCORENUMImpl::CreateTableEnum(1, &enumImpl));
-        HCORENUMImpl::InitTableEnum(*enumImpl, 0, cursor, rows);
+        RETURN_IF_FAILED(CreateEnumTokens(_md_ptr.get(), mdtid_File, &enumImpl));
         *phEnum = enumImpl;
     }
     return enumImpl->ReadTokens(rFiles, cMax, pcTokens);
 }
 
 HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumExportedTypes(
-        HCORENUM    *phEnum,
-        mdExportedType   rExportedTypes[],
-        ULONG       cMax,
-        ULONG       *pcTokens)
+    HCORENUM    *phEnum,
+    mdExportedType   rExportedTypes[],
+    ULONG       cMax,
+    ULONG       *pcTokens)
 {
     HRESULT hr;
     HCORENUMImpl* enumImpl = ToHCORENUMImpl(*phEnum);
     if (enumImpl == nullptr)
     {
-        mdcursor_t cursor;
-        uint32_t rows;
-        if (!md_create_cursor(_md_ptr.get(), mdtid_ExportedType, &cursor, &rows))
-            return CLDB_E_RECORD_NOTFOUND;
-
-        RETURN_IF_FAILED(HCORENUMImpl::CreateTableEnum(1, &enumImpl));
-        HCORENUMImpl::InitTableEnum(*enumImpl, 0, cursor, rows);
+        RETURN_IF_FAILED(CreateEnumTokens(_md_ptr.get(), mdtid_ExportedType, &enumImpl));
         *phEnum = enumImpl;
     }
     return enumImpl->ReadTokens(rExportedTypes, cMax, pcTokens);
 }
 
 HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumManifestResources(
-        HCORENUM    *phEnum,
-        mdManifestResource  rManifestResources[],
-        ULONG       cMax,
-        ULONG       *pcTokens)
+    HCORENUM    *phEnum,
+    mdManifestResource  rManifestResources[],
+    ULONG       cMax,
+    ULONG       *pcTokens)
 {
     HRESULT hr;
     HCORENUMImpl* enumImpl = ToHCORENUMImpl(*phEnum);
     if (enumImpl == nullptr)
     {
-        mdcursor_t cursor;
-        uint32_t rows;
-        if (!md_create_cursor(_md_ptr.get(), mdtid_ManifestResource, &cursor, &rows))
-            return CLDB_E_RECORD_NOTFOUND;
-
-        RETURN_IF_FAILED(HCORENUMImpl::CreateTableEnum(1, &enumImpl));
-        HCORENUMImpl::InitTableEnum(*enumImpl, 0, cursor, rows);
+        RETURN_IF_FAILED(CreateEnumTokens(_md_ptr.get(), mdtid_ManifestResource, &enumImpl));
         *phEnum = enumImpl;
     }
     return enumImpl->ReadTokens(rManifestResources, cMax, pcTokens);
 }
 
 HRESULT STDMETHODCALLTYPE MetadataImportRO::GetAssemblyFromScope(
-        mdAssembly  *ptkAssembly)
+    mdAssembly  *ptkAssembly)
 {
     mdcursor_t cursor;
     uint32_t count;
@@ -3725,10 +3706,13 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetAssemblyFromScope(
 }
 
 HRESULT STDMETHODCALLTYPE MetadataImportRO::FindExportedTypeByName(
-        LPCWSTR     szName,
-        mdToken     mdtExportedType,
-        mdExportedType   *ptkExportedType)
+    LPCWSTR     szName,
+    mdToken     mdtExportedType,
+    mdExportedType   *ptkExportedType)
 {
+    if (szName == nullptr)
+        return E_INVALIDARG;
+
     mdcursor_t cursor;
     uint32_t count;
     if (!md_create_cursor(_md_ptr.get(), mdtid_ExportedType, &cursor, &count))
@@ -3746,7 +3730,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::FindExportedTypeByName(
         mdToken implementation;
         if (1 != md_get_column_value_as_token(cursor, mdtExportedType_Implementation, 1, &implementation))
             return CLDB_E_FILE_CORRUPT;
-        
+
         // Handle the case of nested vs. non-nested classes
         if (TypeFromToken(implementation) == CorTokenType::mdtExportedType && !IsNilToken(implementation))
         {
@@ -3755,13 +3739,13 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::FindExportedTypeByName(
             if (implementation != mdtExportedType)
                 continue;
         }
-        else if (TypeFromToken(mdtExportedType) == mdtExportedType &&
-                 !IsNilToken(mdtExportedType))
+        else if (TypeFromToken(mdtExportedType) == mdtExportedType
+                && !IsNilToken(mdtExportedType))
         {
             // ExportedType passed in is nested but the current ExportedType is not.
             continue;
         }
-        
+
         char const* recordNspace;
         if (1 != md_get_column_value_as_utf8(cursor, mdtExportedType_TypeNamespace, 1, &recordNspace))
             return CLDB_E_FILE_CORRUPT;
@@ -3775,7 +3759,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::FindExportedTypeByName(
 
         if (::strcmp(name, recordName) != 0)
             continue;
-        
+
         if (!md_cursor_to_token(cursor, ptkExportedType))
             return CLDB_E_FILE_CORRUPT;
         return S_OK;
@@ -3784,9 +3768,12 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::FindExportedTypeByName(
 }
 
 HRESULT STDMETHODCALLTYPE MetadataImportRO::FindManifestResourceByName(
-        LPCWSTR     szName,
-        mdManifestResource *ptkManifestResource)
+    LPCWSTR     szName,
+    mdManifestResource *ptkManifestResource)
 {
+    if (szName == nullptr)
+        return E_INVALIDARG;
+
     mdcursor_t cursor;
     uint32_t count;
     if (!md_create_cursor(_md_ptr.get(), mdtid_ManifestResource, &cursor, &count))
@@ -3795,7 +3782,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::FindManifestResourceByName(
     pal::StringConvert<WCHAR, char> cvt{ szName };
     if (!cvt.Success())
         return E_INVALIDARG;
-    
+
     for (uint32_t i = 0; i < count; md_cursor_next(&cursor), i++)
     {
         mdManifestResource token;
@@ -3812,17 +3799,16 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::FindManifestResourceByName(
             return S_OK;
         }
     }
-
     return CLDB_E_RECORD_NOTFOUND;
 }
 
 HRESULT STDMETHODCALLTYPE MetadataImportRO::FindAssembliesByName(
-        LPCWSTR  szAppBase,
-        LPCWSTR  szPrivateBin,
-        LPCWSTR  szAssemblyName,
-        IUnknown *ppIUnk[],
-        ULONG    cMax,
-        ULONG    *pcAssemblies)
+    LPCWSTR  szAppBase,
+    LPCWSTR  szPrivateBin,
+    LPCWSTR  szAssemblyName,
+    IUnknown *ppIUnk[],
+    ULONG    cMax,
+    ULONG    *pcAssemblies)
 {
     UNREFERENCED_PARAMETER(szAppBase);
     UNREFERENCED_PARAMETER(szPrivateBin);

@@ -629,40 +629,6 @@ namespace
         return tokens;
     }
 
-    std::vector<uint32_t> FindTypeRef(IMetaDataImport2* import)
-    {
-        std::vector<uint32_t> values;
-        HRESULT hr;
-        mdToken tk;
-
-        // The first assembly ref token typically contains System.Object and Enumerator.
-        mdToken const assemblyRefToken = 0x23000001;
-        hr = import->FindTypeRef(assemblyRefToken, W("System.Object"), &tk);
-        values.push_back(hr);
-        if (hr == S_OK)
-            values.push_back(tk);
-
-        // Look for a type that won't ever exist
-        hr = import->FindTypeRef(assemblyRefToken, W("DoesntExist"), &tk);
-        values.push_back(hr);
-        if (hr == S_OK)
-            values.push_back(tk);
-        return values;
-    }
-
-    std::vector<uint32_t> FindTypeDefByName(IMetaDataImport2* import, LPCWSTR name, mdToken scope)
-    {
-        std::vector<uint32_t> values;
-
-        mdTypeDef ptd;
-        HRESULT hr = import->FindTypeDefByName(name, scope, &ptd);
-
-        values.push_back(hr);
-        if (hr >= 0)
-            values.push_back(ptd);
-        return values;
-    }
-
     std::vector<uint32_t> EnumPermissionSetsAndGetProps(IMetaDataImport2* import, mdToken permTk)
     {
         std::vector<uint32_t> values;
@@ -693,7 +659,7 @@ namespace
                 ULONG pcbPermission;
                 HRESULT hr = import->GetPermissionSetProps(pk, &a, &ppvPermission, &pcbPermission);
                 values.push_back(hr);
-                if (hr != S_OK)
+                if (hr == S_OK)
                 {
                     values.push_back(a);
                     values.push_back(HashByteArray(ppvPermission, pcbPermission));
@@ -701,6 +667,142 @@ namespace
                 }
             }
         }
+        return values;
+    }
+
+    std::vector<uint32_t> EnumAssemblyRefs(IMetaDataAssemblyImport* import)
+    {
+        std::vector<uint32_t> tokens;
+        static_enum_buffer<uint32_t> tokensBuffer{};
+        HCORENUM hcorenum{};
+        ULONG returned;
+        while (0 == import->EnumAssemblyRefs(&hcorenum, tokensBuffer.data(), (ULONG)tokensBuffer.size(), &returned)
+            && returned != 0)
+        {
+            for (ULONG i = 0; i < returned; ++i)
+                tokens.push_back(tokensBuffer[i]);
+        }
+        dncp::com_ptr<IMetaDataImport2> mdImport;
+        HRESULT hr = import->QueryInterface(IID_IMetaDataImport2, (void**)&mdImport);
+        ASSERT_EQUAL(S_OK, hr);
+        ValidateAndCloseEnum(mdImport, hcorenum, (ULONG)tokens.size());
+        return tokens;
+    }
+
+    std::vector<uint32_t> EnumFiles(IMetaDataAssemblyImport* import)
+    {
+        std::vector<uint32_t> tokens;
+        static_enum_buffer<uint32_t> tokensBuffer{};
+        HCORENUM hcorenum{};
+        ULONG returned;
+        while (0 == import->EnumFiles(&hcorenum, tokensBuffer.data(), (ULONG)tokensBuffer.size(), &returned)
+            && returned != 0)
+        {
+            for (ULONG i = 0; i < returned; ++i)
+                tokens.push_back(tokensBuffer[i]);
+        }
+        dncp::com_ptr<IMetaDataImport2>  mdImport;
+        HRESULT hr = import->QueryInterface(IID_IMetaDataImport2, (void**)&mdImport);
+        ASSERT_EQUAL(S_OK, hr);
+        ValidateAndCloseEnum(mdImport, hcorenum, (ULONG)tokens.size());
+        return tokens;
+    }
+
+    std::vector<uint32_t> EnumExportedTypes(IMetaDataAssemblyImport* import)
+    {
+        std::vector<uint32_t> tokens;
+        static_enum_buffer<uint32_t> tokensBuffer{};
+        HCORENUM hcorenum{};
+        ULONG returned;
+        while (0 == import->EnumExportedTypes(&hcorenum, tokensBuffer.data(), (ULONG)tokensBuffer.size(), &returned)
+            && returned != 0)
+        {
+            for (ULONG i = 0; i < returned; ++i)
+                tokens.push_back(tokensBuffer[i]);
+        }
+        dncp::com_ptr<IMetaDataImport2>  mdImport;
+        HRESULT hr = import->QueryInterface(IID_IMetaDataImport2, (void**)&mdImport);
+        ASSERT_EQUAL(S_OK, hr);
+        ValidateAndCloseEnum(mdImport, hcorenum, (ULONG)tokens.size());
+        return tokens;
+    }
+
+    std::vector<uint32_t> EnumManifestResources(IMetaDataAssemblyImport* import)
+    {
+        std::vector<uint32_t> tokens;
+        static_enum_buffer<uint32_t> tokensBuffer{};
+        HCORENUM hcorenum{};
+        ULONG returned;
+        while (0 == import->EnumManifestResources(&hcorenum, tokensBuffer.data(), (ULONG)tokensBuffer.size(), &returned)
+            && returned != 0)
+        {
+            for (ULONG i = 0; i < returned; ++i)
+                tokens.push_back(tokensBuffer[i]);
+        }
+        dncp::com_ptr<IMetaDataImport2>  mdImport;
+        HRESULT hr = import->QueryInterface(IID_IMetaDataImport2, (void**)&mdImport);
+        ASSERT_EQUAL(S_OK, hr);
+        ValidateAndCloseEnum(mdImport, hcorenum, (ULONG)tokens.size());
+        return tokens;
+    }
+
+    std::vector<uint32_t> FindTypeRef(IMetaDataImport2* import)
+    {
+        std::vector<uint32_t> values;
+        HRESULT hr;
+        mdToken tk;
+
+        // The first assembly ref token typically contains System.Object and Enumerator.
+        mdToken const assemblyRefToken = 0x23000001;
+        hr = import->FindTypeRef(assemblyRefToken, W("System.Object"), &tk);
+        values.push_back(hr);
+        if (hr == S_OK)
+            values.push_back(tk);
+
+        // Look for a type that won't ever exist
+        hr = import->FindTypeRef(assemblyRefToken, W("DoesntExist"), &tk);
+        values.push_back(hr);
+        if (hr == S_OK)
+            values.push_back(tk);
+        return values;
+    }
+
+    std::vector<uint32_t> FindTypeDefByName(IMetaDataImport2* import, LPCWSTR name, mdToken scope)
+    {
+        std::vector<uint32_t> values;
+
+        mdTypeDef ptd;
+        HRESULT hr = import->FindTypeDefByName(name, scope, &ptd);
+
+        values.push_back(hr);
+        if (hr == S_OK)
+            values.push_back(ptd);
+        return values;
+    }
+
+    std::vector<uint32_t> FindExportedTypeByName(IMetaDataAssemblyImport* import, LPCWSTR name, mdToken tkImplementation)
+    {
+        std::vector<uint32_t> values;
+
+        mdExportedType exported;
+        HRESULT hr = import->FindExportedTypeByName(name, tkImplementation, &exported);
+
+        values.push_back(hr);
+        if (hr == S_OK)
+            values.push_back(exported);
+        return values;
+    }
+
+    std::vector<uint32_t> FindManifestResourceByName(IMetaDataAssemblyImport* import, LPCWSTR name)
+    {
+        std::vector<uint32_t> values;
+
+        mdManifestResource resource;
+        HRESULT hr = import->FindManifestResourceByName(name, &resource);
+
+        values.push_back(hr);
+        if (hr == S_OK)
+            values.push_back(resource);
         return values;
     }
 
@@ -1444,8 +1546,8 @@ namespace
     std::vector<size_t> GetAssemblyProps(IMetaDataAssemblyImport* import, mdAssembly mda)
     {
         std::vector<size_t> values;
-        std::vector<WCHAR> name(CharBuffer);
-        std::vector<WCHAR> locale(CharBuffer);
+        static_char_buffer<WCHAR> name{};
+        static_char_buffer<WCHAR> locale{};
         std::vector<DWORD> processor(1);
         std::vector<OSINFO> osInfo(1);
 
@@ -1484,31 +1586,12 @@ namespace
         }
         return values;
     }
-    
-    std::vector<uint32_t> EnumAssemblyRefs(IMetaDataAssemblyImport* import)
-    {
-        std::vector<uint32_t> tokens;
-        std::vector<uint32_t> tokensBuffer(EnumBuffer);
-        HCORENUM hcorenum{};
-        ULONG returned;
-        while (0 == import->EnumAssemblyRefs(&hcorenum, tokensBuffer.data(), (ULONG)tokensBuffer.size(), &returned)
-            && returned != 0)
-        {
-            for (ULONG i = 0; i < returned; ++i)
-                tokens.push_back(tokensBuffer[i]);
-        }
-        dncp::com_ptr<IMetaDataImport2> mdImport;
-        HRESULT hr = import->QueryInterface(IID_IMetaDataImport2, (void**)&mdImport);
-        ASSERT_EQUAL(S_OK, hr);
-        ValidateAndCloseEnum(mdImport, hcorenum, (ULONG)tokens.size());
-        return tokens;
-    }
 
     std::vector<size_t> GetAssemblyRefProps(IMetaDataAssemblyImport* import, mdAssemblyRef mdar)
     {
         std::vector<size_t> values;
-        std::vector<WCHAR> name(CharBuffer);
-        std::vector<WCHAR> locale(CharBuffer);
+        static_char_buffer<WCHAR> name{};
+        static_char_buffer<WCHAR> locale{};
         std::vector<DWORD> processor(1);
         std::vector<OSINFO> osInfo(1);
 
@@ -1550,29 +1633,10 @@ namespace
         return values;
     }
 
-    std::vector<uint32_t> EnumFiles(IMetaDataAssemblyImport* import)
-    {
-        std::vector<uint32_t> tokens;
-        std::vector<uint32_t> tokensBuffer(EnumBuffer);
-        HCORENUM hcorenum{};
-        ULONG returned;
-        while (0 == import->EnumFiles(&hcorenum, tokensBuffer.data(), (ULONG)tokensBuffer.size(), &returned)
-            && returned != 0)
-        {
-            for (ULONG i = 0; i < returned; ++i)
-                tokens.push_back(tokensBuffer[i]);
-        }
-        dncp::com_ptr<IMetaDataImport2>  mdImport;
-        HRESULT hr = import->QueryInterface(IID_IMetaDataImport2, (void**)&mdImport);
-        ASSERT_EQUAL(S_OK, hr);
-        ValidateAndCloseEnum(mdImport, hcorenum, (ULONG)tokens.size());
-        return tokens;
-    }
-
     std::vector<size_t> GetFileProps(IMetaDataAssemblyImport* import, mdFile mdf)
     {
         std::vector<size_t> values;
-        std::vector<WCHAR> name(CharBuffer);
+        static_char_buffer<WCHAR> name{};
 
         ULONG nameLength;
         void const* hash;
@@ -1592,29 +1656,10 @@ namespace
         return values;
     }
 
-    std::vector<uint32_t> EnumExportedTypes(IMetaDataAssemblyImport* import)
-    {
-        std::vector<uint32_t> tokens;
-        std::vector<uint32_t> tokensBuffer(EnumBuffer);
-        HCORENUM hcorenum{};
-        ULONG returned;
-        while (0 == import->EnumExportedTypes(&hcorenum, tokensBuffer.data(), (ULONG)tokensBuffer.size(), &returned)
-            && returned != 0)
-        {
-            for (ULONG i = 0; i < returned; ++i)
-                tokens.push_back(tokensBuffer[i]);
-        }
-        dncp::com_ptr<IMetaDataImport2>  mdImport;
-        HRESULT hr = import->QueryInterface(IID_IMetaDataImport2, (void**)&mdImport);
-        ASSERT_EQUAL(S_OK, hr);
-        ValidateAndCloseEnum(mdImport, hcorenum, (ULONG)tokens.size());
-        return tokens;
-    }
-
-    std::vector<uint32_t> GetExportedTypeProps(IMetaDataAssemblyImport* import, mdFile mdf, /* out */ std::vector<WCHAR>& nameBuffer, /* out */ uint32_t& implementationToken)
+    std::vector<uint32_t> GetExportedTypeProps(IMetaDataAssemblyImport* import, mdFile mdf, std::vector<WCHAR>* nameBuffer = nullptr, uint32_t* implementationToken = nullptr)
     {
         std::vector<uint32_t> values;
-        std::vector<WCHAR> name(CharBuffer);
+        static_char_buffer<WCHAR> name{};
 
         ULONG nameLength;
         mdToken implementation;
@@ -1626,40 +1671,23 @@ namespace
         if (hr == S_OK)
         {
             values.push_back(HashCharArray(name, nameLength));
-            values.push_back((size_t)nameLength);
+            values.push_back(nameLength);
             values.push_back(implementation);
             values.push_back(typeDef);
             values.push_back(flags);
-            
-            nameBuffer = { name.begin(), name.begin() + nameLength };
-            implementationToken = implementation;
+
+            if (nameBuffer != nullptr)
+                *nameBuffer = { std::begin(name), std::begin(name) + nameLength };
+            if (implementationToken != nullptr)
+                *implementationToken = implementation;
         }
         return values;
     }
 
-    std::vector<uint32_t> EnumManifestResources(IMetaDataAssemblyImport* import)
-    {
-        std::vector<uint32_t> tokens;
-        std::vector<uint32_t> tokensBuffer(EnumBuffer);
-        HCORENUM hcorenum{};
-        ULONG returned;
-        while (0 == import->EnumManifestResources(&hcorenum, tokensBuffer.data(), (ULONG)tokensBuffer.size(), &returned)
-            && returned != 0)
-        {
-            for (ULONG i = 0; i < returned; ++i)
-                tokens.push_back(tokensBuffer[i]);
-        }
-        dncp::com_ptr<IMetaDataImport2>  mdImport;
-        HRESULT hr = import->QueryInterface(IID_IMetaDataImport2, (void**)&mdImport);
-        ASSERT_EQUAL(S_OK, hr);
-        ValidateAndCloseEnum(mdImport, hcorenum, (ULONG)tokens.size());
-        return tokens;
-    }
-
-    std::vector<uint32_t> GetManifestResourceProps(IMetaDataAssemblyImport* import, mdManifestResource mmr, /* out */ std::vector<WCHAR>& nameBuffer)
+    std::vector<uint32_t> GetManifestResourceProps(IMetaDataAssemblyImport* import, mdManifestResource mmr, std::vector<WCHAR>* nameBuffer = nullptr)
     {
         std::vector<uint32_t> values;
-        std::vector<WCHAR> name(CharBuffer);
+        static_char_buffer<WCHAR> name{};
 
         ULONG nameLength;
         ULONG offset;
@@ -1670,28 +1698,15 @@ namespace
 
         if (hr == S_OK)
         {
-            nameBuffer = { name.begin(), name.begin() + nameLength };
             values.push_back(HashCharArray(name, nameLength));
             values.push_back(nameLength);
             values.push_back(implementation);
             values.push_back(flags);
+
+            if (nameBuffer != nullptr)
+                *nameBuffer = { std::begin(name), std::begin(name) + nameLength };
         }
         return values;
-    }
-
-    uint32_t FindExportedTypeByName(IMetaDataAssemblyImport* import, LPCWSTR name, mdToken tkImplementation)
-    {
-        mdExportedType exported;
-        HRESULT hr = import->FindExportedTypeByName(name, tkImplementation, &exported);
-        ASSERT_EQUAL(S_OK, hr);
-        return exported;
-    }
-    uint32_t FindManifestResourceByName(IMetaDataAssemblyImport* import, LPCWSTR name)
-    {
-        mdManifestResource resource;
-        HRESULT hr = import->FindManifestResourceByName(name, &resource);
-        ASSERT_EQUAL(S_OK, hr);
-        return resource;
     }
 
     std::vector<uint32_t> ResetEnum(IMetaDataImport2* import)
@@ -1903,7 +1918,7 @@ TestResult UnitImportAPIs(void const* data, uint32_t dataLen)
 
     dncp::com_ptr<IMetaDataAssemblyImport> baselineAssembly;
     ASSERT_EQUAL(S_OK, baselineImport->QueryInterface(IID_IMetaDataAssemblyImport, (void**)&baselineAssembly));
-    dncp::com_ptr<IMetaDataAssemblyImport> currentAssembly; 
+    dncp::com_ptr<IMetaDataAssemblyImport> currentAssembly;
     ASSERT_EQUAL(S_OK, currentImport->QueryInterface(IID_IMetaDataAssemblyImport, (void**)&currentAssembly));
 
     auto assemblyTokens = ASSERT_AND_RETURN(GetAssemblyFromScope(baselineAssembly), GetAssemblyFromScope(currentAssembly));
@@ -1928,26 +1943,19 @@ TestResult UnitImportAPIs(void const* data, uint32_t dataLen)
     for (auto exportedType : exports)
     {
         std::vector<WCHAR> name;
-        uint32_t implementation;
-        ASSERT_EQUAL(GetExportedTypeProps(baselineAssembly, exportedType, name, implementation), GetExportedTypeProps(currentAssembly, exportedType, name, implementation));
-        if (name.size() > 0 && name.size() < CharBuffer)
-        {
-            // We don't handle truncation well, so just skip any cases where we might have a truncated name.
-            ASSERT_EQUAL(FindExportedTypeByName(baselineAssembly, name.data(), implementation), FindExportedTypeByName(currentAssembly, name.data(), implementation));
-        }
+        uint32_t implementation = mdTokenNil;
+        ASSERT_EQUAL(GetExportedTypeProps(baselineAssembly, exportedType), GetExportedTypeProps(currentAssembly, exportedType, &name, &implementation));
+        ASSERT_EQUAL(
+            FindExportedTypeByName(baselineAssembly, name.data(), implementation),
+            FindExportedTypeByName(currentAssembly, name.data(), implementation));
     }
 
     auto resources = ASSERT_AND_RETURN(EnumManifestResources(baselineAssembly), EnumManifestResources(currentAssembly));
     for (auto resource : resources)
     {
         std::vector<WCHAR> name;
-        ASSERT_EQUAL(GetManifestResourceProps(baselineAssembly, resource, name), GetManifestResourceProps(currentAssembly, resource, name));
-
-        if (name.size() > 0 && name.size() < CharBuffer)
-        {
-            // We don't handle truncation well, so just skip any cases where we might have a truncated name.
-            ASSERT_EQUAL(FindManifestResourceByName(baselineAssembly, name.data()), FindManifestResourceByName(currentAssembly, name.data()));
-        }
+        ASSERT_EQUAL(GetManifestResourceProps(baselineAssembly, resource), GetManifestResourceProps(currentAssembly, resource, &name));
+        ASSERT_EQUAL(FindManifestResourceByName(baselineAssembly, name.data()), FindManifestResourceByName(currentAssembly, name.data()));
     }
 
     END_TEST();
