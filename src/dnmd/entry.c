@@ -203,7 +203,6 @@ bool md_create_handle(void const* data, size_t data_len, mdhandle_t* handle)
     cxt.magic = MDLIB_MAGIC_NUMBER;
     cxt.data.ptr = data;
     cxt.data.size = data_len;
-    cxt.context_flags = mdc_none;
     // Allocate and initialize a context
 
     mdcxt_t* pcxt = allocate_full_context(&cxt);

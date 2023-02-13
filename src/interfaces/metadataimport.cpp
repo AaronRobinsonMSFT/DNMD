@@ -180,7 +180,7 @@ namespace
             uint32_t i = 0;
             while (i < currCount)
             {
-                int32_t read = md_get_column_value_as_token(curr, keyColumn, ARRAYSIZE(matchedGroup), matchedGroup);
+                int32_t read = md_get_column_value_as_token(curr, keyColumn, ARRAY_SIZE(matchedGroup), matchedGroup);
                 if (read == 0)
                     break;
 
