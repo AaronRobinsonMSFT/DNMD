@@ -149,6 +149,7 @@ typedef struct _query_cxt_t
     mdtable_t* table;
     mdtcol_t col_details;
     uint8_t const* data;
+    uint8_t* writable_data;
     uint8_t const* end;
     size_t data_len;
     uint32_t data_len_col;
@@ -183,7 +184,7 @@ static col_index_t index_to_col(uint8_t idx, mdtable_id_t table_id)
 #endif
 }
 
-static bool create_query_context(mdcursor_t* cursor, col_index_t col_idx, uint32_t row_count, query_cxt_t* qcxt)
+static bool create_query_context(mdcursor_t* cursor, col_index_t col_idx, uint32_t row_count, bool make_writable, query_cxt_t* qcxt)
 {
     assert(qcxt != NULL);
     mdtable_t* table = CursorTable(cursor);
@@ -205,6 +206,13 @@ static bool create_query_context(mdcursor_t* cursor, col_index_t col_idx, uint32
     // Compute the offset into the first row.
     uint32_t offset = ExtractOffset(qcxt->col_details);
     qcxt->data = table->data.ptr + (row * table->row_size_bytes) + offset;
+
+    if (table->cxt->context_flags & mdc_editable)
+    {
+        qcxt->writable_data = get_writable_table_data(table, make_writable);
+    }
+    else
+        qcxt->writable_data = NULL;
 
     // Compute the beginning of the row after the last valid row.
     uint32_t last_row = row + row_count;
@@ -246,7 +254,7 @@ static int32_t get_column_value_as_token_or_cursor(mdcursor_t* c, uint32_t col_i
     assert(c != NULL && out_length != 0 && (tk != NULL || cursor != NULL));
 
     query_cxt_t qcxt;
-    if (!create_query_context(c, col_idx, out_length, &qcxt))
+    if (!create_query_context(c, col_idx, out_length, false, &qcxt))
         return -1;
 
     // If this isn't an index column, then fail.
@@ -388,7 +396,7 @@ int32_t md_get_column_value_as_constant(mdcursor_t c, col_index_t col_idx, uint3
     assert(constant != NULL);
 
     query_cxt_t qcxt;
-    if (!create_query_context(&c, col_idx, out_length, &qcxt))
+    if (!create_query_context(&c, col_idx, out_length, false, &qcxt))
         return -1;
 
     // If this isn't an constant column, then fail.
@@ -413,7 +421,7 @@ int32_t md_get_column_value_as_utf8(mdcursor_t c, col_index_t col_idx, uint32_t 
     assert(str != NULL);
 
     query_cxt_t qcxt;
-    if (!create_query_context(&c, col_idx, out_length, &qcxt))
+    if (!create_query_context(&c, col_idx, out_length, false, &qcxt))
         return -1;
 
     // If this isn't a #String column, then fail.
@@ -441,7 +449,7 @@ int32_t md_get_column_value_as_userstring(mdcursor_t c, col_index_t col_idx, uin
     assert(strings != NULL);
 
     query_cxt_t qcxt;
-    if (!create_query_context(&c, col_idx, out_length, &qcxt))
+    if (!create_query_context(&c, col_idx, out_length, false, &qcxt))
         return -1;
 
     // If this isn't a #US column, then fail.
@@ -470,7 +478,7 @@ int32_t md_get_column_value_as_blob(mdcursor_t c, col_index_t col_idx, uint32_t 
     assert(blob != NULL && blob_len != NULL);
 
     query_cxt_t qcxt;
-    if (!create_query_context(&c, col_idx, out_length, &qcxt))
+    if (!create_query_context(&c, col_idx, out_length, false, &qcxt))
         return -1;
 
     // If this isn't a #Blob column, then fail.
@@ -498,7 +506,7 @@ int32_t md_get_column_value_as_guid(mdcursor_t c, col_index_t col_idx, uint32_t 
     assert(guid != NULL);
 
     query_cxt_t qcxt;
-    if (!create_query_context(&c, col_idx, out_length, &qcxt))
+    if (!create_query_context(&c, col_idx, out_length, false, &qcxt))
         return -1;
 
     // If this isn't a #GUID column, then fail.
@@ -985,4 +993,84 @@ bool md_resolve_indirect_cursor(mdcursor_t c, mdcursor_t* target)
         return true;
     }
     return 1 == md_get_column_value_as_cursor(c, index_to_col(0, table->table_id), 1, target);
+}
+
+static bool write_column_data(query_cxt_t* qcxt, uint32_t data)
+{
+    assert(qcxt != NULL);
+    return (qcxt->col_details & mdtc_b2)
+        ? write_u16(&qcxt->writable_data, &qcxt->data_len, (uint16_t)data)
+        : write_u32(&qcxt->writable_data, &qcxt->data_len, data);
+}
+
+static int32_t set_column_value_as_token_or_cursor(mdcursor_t* c, uint32_t col_idx, mdToken* tk, mdcursor_t* cursor, uint32_t in_length)
+{
+    assert(c != NULL && in_length != 0 && (tk != NULL || cursor != NULL));
+
+    query_cxt_t qcxt;
+    if (!create_query_context(c, col_idx, in_length, false, &qcxt))
+        return -1;
+    
+    // If we can't write on the underlying table, then fail.
+    if (qcxt.writable_data == NULL)
+        return -1;
+
+    // If this isn't an index column, then fail.
+    if (!(qcxt.col_details & (mdtc_idx_table | mdtc_idx_coded)))
+        return -1;
+
+
+    int32_t written = 0;
+    do
+    {
+        mdToken token;
+        if (tk != NULL)
+        {
+            token = tk[written];
+        }
+        else
+        {
+            if (!md_cursor_to_token(cursor[written], &token))
+                return -1;
+        }
+
+        uint32_t raw;
+        if (qcxt.col_details & mdtc_idx_table)
+        {
+            uint32_t table_row = RidFromToken(token);
+            mdtable_id_t table_id = ExtractTokenType(token);
+            // The raw value is the row index into the table that
+            // is embedded in the column details.
+            // Return an error if the provided token does not point to the right table.
+            if (ExtractTable(qcxt.col_details) != table_id)
+                return -1;
+            raw = table_row;
+        }
+        else
+        {
+            assert(qcxt.col_details & mdtc_idx_coded);
+            if (!compose_coded_index(token, qcxt.col_details, &raw))
+                return -1;
+        }
+
+        write_column_data(&qcxt, raw);
+
+        written++;
+    } while (in_length > 1 && next_row(&qcxt));
+
+    return written;
+}
+
+int32_t md_set_column_value_as_token(mdcursor_t* c, col_index_t col, mdToken* tk, uint32_t in_length)
+{
+    if (c == NULL || tk == NULL || in_length == 0)
+        return -1;
+    return set_column_value_as_token_or_cursor(c, col_to_index(col, CursorTable(c)), tk, NULL, in_length);
+}
+
+int32_t md_set_column_value_as_cursor(mdcursor_t* c, col_index_t col, mdcursor_t* cursor, uint32_t in_length)
+{
+    if (c == NULL || cursor == NULL || in_length == 0)
+        return -1;
+    return set_column_value_as_token_or_cursor(c, col_to_index(col, CursorTable(c)), NULL, cursor, in_length);
 }
