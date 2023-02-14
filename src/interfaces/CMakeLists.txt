@@ -18,8 +18,8 @@ if(NOT MSVC)
       DNCP_WINHDRS
   )
 
-  # Adds IID_* constants.
-  list(APPEND SOURCES ./iids.cpp)
+  # Adds global GUID constants.
+  list(APPEND SOURCES ./iids.cpp ./options.cpp)
 endif()
 
 add_library(dnmd_interfaces_static
