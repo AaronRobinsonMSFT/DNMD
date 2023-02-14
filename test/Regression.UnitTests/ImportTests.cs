@@ -33,6 +33,7 @@ namespace Regression.UnitTests
         private delegate* unmanaged<void*, int, TestResult> _importAPIs;
         private delegate* unmanaged<void*, int, TestResult> _longRunningAPIs;
         private delegate* unmanaged<void*, int, TestResult> _findAPIs;
+        private delegate* unmanaged<void*, int, void**, int*, int, TestResult> _importAPIsIndirectionTables;
 
         public ImportTests(ITestOutputHelper outputHelper)
         {
@@ -44,8 +45,8 @@ namespace Regression.UnitTests
                 : "libregnative.so";
 
             nint mod = NativeLibrary.Load(regnativePath);
-            var initialize = (delegate* unmanaged<void*, int>)NativeLibrary.GetExport(mod, "UnitInitialize");
-            int hr = initialize((void*)Dispensers.Baseline);
+            var initialize = (delegate* unmanaged<void*, void*, int>)NativeLibrary.GetExport(mod, "UnitInitialize");
+            int hr = initialize((void*)Dispensers.Baseline, (void*)Dispensers.DeltaImageBuilder);
             if (hr < 0)
             {
                 throw new Exception($"Initialization failed: 0x{hr:x}");
@@ -54,6 +55,7 @@ namespace Regression.UnitTests
             _importAPIs = (delegate* unmanaged<void*, int, TestResult>)NativeLibrary.GetExport(mod, "UnitImportAPIs");
             _longRunningAPIs = (delegate* unmanaged<void*, int, TestResult>)NativeLibrary.GetExport(mod, "UnitLongRunningAPIs");
             _findAPIs = (delegate* unmanaged<void*, int, TestResult>)NativeLibrary.GetExport(mod, "UnitFindAPIs");
+            _importAPIsIndirectionTables = (delegate* unmanaged<void*, int, void**, int*, int, TestResult>)NativeLibrary.GetExport(mod, "UnitImportAPIsIndirectionTables");
         }
 
         private ITestOutputHelper Log { get; }
@@ -226,19 +228,13 @@ namespace Regression.UnitTests
 
                 baselineImage.Seek(0, SeekOrigin.Begin);
                 PEReader baselineReader = new PEReader(baselineImage);
-                Memory<byte> mdDiffData = mddiffStream.ToArray();
-                MemoryHandle pin = mdDiffData.Pin();
                 return new object[]
                 {
                     nameof(DeltaAssembly1),
                     baselineReader,
-                    new[]
+                    new Memory<byte>[]
                     {
-                        new MetadataReader((byte*)pin.Pointer, mdDiffData.Length)
-                    },
-                    new[]
-                    {
-                        pin
+                        mddiffStream.ToArray()
                     }
                 };
             }
@@ -261,29 +257,45 @@ namespace Regression.UnitTests
         [MemberData(nameof(Net40FrameworkLibraries))]
         public void ImportAPIs_Net40(string filename, PEReader managedLibrary) => ImportAPIs(filename, managedLibrary);
 
-        [WindowsOnlyTheory] // Windows-only because we are generating the delta image to use via COM interop.
+        [Theory]
         [MemberData(nameof(AssembliesWithDelta))]
-        public unsafe void ImportAPIs_AssembliesWithAppliedDeltas(string filename, PEReader deltaBaseline, IList<MetadataReader> diffs, IList<MemoryHandle> diffRawDataHandles)
+        public unsafe void ImportAPIs_AssembliesWithAppliedDeltas(string filename, PEReader deltaBaseline, IList<Memory<byte>> diffs)
         {
+            Debug.WriteLine($"{nameof(ImportAPIs_AssembliesWithAppliedDeltas)} - {filename}");
             using var _ = deltaBaseline;
             PEMemoryBlock block = deltaBaseline.GetMetadata();
-            IMetaDataEmit baselineEmit = (IMetaDataEmit)Dispensers.DeltaImageBuilder.OpenScopeOnMemory(block.Pointer, block.Length, 0, typeof(IMetaDataEmit).GUID);
-
+            
+            void*[] deltaImagePointers = new void*[diffs.Count];
+            int[] deltaImageLengths = new int[diffs.Count];
+            MemoryHandle[] handles = new MemoryHandle[diffs.Count];
+            
             for (int i = 0; i < diffs.Count; i++)
             {
-                MetadataReader? diff = diffs[i];
-                Assert.Equal(0, baselineEmit.ApplyEditAndContinue(Dispensers.DeltaImageBuilder.OpenScopeOnMemory(diff.MetadataPointer, diff.MetadataLength, CorOpenFlags.ReadOnly, typeof(IMetaDataImport).GUID)));
-                diffRawDataHandles[i].Dispose();
+                handles[i] = diffs[i].Pin();
+                deltaImagePointers[i] = handles[i].Pointer;
+                deltaImageLengths[i] = diffs[i].Length;
             }
 
-            Assert.Equal(0, baselineEmit.GetSaveSize(CorSaveSize.Accurate, out uint saveSize));
-            byte[] imageWithAppliedDeltas = GC.AllocateUninitializedArray<byte>((int)saveSize, pinned: true);
-            Assert.Equal(0, baselineEmit.SaveToMemory(imageWithAppliedDeltas, (uint)imageWithAppliedDeltas.Length));
-
-            ImportAPIs(filename, new MetadataReader((byte*)Unsafe.AsPointer(ref imageWithAppliedDeltas[0]), imageWithAppliedDeltas.Length));
-
-            // Keep the raw data arrays alive. The only thing referencing them is the unmanaged pointer in the diff MetadataReaders.
-            GC.KeepAlive(imageWithAppliedDeltas);
+            try
+            {
+                fixed (void** deltaImagePointersPtr = deltaImagePointers)
+                fixed (int* deltaImageLengthsPtr = deltaImageLengths)
+                {
+                    _importAPIsIndirectionTables(
+                        block.Pointer,
+                        block.Length,
+                        deltaImagePointersPtr,
+                        deltaImageLengthsPtr,
+                        diffs.Count).Check();
+                }
+            }
+            finally
+            {
+                for (int i = 0; i < diffs.Count; i++)
+                {
+                    handles[i].Dispose();
+                }
+            }
         }
 
         private enum TestState

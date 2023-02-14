@@ -400,6 +400,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumInterfaceImpls(
 
         uint32_t id = RidFromToken(td);
         RETURN_IF_FAILED(CreateEnumTokenRangeForSortedTableKey(_md_ptr.get(), mdtid_InterfaceImpl, mdtInterfaceImpl_Class, id, &enumImpl));
+        *phEnum = enumImpl;
     }
     return enumImpl->ReadTokens(rImpls, cMax, pcImpls);
 }
@@ -1071,10 +1072,12 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumPermissionSets(
             HCORENUMImpl_ptr cleanup{ enumImpl };
             for (uint32_t i = 0; i < count; ++i)
             {
-                if (1 == md_get_column_value_as_constant(cursor, mdtDeclSecurity_Action, 1, &action)
-                    && action == dwActions
-                    && 1 == md_get_column_value_as_token(cursor, mdtDeclSecurity_Parent, 1, &parent)
-                    && parent == tk)
+                if ((IsDclActionNil(dwActions)
+                    || (1 == md_get_column_value_as_constant(cursor, mdtDeclSecurity_Action, 1, &action)
+                        && action == dwActions))
+                    && (IsNilToken(tk)
+                        || (1 == md_get_column_value_as_token(cursor, mdtDeclSecurity_Parent, 1, &parent)
+                            && parent == tk)))
                 {
                     (void)md_cursor_to_token(cursor, &toAdd);
                     RETURN_IF_FAILED(HCORENUMImpl::AddToDynamicEnum(*enumImpl, toAdd));

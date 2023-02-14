@@ -26,12 +26,11 @@ namespace Common
         [SupportedOSPlatform("windows")]
         public static string NetFx40Dir { get; } = GetNetFx40Install();
 
-        private static IMetaDataDispenser? s_deltaImageBuilder;
         /// <summary>
         /// Get the IMetaDataDispenser implementation that can be used to build images
         /// with deltas to fill the pointer tables.
         /// </summary>
-        public static IMetaDataDispenser DeltaImageBuilder => s_deltaImageBuilder ??= GetDeltaImageBuilder();
+        public static nint DeltaImageBuilder { get; } = GetBaselineRaw();
 
         private static unsafe nint GetBaselineRaw()
         {
@@ -61,17 +60,6 @@ namespace Common
 
             return dispenser;
         }
-
-        private static unsafe IMetaDataDispenser GetDeltaImageBuilder()
-        {
-            nint ptr = GetBaselineRaw();
-            var dispenser = (IMetaDataDispenser)Marshal.GetObjectForIUnknown(ptr);
-            var dispenserEx = (IMetaDataDispenserEx)Marshal.GetObjectForIUnknown(ptr);
-            dispenserEx.SetOption(MetaDataDispenserOptions.MetaDataSetENC, CorSetENC.MDUpdateExtension);
-            _ = Marshal.Release(ptr);
-            return dispenser;
-        }
-
 
         [SupportedOSPlatform("windows")]
         private static string GetNetFx20Install()

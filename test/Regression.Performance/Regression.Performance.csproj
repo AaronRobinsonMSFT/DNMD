@@ -17,6 +17,5 @@
 
   <ItemGroup>
     <Compile Include="../Common/Dispensers.cs" Link="Dispensers.cs" />
-    <Compile Include="../Common/IMetaDataDispenser.cs" Link="IMetaDataDispenser.cs" />
   </ItemGroup>
 </Project>
