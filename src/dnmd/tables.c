@@ -148,11 +148,11 @@ static uint8_t const table_column_counts[] =
     mdtModule_ColCount,
     mdtTypeRef_ColCount,
     mdtTypeDef_ColCount,
-    1, // FieldPtr
+    mdtFieldPtr_ColCount,
     mdtField_ColCount,
-    1, // MethodPtr
+    mdtMethodPtr_ColCount,
     mdtMethodDef_ColCount,
-    1, // ParamPtr
+    mdtParamPtr_ColCount,
     mdtParam_ColCount,
     mdtInterfaceImpl_ColCount,
     mdtMemberRef_ColCount,
@@ -164,10 +164,10 @@ static uint8_t const table_column_counts[] =
     mdtFieldLayout_ColCount,
     mdtStandAloneSig_ColCount,
     mdtEventMap_ColCount,
-    1, // EventPtr
+    mdtEventPtr_ColCount,
     mdtEvent_ColCount,
     mdtPropertyMap_ColCount,
-    1, // PropertyPtr
+    mdtPropertyPtr_ColCount,
     mdtProperty_ColCount,
     mdtMethodSemantics_ColCount,
     mdtMethodImpl_ColCount,
@@ -261,15 +261,14 @@ static mdtable_id_t get_target_table(uint32_t const* all_table_row_counts, mdtab
     assert(all_table_row_counts != NULL);
     assert(mdtid_First <= direct_table && direct_table < mdtid_End);
     assert(mdtid_First <= indirect_table && indirect_table < mdtid_End);
-    return all_table_row_counts[indirect_table] > 0 ? indirect_table : direct_table;
+    return all_table_row_counts[indirect_table] != 0 ? indirect_table : direct_table;
 }
 
 bool initialize_table_details(
     uint32_t const* all_table_row_counts,
-    uint8_t heap_sizes,
+    mdcxt_flag_t context_flags,
     mdtable_id_t id,
     bool is_sorted,
-    bool is_minimal_delta,
     mdtable_t* table)
 {
     assert(all_table_row_counts != NULL && (mdtid_First <= id && id < mdtid_End) && table != NULL);
@@ -277,9 +276,11 @@ bool initialize_table_details(
     if (all_table_row_counts[id] == 0)
         return false;
 
-    mdtcol_t const string_index = mdtc_idx_heap | mdtc_hstring | (heap_sizes & 0x1 ? mdtc_b4 : mdtc_b2);
-    mdtcol_t const guid_index = mdtc_idx_heap | mdtc_hguid | (heap_sizes & 0x2 ? mdtc_b4 : mdtc_b2);
-    mdtcol_t const blob_index = mdtc_idx_heap | mdtc_hblob | (heap_sizes & 0x4 ? mdtc_b4 : mdtc_b2);
+    mdtcol_t const string_index = mdtc_idx_heap | mdtc_hstring | (context_flags & 0x1 ? mdtc_b4 : mdtc_b2);
+    mdtcol_t const guid_index = mdtc_idx_heap | mdtc_hguid | (context_flags & 0x2 ? mdtc_b4 : mdtc_b2);
+    mdtcol_t const blob_index = mdtc_idx_heap | mdtc_hblob | (context_flags & 0x4 ? mdtc_b4 : mdtc_b2);
+    
+    bool is_minimal_delta = (context_flags & mdc_minimal_delta) == mdc_minimal_delta;
 
     table->row_count = all_table_row_counts[id];
     table->is_sorted = is_sorted;

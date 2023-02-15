@@ -90,8 +90,13 @@ typedef enum
 // Flags and masks for context details
 typedef enum
 {
-    mdc_none          = 0x0000,
-    mdc_minimal_delta = 0x0001,
+    mdc_none              = 0x0000,
+    mdc_large_string_heap = 0x0001,
+    mdc_large_guid_heap   = 0x0002,
+    mdc_large_blob_heap   = 0x0004,
+    mdc_extra_data        = 0x0040,
+    mdc_image_flags       = 0xFFFF,
+    mdc_minimal_delta     = 0x00010000,
 } mdcxt_flag_t;
 
 // Macros used to insert/extract the column offset.
@@ -146,7 +151,6 @@ typedef struct _mdcxt_t
 #endif // DNMD_PORTABLE_PDB
 
     // Metadata tables - II.22
-    uint8_t heap_sizes; // 1 = "#Strings", 2 = "#GUID", 4 = "#Blob"
     mdtable_t* tables;
 } mdcxt_t;
 
@@ -240,7 +244,6 @@ bool initialize_table_details(
     uint8_t heap_sizes,
     mdtable_id_t id,
     bool is_sorted,
-    bool is_minimal_delta,
     mdtable_t* table);
 
 // Given the current table, consume the data stream assuming it contains the rows

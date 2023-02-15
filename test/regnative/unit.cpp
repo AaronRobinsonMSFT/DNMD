@@ -2240,7 +2240,7 @@ TestResult UnitImportAPIsIndirectionTables(void const* data, uint32_t dataLen, v
     DWORD compositeImageSize;
     ASSERT_EQUAL(S_OK, baseImageEmit->GetSaveSize(CorSaveSize::cssAccurate, &compositeImageSize));
 
-    std::unique_ptr<uint8_t[]> compositeImage(new uint8_t[compositeImageSize]);
+    std::unique_ptr<uint8_t[]> compositeImage = std::make_unique<uint8_t[]>(compositeImageSize);
     ASSERT_EQUAL(S_OK, baseImageEmit->SaveToMemory(compositeImage.get(), compositeImageSize));
 
     return UnitImportAPIs(compositeImage.get(), compositeImageSize);
