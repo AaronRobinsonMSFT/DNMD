@@ -198,15 +198,15 @@ namespace Regression.UnitTests
 
                 var diagnostics = baselineCompilation.GetDiagnostics();
                 MemoryStream baselineImage = new();
-                baselineCompilation.Emit(baselineImage);
+                baselineCompilation.Emit(baselineImage, options: new EmitOptions(debugInformationFormat: DebugInformationFormat.PortablePdb));
                 baselineImage.Seek(0, SeekOrigin.Begin);
 
                 ModuleMetadata metadata = ModuleMetadata.CreateFromStream(baselineImage);
-                EmitBaseline baseline = EmitBaseline.CreateInitialBaseline(metadata, _ => default);
+                EmitBaseline baseline = EmitBaseline.CreateInitialBaseline(metadata, _ => default, _ => default, true);
 
                 MemoryStream mddiffStream = new();
 
-                diffCompilation.EmitDifference(
+               diffCompilation.EmitDifference(
                     baseline,
                     new[]
                     {
