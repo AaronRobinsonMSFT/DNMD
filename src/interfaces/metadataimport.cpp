@@ -1119,7 +1119,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::FindMethod(
     {
         mdcursor_t target = md_resolve_indirect_cursor(methodCursor);
         uint32_t flags;
-        if (1 != md_get_column_value_as_constant(methodCursor, mdtMethodDef_Flags, 1, &flags))
+        if (1 != md_get_column_value_as_constant(target, mdtMethodDef_Flags, 1, &flags))
             return CLDB_E_FILE_CORRUPT;
 
         // Ignore PrivateScope methods. By the spec, they can only be referred to by a MethodDef token
@@ -1128,7 +1128,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::FindMethod(
             continue;
 
         char const* methodName;
-        if (1 != md_get_column_value_as_utf8(methodCursor, mdtMethodDef_Name, 1, &methodName))
+        if (1 != md_get_column_value_as_utf8(target, mdtMethodDef_Name, 1, &methodName))
             return CLDB_E_FILE_CORRUPT;
         if (::strncmp(methodName, cvt, cvt.Length()) != 0)
             continue;
@@ -1137,7 +1137,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::FindMethod(
         {
             uint8_t const* sig;
             uint32_t sigLen;
-            if (1 != md_get_column_value_as_blob(methodCursor, mdtMethodDef_Signature, 1, &sig, &sigLen))
+            if (1 != md_get_column_value_as_blob(target, mdtMethodDef_Signature, 1, &sig, &sigLen))
                 return CLDB_E_FILE_CORRUPT;
             if (sigLen != defSigLen
                 || ::memcmp(methodDefSig.get(), sig, sigLen) != 0)
@@ -1145,7 +1145,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::FindMethod(
                 continue;
             }
         }
-        if (!md_cursor_to_token(methodCursor, pmb))
+        if (!md_cursor_to_token(target, pmb))
             return CLDB_E_FILE_CORRUPT;
         return S_OK;
     }
