@@ -267,7 +267,7 @@ HRESULT HCORENUMImpl::ReadTableTokens(
 
         mdcursor_t current = md_resolve_indirect_cursor(currData->Table.Current);
 
-        if (!md_cursor_to_token(currData->Table.Current, &rTokens[count]))
+        if (!md_cursor_to_token(current, &rTokens[count]))
             break;
         count++;
 
