@@ -10,7 +10,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 include(CheckCCompilerFlag)
 
-include(CheckCCompilerFlag)
+include(CheckCXXCompilerFlag)
 
 #
 # Configure CMake for platforms
@@ -41,9 +41,13 @@ else()
   add_compile_options(-Wall -Werror) # All warnings and are errors.
   add_compile_options(-g) # enable debugging information.
 
-  check_c_compiler_flag(-Wno-pragma-pack HAS_NO_PRAGMA_PACK)
-  if (HAS_NO_PRAGMA_PACK)
-    add_compile_options(-Wno-pragma-pack) # cor.h controls pack pragmas via headers.
+  check_c_compiler_flag(-Wno-pragma-pack C_HAS_NO_PRAGMA_PACK)
+  if (C_HAS_NO_PRAGMA_PACK)
+    add_compile_options($<$<COMPILE_LANGUAGE:C>:-Wno-pragma-pack>) # cor.h controls pack pragmas via headers.
+  endif()
+  check_cxx_compiler_flag(-Wno-pragma-pack CXX_HAS_NO_PRAGMA_PACK)
+  if (CXX_HAS_NO_PRAGMA_PACK)
+    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-Wno-pragma-pack>) # cor.h controls pack pragmas via headers.
   endif()
 endif()
 
