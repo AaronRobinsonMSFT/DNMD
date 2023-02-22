@@ -641,38 +641,26 @@ bool consume_table_rows(mdtable_t* table, uint8_t const** data, size_t* data_len
     return true;
 }
 
-bool table_column_target_is_indirect_table(mdtable_t* table, uint8_t col_index, mdtable_id_t* indir_table, col_index_t* indir_table_col)
+bool table_is_indirect_table(mdtable_id_t table_id)
 {
-    mdtable_id_t table_id = ExtractTable(table->column_details[col_index]);
-
     if (table_id == mdtid_FieldPtr)
     {
-        *indir_table = table_id;
-        *indir_table_col = mdtFieldPtr_Field;
         return true;
     }
     else if (table_id == mdtid_MethodPtr)
     {
-        *indir_table = table_id;
-        *indir_table_col = mdtMethodPtr_Method;
         return true;
     }
     else if (table_id == mdtid_ParamPtr)
     {
-        *indir_table = table_id;
-        *indir_table_col = mdtParamPtr_Param;
         return true;
     }
     else if (table_id == mdtid_EventPtr)
     {
-        *indir_table = table_id;
-        *indir_table_col = mdtEventPtr_Event;
         return true;
     }
     else if (table_id == mdtid_PropertyPtr)
     {
-        *indir_table = table_id;
-        *indir_table_col = mdtPropertyPtr_Property;
         return true;
     }
 

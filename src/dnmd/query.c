@@ -173,6 +173,16 @@ static uint8_t col_to_index(col_index_t col_idx, mdtable_t* table)
     return (uint8_t)idx;
 }
 
+static col_index_t index_to_col(uint8_t idx, mdtable_id_t table_id)
+{
+#ifdef DEBUG_TABLE_COLUMN_LOOKUP
+    return (col_index_t)((table_id << 8) | idx);
+#else
+    (void)table_id;
+    return (col_index_t)idx;
+#endif
+}
+
 static bool create_query_context(mdcursor_t* cursor, col_index_t col_idx, uint32_t row_count, query_cxt_t* qcxt)
 {
     assert(qcxt != NULL);
@@ -862,14 +872,16 @@ static bool find_range_element(mdcursor_t element, mdcursor_t* tgt_cursor)
 
     uint8_t col_index = col_to_index(tgt_col, tgt_table);
 
-    mdtable_id_t indir_table_id;
-    col_index_t indir_col;
+    assert((tgt_table->column_details[col_index] & mdtc_idx_table) == mdtc_idx_table);
+
     // If the column in the target table is pointing not pointing to the starting table,
     // then it is pointing to the corresponding indirection table.
     // We need to find the element in the indirection table that points to the cursor
     // and then find the element in the target table that points to the indirection table.
-    if (table_column_target_is_indirect_table(tgt_table, col_index, &indir_table_id, &indir_col))
+    if (table_is_indirect_table(ExtractTable(tgt_table->column_details[col_index])))
     {
+        mdtable_id_t indir_table_id = ExtractTable(tgt_table->column_details[col_index]);
+        col_index_t indir_col = index_to_col(0, indir_table_id);
         mdcursor_t indir_table_cursor;
         uint32_t indir_table_row_count;
         if (!md_create_cursor(table->cxt, indir_table_id, &indir_table_cursor, &indir_table_row_count))
@@ -958,12 +970,13 @@ bool md_find_cursor_of_range_element(mdcursor_t element, mdcursor_t* cursor)
     return find_range_element(element, cursor);
 }
 
-bool md_column_is_indirect(mdcursor_t cursor, col_index_t col, col_index_t* indir_table_col)
+mdcursor_t md_resolve_indirect_cursor(mdcursor_t c)
 {
-    mdtable_t* table = CursorTable(&cursor);
-    if (table == NULL)
-        return false;
-    
-    mdtable_id_t indir_table_id;
-    return table_column_target_is_indirect_table(table, col_to_index(col, table), &indir_table_id, indir_table_col);
+    if (table_is_indirect_table(CursorTable(&c)->table_id))
+    {
+        mdcursor_t pointed_to = { 0 };
+        (void)md_get_column_value_as_cursor(c, index_to_col(0, ExtractTable(CursorTable(&c)->table_id)), 1, &pointed_to);
+        return pointed_to;
+    }
+    return c;
 }

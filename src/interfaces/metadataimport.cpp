@@ -92,13 +92,11 @@ namespace
         if (!md_get_column_value_as_range(cursor, column, &begin, &count))
             return CLDB_E_FILE_CORRUPT;
 
-        col_index_t indirectionTableColumn;
-        bool columnIsIndirect = md_column_is_indirect(cursor, column, &indirectionTableColumn);
         HCORENUMImpl* enumImpl;
         if ((filter == nullptr || filter->Value == nullptr))
         {
             RETURN_IF_FAILED(HCORENUMImpl::CreateTableEnum(1, &enumImpl));
-            HCORENUMImpl::InitTableEnum(*enumImpl, 0, begin, count, columnIsIndirect ? &indirectionTableColumn : nullptr);
+            HCORENUMImpl::InitTableEnum(*enumImpl, 0, begin, count);
         }
         else
         {
@@ -116,12 +114,7 @@ namespace
             mdcursor_t curr = begin;
             for (uint32_t i = 0; i < count; ++i)
             {
-                mdcursor_t target = curr;
-                if (columnIsIndirect)
-                {
-                    if (1 != md_get_column_value_as_cursor(curr, indirectionTableColumn, 1, &target))
-                        return CLDB_E_FILE_CORRUPT;
-                }
+                mdcursor_t target =  md_resolve_indirect_cursor(curr);
                 if (1 != md_get_column_value_as_utf8(target, filter->FilterColumn, 1, &toMatch))
                     return CLDB_E_FILE_CORRUPT;
 
@@ -725,10 +718,6 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumMembers(
         uint32_t methodListCount;
         mdcursor_t fieldList;
         uint32_t fieldListCount;
-        col_index_t methodIndirectColumn;
-        bool methodListIndirect = md_column_is_indirect(cursor, mdtTypeDef_MethodList, &methodIndirectColumn);
-        col_index_t fieldIndirectColumn;
-        bool fieldListIndirect = md_column_is_indirect(cursor, mdtTypeDef_FieldList, &fieldIndirectColumn);
         if (!md_get_column_value_as_range(cursor, mdtTypeDef_FieldList, &fieldList, &fieldListCount)
             || !md_get_column_value_as_range(cursor, mdtTypeDef_MethodList, &methodList, &methodListCount))
         {
@@ -736,8 +725,8 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumMembers(
         }
 
         RETURN_IF_FAILED(HCORENUMImpl::CreateTableEnum(2, &enumImpl));
-        HCORENUMImpl::InitTableEnum(*enumImpl, 0, methodList, methodListCount, methodListIndirect ? &methodIndirectColumn : nullptr);
-        HCORENUMImpl::InitTableEnum(*enumImpl, 1, fieldList, fieldListCount, fieldListIndirect ? &fieldIndirectColumn : nullptr);
+        HCORENUMImpl::InitTableEnum(*enumImpl, 0, methodList, methodListCount);
+        HCORENUMImpl::InitTableEnum(*enumImpl, 1, fieldList, fieldListCount);
         *phEnum = enumImpl;
     }
     return enumImpl->ReadTokens(rMembers, cMax, pcTokens);
@@ -770,10 +759,6 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumMembersWithName(
         uint32_t methodListCount;
         mdcursor_t fieldList;
         uint32_t fieldListCount;
-        col_index_t methodIndirectColumn;
-        bool methodListIndirect = md_column_is_indirect(cursor, mdtTypeDef_MethodList, &methodIndirectColumn);
-        col_index_t fieldIndirectColumn;
-        bool fieldListIndirect = md_column_is_indirect(cursor, mdtTypeDef_FieldList, &fieldIndirectColumn);
         if (!md_get_column_value_as_range(cursor, mdtTypeDef_FieldList, &fieldList, &fieldListCount)
             || !md_get_column_value_as_range(cursor, mdtTypeDef_MethodList, &methodList, &methodListCount))
         {
@@ -794,12 +779,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumMembersWithName(
         // Iterate the Type's methods
         for (uint32_t i = 0; i < methodListCount; ++i)
         {
-            mdcursor_t methodCursor = methodList;
-            if (methodListIndirect)
-            {
-                if (1 != md_get_column_value_as_cursor(methodList, methodIndirectColumn, 1, &methodCursor))
-                    return CLDB_E_FILE_CORRUPT;
-            }
+            mdcursor_t methodCursor = md_resolve_indirect_cursor(methodList);
             if (1 != md_get_column_value_as_utf8(methodCursor, mdtMethodDef_Name, 1, &toMatch))
                 return CLDB_E_FILE_CORRUPT;
 
@@ -814,12 +794,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumMembersWithName(
         // Iterate the Type's fields
         for (uint32_t i = 0; i < fieldListCount; ++i)
         {
-            mdcursor_t fieldCursor = fieldList;
-            if (fieldListIndirect)
-            {
-                if (1 != md_get_column_value_as_cursor(fieldList, fieldIndirectColumn, 1, &fieldCursor))
-                    return CLDB_E_FILE_CORRUPT;
-            }
+            mdcursor_t fieldCursor = md_resolve_indirect_cursor(fieldList);
             if (1 != md_get_column_value_as_utf8(fieldCursor, mdtField_Name, 1, &toMatch))
                 return CLDB_E_FILE_CORRUPT;
 
@@ -1126,8 +1101,6 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::FindMethod(
 
     mdcursor_t methodCursor;
     uint32_t count;
-    col_index_t methodIndirectColumn;
-    bool methodListIndirect = md_column_is_indirect(typedefCursor, mdtTypeDef_MethodList, &methodIndirectColumn);
     if (!md_get_column_value_as_range(typedefCursor, mdtTypeDef_MethodList, &methodCursor, &count))
         return CLDB_E_FILE_CORRUPT;
 
@@ -1144,12 +1117,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::FindMethod(
 
     for (uint32_t i = 0; i < count; (void)md_cursor_next(&methodCursor), ++i)
     {
-        mdcursor_t target = methodCursor;
-        if (methodListIndirect)
-        {
-            if (1 != md_get_column_value_as_cursor(methodCursor, methodIndirectColumn, 1, &target))
-                return CLDB_E_FILE_CORRUPT;
-        }
+        mdcursor_t target = md_resolve_indirect_cursor(methodCursor);
         uint32_t flags;
         if (1 != md_get_column_value_as_constant(methodCursor, mdtMethodDef_Flags, 1, &flags))
             return CLDB_E_FILE_CORRUPT;
@@ -1203,8 +1171,6 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::FindField(
 
     mdcursor_t fieldCursor;
     uint32_t count;
-    col_index_t fieldIndirectColumn;
-    bool fieldListIndirect = md_column_is_indirect(typedefCursor, mdtTypeDef_FieldList, &fieldIndirectColumn);
     if (!md_get_column_value_as_range(typedefCursor, mdtTypeDef_FieldList, &fieldCursor, &count))
         return CLDB_E_FILE_CORRUPT;
 
@@ -1214,12 +1180,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::FindField(
 
     for (uint32_t i = 0; i < count; (void)md_cursor_next(&fieldCursor), ++i)
     {
-        mdcursor_t target = fieldCursor;
-        if (fieldListIndirect)
-        {
-            if (1 != md_get_column_value_as_cursor(fieldCursor, fieldIndirectColumn, 1, &target))
-                return CLDB_E_FILE_CORRUPT;
-        }
+        mdcursor_t target = md_resolve_indirect_cursor(fieldCursor);
         uint32_t flags;
         if (1 != md_get_column_value_as_constant(target, mdtField_Flags, 1, &flags))
             return CLDB_E_FILE_CORRUPT;
@@ -1442,10 +1403,8 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumProperties(
             return CLDB_E_FILE_CORRUPT;
         }
 
-        col_index_t propertyIndirectColumn;
-        bool propertyColumnIsIndirect = md_column_is_indirect(typedefPropMap, mdtPropertyMap_PropertyList, &propertyIndirectColumn);
         RETURN_IF_FAILED(HCORENUMImpl::CreateTableEnum(1, &enumImpl));
-        HCORENUMImpl::InitTableEnum(*enumImpl, 0, propertyList, propertyListCount, propertyColumnIsIndirect ? &propertyIndirectColumn : nullptr);
+        HCORENUMImpl::InitTableEnum(*enumImpl, 0, propertyList, propertyListCount);
         *phEnum = enumImpl;
     }
     return enumImpl->ReadTokens(rProperties, cMax, pcProperties);
@@ -1482,10 +1441,8 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumEvents(
             return CLDB_E_FILE_CORRUPT;
         }
 
-        col_index_t eventIndirectColumn;
-        bool eventColumnIsIndirect = md_column_is_indirect(typedefEventMap, mdtEventMap_EventList, &eventIndirectColumn);
         RETURN_IF_FAILED(HCORENUMImpl::CreateTableEnum(1, &enumImpl));
-        HCORENUMImpl::InitTableEnum(*enumImpl, 0, eventList, eventListCount, eventColumnIsIndirect ? &eventIndirectColumn : nullptr);
+        HCORENUMImpl::InitTableEnum(*enumImpl, 0, eventList, eventListCount);
         *phEnum = enumImpl;
     }
     return enumImpl->ReadTokens(rEvents, cMax, pcEvents);
@@ -2178,17 +2135,10 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetParamForMethodIndex(
     if (!md_get_column_value_as_range(cursor, mdtMethodDef_ParamList, &curr, &count))
         return CLDB_E_FILE_CORRUPT;
 
-    col_index_t indirectColumn;
-    bool isIndirectColumn = md_column_is_indirect(cursor, mdtMethodDef_ParamList, &indirectColumn);
     uint32_t seqMaybe;
     for (uint32_t i = 0; i < count; ++i)
     {
-        mdcursor_t target = curr;
-        if (isIndirectColumn)
-        {
-            if (1 != md_get_column_value_as_cursor(curr, indirectColumn, 1, &target))
-                return CLDB_E_FILE_CORRUPT;
-        }
+        mdcursor_t target = md_resolve_indirect_cursor(curr);
         if (1 != md_get_column_value_as_constant(target, mdtParam_Sequence, 1, &seqMaybe))
             return CLDB_E_FILE_CORRUPT;
 
