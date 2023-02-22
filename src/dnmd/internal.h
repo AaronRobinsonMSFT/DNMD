@@ -241,7 +241,7 @@ uint8_t get_table_column_count(mdtable_id_t id);
 // Initialize the supplied table details
 bool initialize_table_details(
     uint32_t const* all_table_row_counts,
-    uint8_t heap_sizes,
+    mdcxt_flag_t context_flags,
     mdtable_id_t id,
     bool is_sorted,
     mdtable_t* table);
