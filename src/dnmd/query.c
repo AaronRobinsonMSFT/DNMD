@@ -687,17 +687,17 @@ bool md_find_row_from_cursor(mdcursor_t begin, col_index_t idx, uint32_t value, 
     return find_row_from_cursor(begin, idx, &value, cursor);
 }
 
-bool md_find_range_from_cursor(mdcursor_t begin, col_index_t idx, uint32_t value, mdcursor_t* start, uint32_t* count)
+md_range_result_t md_find_range_from_cursor(mdcursor_t begin, col_index_t idx, uint32_t value, mdcursor_t* start, uint32_t* count)
 {
     // If the table isn't sorted, then a range isn't possible.
     mdtable_t* table = CursorTable(&begin);
     if (!table->is_sorted)
-        return false;
+        return MD_RANGE_NOT_SUPPORTED;
 
     // Look for any instance of the value.
     mdcursor_t found;
     if (!find_row_from_cursor(begin, idx, &value, &found))
-        return false;
+        return MD_RANGE_NOT_FOUND;
 
     int32_t res;
     find_cxt_t fcxt;
@@ -736,7 +736,7 @@ bool md_find_range_from_cursor(mdcursor_t begin, col_index_t idx, uint32_t value
 
     // Compute the row delta
     *count = CursorRow(&end) - CursorRow(start);
-    return true;
+    return MD_RANGE_FOUND;
 }
 
 // Modeled after C11's bsearch_s. This API performs a binary search
@@ -966,12 +966,4 @@ bool md_column_is_indirect(mdcursor_t cursor, col_index_t col, col_index_t* indi
     
     mdtable_id_t indir_table_id;
     return table_column_target_is_indirect_table(table, col_to_index(col, table), &indir_table_id, indir_table_col);
-}
-
-bool md_cursor_table_is_sorted(mdcursor_t cursor)
-{
-    mdtable_t* table = CursorTable(&cursor);
-    if (table == NULL)
-        return false;
-    return table->is_sorted;
 }

@@ -409,7 +409,15 @@ int32_t md_get_column_value_as_guid(mdcursor_t c,col_index_t col_idx, uint32_t o
 // If the queried column contains a coded index value, the value will be validated and
 // transformed to its coded form for comparison.
 bool md_find_row_from_cursor(mdcursor_t begin, col_index_t idx, uint32_t value, mdcursor_t* cursor);
-bool md_find_range_from_cursor(mdcursor_t begin, col_index_t idx, uint32_t value, mdcursor_t* start, uint32_t* count);
+
+typedef enum _md_range_result_t
+{
+    MD_RANGE_FOUND = 0,
+    MD_RANGE_NOT_FOUND = 1,
+    MD_RANGE_NOT_SUPPORTED = 2,
+} md_range_result_t;
+
+md_range_result_t md_find_range_from_cursor(mdcursor_t begin, col_index_t idx, uint32_t value, mdcursor_t* start, uint32_t* count);
 
 // Given a value into a supported table, find the associated parent token.
 //  - mdtid_Field
@@ -430,9 +438,6 @@ bool md_create_methoddefsig_from_methodrefsig(uint8_t const* ref_sig, size_t ref
 
 // Determine if the given column on the cursor's table points to an indirect table.
 bool md_column_is_indirect(mdcursor_t c, col_index_t col_idx, col_index_t* indir_table_col);
-
-// Determine if the cursor's table is sorted.
-bool md_cursor_table_is_sorted(mdcursor_t c);
 
 #ifdef __cplusplus
 }

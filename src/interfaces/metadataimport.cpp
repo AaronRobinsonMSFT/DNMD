@@ -153,13 +153,16 @@ namespace
         if (!md_create_cursor(mdhandle, table, &cursor, &tableCount))
             return CLDB_E_INDEX_NOTFOUND;
 
-        if (md_cursor_table_is_sorted(cursor))
-        {
-            mdcursor_t begin;
-            uint32_t count;
-            if (!md_find_range_from_cursor(cursor, keyColumn, token, &begin, &count))
-                return HCORENUMImpl::CreateDynamicEnum(pEnumImpl);
+        mdcursor_t begin;
+        uint32_t count;
+        md_range_result_t result = md_find_range_from_cursor(cursor, keyColumn, token, &begin, &count);
 
+        if (result == MD_RANGE_NOT_FOUND)
+        {
+            return HCORENUMImpl::CreateDynamicEnum(pEnumImpl);
+        }
+        else if (result == MD_RANGE_FOUND)
+        {
             HCORENUMImpl* enumImpl;
             RETURN_IF_FAILED(HCORENUMImpl::CreateTableEnum(1, &enumImpl));
             HCORENUMImpl::InitTableEnum(*enumImpl, 0, begin, count);
@@ -309,22 +312,20 @@ namespace
     {
         mdcursor_t curr;
         uint32_t currCount;
-        if (md_cursor_table_is_sorted(begin))
+        md_range_result_t result = md_find_range_from_cursor(begin, lookupRange, lookupTk, &curr, &currCount);
+        if (result == MD_RANGE_FOUND)
         {
-            if (md_find_range_from_cursor(begin, lookupRange, lookupTk, &curr, &currCount))
+            // Table is sorted and subset found
+            for (uint32_t i = 0; i < currCount; ++i)
             {
-                // Table is sorted and subset found
-                for (uint32_t i = 0; i < currCount; ++i)
-                {
-                    if (op(curr))
-                        return;
-                    (void)md_cursor_next(&curr);
-                }
+                if (op(curr))
+                    return;
+                (void)md_cursor_next(&curr);
             }
         }
-        else
+        else if (result == MD_RANGE_NOT_SUPPORTED)
         {
-            // Unsorted so we need to search across the entire table
+            // Cannot get a range on this table so we need to search across the entire table
             curr = begin;
             currCount = count;
 
@@ -1051,9 +1052,9 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumPermissionSets(
         if (!md_create_cursor(_md_ptr.get(), mdtid_DeclSecurity, &cursor, &count))
             return CLDB_E_RECORD_NOTFOUND;
 
-        if (!IsNilToken(tk) && md_cursor_table_is_sorted(cursor))
+        if (!IsNilToken(tk))
         {
-            if (!md_find_range_from_cursor(cursor, mdtDeclSecurity_Parent, tk, &cursor, &count))
+            if (md_find_range_from_cursor(cursor, mdtDeclSecurity_Parent, tk, &cursor, &count) == MD_RANGE_NOT_FOUND)
                 return CLDB_E_RECORD_NOTFOUND;
         }
 
@@ -2234,54 +2235,57 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumCustomAttributes(
             RETURN_IF_FAILED(HCORENUMImpl::CreateTableEnum(1, &enumImpl));
             HCORENUMImpl::InitTableEnum(*enumImpl, 0, cursor, count);
         }
-        else if (IsNilToken(tkType)
-            && md_cursor_table_is_sorted(cursor))
+        else
         {
-            // Caller is looking for all associated attributes or the list is sorted.
-            if (md_find_range_from_cursor(cursor, mdtCustomAttribute_Parent, tk, &curr, &currCount))
+            md_range_result_t result = md_find_range_from_cursor(cursor, mdtCustomAttribute_Parent, tk, &curr, &currCount);
+            if (IsNilToken(tkType) && result != MD_RANGE_NOT_SUPPORTED)
             {
-                RETURN_IF_FAILED(HCORENUMImpl::CreateTableEnum(1, &enumImpl));
-                HCORENUMImpl::InitTableEnum(*enumImpl, 0, curr, currCount);
+                // Caller is looking for all associated attributes and we got a table range.
+                if (result == MD_RANGE_FOUND)
+                {
+                    RETURN_IF_FAILED(HCORENUMImpl::CreateTableEnum(1, &enumImpl));
+                    HCORENUMImpl::InitTableEnum(*enumImpl, 0, curr, currCount);
+                }
+                else if (result == MD_RANGE_NOT_FOUND)
+                {
+                    // If there are no tokens found, create an empty enumeration.
+                    RETURN_IF_FAILED(HCORENUMImpl::CreateDynamicEnum(&enumImpl));
+                }
             }
             else
             {
-                // If there are no tokens found, create an empty enumeration.
                 RETURN_IF_FAILED(HCORENUMImpl::CreateDynamicEnum(&enumImpl));
-            }
-        }
-        else
-        {
-            RETURN_IF_FAILED(HCORENUMImpl::CreateDynamicEnum(&enumImpl));
 
-            HCORENUMImpl_ptr cleanup{ enumImpl };
+                HCORENUMImpl_ptr cleanup{ enumImpl };
 
-            // Unsorted so we need to search across the entire table
-            curr = cursor;
-            currCount = count;
+                // We need to search across the entire table as we couldn't get a range.
+                curr = cursor;
+                currCount = count;
 
-            // Read in for matching in bulk
-            mdToken toMatch[64];
-            mdToken matchedTk;
-            uint32_t i = 0;
-            while (i < currCount)
-            {
-                int32_t read = md_get_column_value_as_token(curr, mdtCustomAttribute_Parent, ARRAY_SIZE(toMatch), toMatch);
-                if (read == 0)
-                    break;
-
-                assert(read > 0);
-                for (int32_t j = 0; j < read; ++j)
+                // Read in for matching in bulk
+                mdToken toMatch[64];
+                mdToken matchedTk;
+                uint32_t i = 0;
+                while (i < currCount)
                 {
-                    if (toMatch[j] == tkType)
+                    int32_t read = md_get_column_value_as_token(curr, mdtCustomAttribute_Parent, ARRAY_SIZE(toMatch), toMatch);
+                    if (read == 0)
+                        break;
+
+                    assert(read > 0);
+                    for (int32_t j = 0; j < read; ++j)
                     {
-                        (void)md_cursor_to_token(curr, &matchedTk);
-                        RETURN_IF_FAILED(HCORENUMImpl::AddToDynamicEnum(*enumImpl, matchedTk));
+                        if (toMatch[j] == tkType)
+                        {
+                            (void)md_cursor_to_token(curr, &matchedTk);
+                            RETURN_IF_FAILED(HCORENUMImpl::AddToDynamicEnum(*enumImpl, matchedTk));
+                        }
+                        (void)md_cursor_next(&curr);
                     }
-                    (void)md_cursor_next(&curr);
+                    i += read;
                 }
-                i += read;
+                enumImpl = cleanup.release();
             }
-            enumImpl = cleanup.release();
         }
         *phEnum = enumImpl;
     }
