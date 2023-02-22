@@ -34,7 +34,7 @@ HRESULT pal::ConvertUtf16ToUtf8(
         bufferLength -= 1;
     }
 
-	UErrorCode err = U_ZERO_ERROR;
+    UErrorCode err = U_ZERO_ERROR;
     (void)::u_strToUTF8(buffer, bufferLength, &length, (UChar const*)str, -1, &err);
     if (U_FAILURE(err))
     {
@@ -48,6 +48,8 @@ HRESULT pal::ConvertUtf16ToUtf8(
             return E_NOT_SUFFICIENT_BUFFER;
         }
     }
+    if (buffer != nullptr)
+        buffer[length] = '\0';
     length += 1; // Add null terminator
 #else
 #error Missing implementation
@@ -86,7 +88,7 @@ HRESULT pal::ConvertUtf8ToUtf16(
         bufferLength -= 1;
     }
 
-	UErrorCode err = U_ZERO_ERROR;
+    UErrorCode err = U_ZERO_ERROR;
     (void)::u_strFromUTF8((UChar*)buffer, bufferLength, &length, str, -1, &err);
     if (U_FAILURE(err))
     {
@@ -100,6 +102,8 @@ HRESULT pal::ConvertUtf8ToUtf16(
             return E_NOT_SUFFICIENT_BUFFER;
         }
     }
+    if (buffer != nullptr)
+        buffer[length] = W('\0');
     length += 1; // Add null terminator
 #else
 #error Missing implementation
