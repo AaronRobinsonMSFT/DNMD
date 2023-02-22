@@ -54,6 +54,9 @@ endif()
 if(APPLE)
   # Use ICU when running on macOS
   target_link_libraries(dnmd_interfaces icucore)
+elseif(UNIX)
+  # Use ICU when running on Linux
+  target_link_libraries(dnmd_interfaces icuuc)
 endif()
 
 set_target_properties(dnmd_interfaces_static PROPERTIES
