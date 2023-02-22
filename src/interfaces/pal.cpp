@@ -30,9 +30,7 @@ HRESULT pal::ConvertUtf16ToUtf8(
 #elif defined(BUILD_MACOS) || defined(BUILD_UNIX)
     // Buffer lengths assume null terminator
     if (bufferLength > 0)
-    {
         bufferLength -= 1;
-    }
 
     UErrorCode err = U_ZERO_ERROR;
     (void)::u_strToUTF8(buffer, bufferLength, &length, (UChar const*)str, -1, &err);
@@ -84,9 +82,7 @@ HRESULT pal::ConvertUtf8ToUtf16(
 #elif defined(BUILD_MACOS) || defined(BUILD_UNIX)
     // Buffer lengths assume null terminator
     if (bufferLength > 0)
-    {
         bufferLength -= 1;
-    }
 
     UErrorCode err = U_ZERO_ERROR;
     (void)::u_strFromUTF8((UChar*)buffer, bufferLength, &length, str, -1, &err);
