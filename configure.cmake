@@ -25,6 +25,7 @@ elseif(APPLE)
   set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
   set(CMAKE_INSTALL_RPATH "@loader_path")
 else()
+  set(CMAKE_INSTALL_RPATH "$ORIGIN")
   add_compile_definitions(BUILD_UNIX=1)
 endif()
 
