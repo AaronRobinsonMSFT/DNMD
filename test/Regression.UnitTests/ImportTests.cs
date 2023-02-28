@@ -44,7 +44,7 @@ namespace Regression.UnitTests
                 : OperatingSystem.IsMacOS() ? "libregnative.dylib"
                 : "libregnative.so";
 
-            nint mod = NativeLibrary.Load(regnativePath);
+            nint mod = NativeLibrary.Load(Path.Combine(AppContext.BaseDirectory, regnativePath));
             var initialize = (delegate* unmanaged<void*, void*, int>)NativeLibrary.GetExport(mod, "UnitInitialize");
             int hr = initialize((void*)Dispensers.Baseline, (void*)Dispensers.DeltaImageBuilder);
             if (hr < 0)
