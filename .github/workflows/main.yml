@@ -2,16 +2,18 @@ name: DNMD
 
 on:
   push:
-    branches: [ master ]
   pull_request:
     branches: [ master ]
-  
+    paths:
+      - '!**.md'
+
 jobs:
   build:
     strategy:
       matrix:
         os: [windows-latest, macos-latest, ubuntu-latest]
         flavor: [Debug, Release]
+      fail-fast: false
     runs-on: ${{ matrix.os }}
     name: Build (${{ matrix.os }}, ${{ matrix.flavor }})
     steps:
@@ -44,24 +46,3 @@ jobs:
       with:
         name: TestResults-${{ matrix.os }}-${{ matrix.flavor }}
         path: ./test/Regression.UnitTests/TestResults-${{ matrix.os }}-${{ matrix.flavor }}
-
-  publish-test-results:
-    name: Publish Test Results
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      checks: write
-      contents: read
-      issues: read
-    if: always()
-    steps:
-      - name: Download Artifacts
-        uses: actions/download-artifact@v2
-        with:
-          path: testResults
-
-      - name: Publish Test Results
-        uses: EnricoMi/publish-unit-test-result-action@v2
-        with:
-          trx_files: "testResults/**/*.trx"
-          comment_mode: "off"
