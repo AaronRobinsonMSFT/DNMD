@@ -164,8 +164,8 @@ bool md_create_handle(void const* data, size_t data_len, mdhandle_t* handle)
             // There may be up to three extra '\0' characters appended for padding.
             // ENC minimal delta images require the precise size of the base image string heap to be known,
             // so we trim the trailing padding.
-            const char *p = cxt.strings_heap.ptr + cxt.strings_heap.size - 1;
-            while (p [0] == '\0' && p [-1] == '\0')
+            uint8_t const* p = cxt.strings_heap.ptr + cxt.strings_heap.size - 1;
+            while (p [0] == 0 && p [-1] == 0)
             {
                 p--;
                 cxt.strings_heap.size--;
