@@ -11,11 +11,11 @@
 #include <cstdint>
 #include <atomic>
 
-class MetadataImportRO final : public TearOffBase<IMetaDataImport2>
+class MetadataImportRO final : public TearOffBase<IMetaDataImport2, IMetaDataAssemblyImport>
 {
     mdhandle_ptr _md_ptr;
     malloc_ptr<void> _malloc_to_free;
-    cotaskmem_ptr _cotaskmem_to_free;
+    dncp::cotaskmem_ptr<void> _cotaskmem_to_free;
 
 protected:
     STDMETHODIMP TryGetInterfaceOnThis(REFIID riid, void** ppvObject) override
@@ -25,11 +25,16 @@ protected:
             *ppvObject = static_cast<IMetaDataImport2*>(this);
             return S_OK;
         }
+        if (riid == IID_IMetaDataAssemblyImport)
+        {
+            *ppvObject = static_cast<IMetaDataAssemblyImport*>(this);
+            return S_OK;
+        }
         return E_NOINTERFACE;
     }
 
 public:
-    MetadataImportRO(IUnknown* controllingUnknown, mdhandle_ptr md_ptr, malloc_ptr<void> mallocMem, cotaskmem_ptr cotaskmemMem)
+    MetadataImportRO(IUnknown* controllingUnknown, mdhandle_ptr md_ptr, malloc_ptr<void> mallocMem, dncp::cotaskmem_ptr<void> cotaskmemMem)
         : TearOffBase(controllingUnknown)
         , _md_ptr{ std::move(md_ptr) }
         , _malloc_to_free{ std::move(mallocMem) }
@@ -511,6 +516,101 @@ public: // IMetaDataImport2
         mdMethodSpec rMethodSpecs[],
         ULONG       cMax,
         ULONG       *pcMethodSpecs) override;
+
+public: // IMetaDataAssemblyImport
+    STDMETHOD(GetAssemblyProps)(
+        mdAssembly  mda,
+        void const** ppbPublicKey,
+        ULONG* pcbPublicKey,
+        ULONG* pulHashAlgId,
+        _Out_writes_to_opt_(cchName, *pchName) LPWSTR  szName,
+        ULONG       cchName,
+        ULONG* pchName,
+        ASSEMBLYMETADATA* pMetaData,
+        DWORD* pdwAssemblyFlags) override;
+
+    STDMETHOD(GetAssemblyRefProps)(
+        mdAssemblyRef mdar,
+        void const** ppbPublicKeyOrToken,
+        ULONG* pcbPublicKeyOrToken,
+        _Out_writes_to_opt_(cchName, *pchName)LPWSTR szName,
+        ULONG       cchName,
+        ULONG* pchName,
+        ASSEMBLYMETADATA* pMetaData,
+        void const** ppbHashValue,
+        ULONG* pcbHashValue,
+        DWORD* pdwAssemblyRefFlags) override;
+
+    STDMETHOD(GetFileProps)(
+        mdFile      mdf,
+        _Out_writes_to_opt_(cchName, *pchName) LPWSTR      szName,
+        ULONG       cchName,
+        ULONG* pchName,
+        void const** ppbHashValue,
+        ULONG* pcbHashValue,
+        DWORD* pdwFileFlags) override;
+
+    STDMETHOD(GetExportedTypeProps)(
+        mdExportedType   mdct,
+        _Out_writes_to_opt_(cchName, *pchName) LPWSTR      szName,
+        ULONG       cchName,
+        ULONG* pchName,
+        mdToken* ptkImplementation,
+        mdTypeDef* ptkTypeDef,
+        DWORD* pdwExportedTypeFlags) override;
+
+    STDMETHOD(GetManifestResourceProps)(
+        mdManifestResource  mdmr,
+        _Out_writes_to_opt_(cchName, *pchName)LPWSTR      szName,
+        ULONG       cchName,
+        ULONG* pchName,
+        mdToken* ptkImplementation,
+        DWORD* pdwOffset,
+        DWORD* pdwResourceFlags) override;
+
+    STDMETHOD(EnumAssemblyRefs)(
+        HCORENUM* phEnum,
+        mdAssemblyRef rAssemblyRefs[],
+        ULONG       cMax,
+        ULONG* pcTokens) override;
+
+    STDMETHOD(EnumFiles)(
+        HCORENUM* phEnum,
+        mdFile      rFiles[],
+        ULONG       cMax,
+        ULONG* pcTokens) override;
+
+    STDMETHOD(EnumExportedTypes)(
+        HCORENUM* phEnum,
+        mdExportedType   rExportedTypes[],
+        ULONG       cMax,
+        ULONG* pcTokens) override;
+
+    STDMETHOD(EnumManifestResources)(
+        HCORENUM* phEnum,
+        mdManifestResource  rManifestResources[],
+        ULONG       cMax,
+        ULONG* pcTokens) override;
+
+    STDMETHOD(GetAssemblyFromScope)(
+        mdAssembly* ptkAssembly) override;
+
+    STDMETHOD(FindExportedTypeByName)(
+        LPCWSTR     szName,
+        mdToken     mdtExportedType,
+        mdExportedType* ptkExportedType) override;
+
+    STDMETHOD(FindManifestResourceByName)(
+        LPCWSTR     szName,
+        mdManifestResource* ptkManifestResource) override;
+
+    STDMETHOD(FindAssembliesByName)(
+        LPCWSTR  szAppBase,
+        LPCWSTR  szPrivateBin,
+        LPCWSTR  szAssemblyName,
+        IUnknown* ppIUnk[],
+        ULONG    cMax,
+        ULONG* pcAssemblies) override;
 };
 
 #endif

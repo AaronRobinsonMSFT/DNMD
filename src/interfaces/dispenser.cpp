@@ -53,7 +53,7 @@ namespace
             if (ppIUnk == nullptr)
                 return E_INVALIDARG;
 
-            cotaskmem_ptr nowOwned;
+            dncp::cotaskmem_ptr<void> nowOwned;
             if (dwOpenFlags & ofTakeOwnership)
                 nowOwned.reset((void*)pData);
 

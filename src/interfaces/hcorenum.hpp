@@ -25,8 +25,6 @@ class HCORENUMImpl final
             {
                 mdcursor_t Current;
                 mdcursor_t Start;
-                bool IsIndirect;
-                col_index_t IndirectionColumn;
             } Table;
 
             // Enumerate for dynamic uint32_t array
@@ -48,7 +46,7 @@ class HCORENUMImpl final
 public: // static
     // Lifetime operations
     static HRESULT CreateTableEnum(_In_ uint32_t count, _Out_ HCORENUMImpl** impl) noexcept;
-    static void InitTableEnum(_Inout_ HCORENUMImpl& impl, _In_ uint32_t index, _In_ mdcursor_t cursor, _In_ uint32_t rows, _In_opt_ col_index_t* indirectionColumn = nullptr) noexcept;
+    static void InitTableEnum(_Inout_ HCORENUMImpl& impl, _In_ uint32_t index, _In_ mdcursor_t cursor, _In_ uint32_t rows) noexcept;
 
     // If multiple values represent a single entry, the "entrySpan" argument
     // can be used to indicate the count for a single entry.
