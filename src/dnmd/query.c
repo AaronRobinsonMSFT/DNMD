@@ -1074,3 +1074,65 @@ int32_t md_set_column_value_as_cursor(mdcursor_t* c, col_index_t col, mdcursor_t
         return -1;
     return set_column_value_as_token_or_cursor(c, col_to_index(col, CursorTable(c)), NULL, cursor, in_length);
 }
+
+int32_t update_shifted_row_references(mdcursor_t* c, uint32_t count, uint8_t col_index, mdtable_id_t updated_table, uint32_t original_starting_table_index, uint32_t new_starting_table_index)
+{
+    assert(c != NULL);
+    col_index_t col = index_to_col(col_index, CursorTable(c)->table_id);
+
+    query_cxt_t qcxt;
+    if (!create_query_context(c, col, count, false, &qcxt))
+        return -1;
+
+    // If this isn't an index column, then fail.
+    if (!(qcxt.col_details & (mdtc_idx_table | mdtc_idx_coded)))
+        return -1;
+
+    int32_t diff = (int32_t)(new_starting_table_index - original_starting_table_index);
+
+    int32_t written = 0;
+    do
+    {
+        uint32_t raw;
+        mdtable_id_t table_id;
+        uint32_t table_row;
+        if (!read_column_data(&qcxt, &raw))
+            return -1;
+
+        if (qcxt.col_details & mdtc_idx_table)
+        {
+            // The raw value is the row index into the table that
+            // is embedded in the column details.
+            table_row = RidFromToken(raw);
+            table_id = ExtractTable(qcxt.col_details);
+        }
+        else
+        {
+            assert(qcxt.col_details & mdtc_idx_coded);
+            if (!decompose_coded_index(raw, qcxt.col_details, &table_id, &table_row))
+                return -1;
+        }
+
+        if (table_id != updated_table || table_row < original_starting_table_index)
+            continue;
+
+        table_row += diff;
+
+        if (qcxt.col_details & mdtc_idx_table)
+        {
+            // The raw value is the row index into the table that
+            // is embedded in the column details.
+            raw = table_row;
+        }
+        else
+        {
+            assert(qcxt.col_details & mdtc_idx_coded);
+            if (!compose_coded_index(raw, qcxt.col_details, &raw))
+                return -1;
+        }
+        write_column_data(&qcxt, raw);
+        written++;
+    } while (next_row(&qcxt));
+    
+    return written;
+}

@@ -142,6 +142,22 @@ bool decompose_coded_index(uint32_t cidx, mdtcol_t col_details, mdtable_id_t* ta
     return true;
 }
 
+bool is_coded_index_target(mdtcol_t col_details, mdtable_id_t table)
+{
+    size_t ci_idx = ExtractCodedIndex(col_details);
+    assert(ci_idx < ARRAY_SIZE(coded_index_map));
+    coded_index_entry const* ci_entry = &coded_index_map[ci_idx];
+    for (uint8_t i = 0; i < ci_entry->lookup_len; ++i)
+    {
+        // If the table is valid, construct the coded index.
+        if (ci_entry->lookup[i] == table)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
 // Look up table for column counts by table ID
 static uint8_t const table_column_counts[] =
 {
