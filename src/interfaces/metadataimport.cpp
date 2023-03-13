@@ -93,7 +93,7 @@ namespace
             return CLDB_E_FILE_CORRUPT;
 
         HCORENUMImpl* enumImpl;
-        if ((filter == nullptr || filter->Value == nullptr))
+        if (filter == nullptr || filter->Value == nullptr)
         {
             RETURN_IF_FAILED(HCORENUMImpl::CreateTableEnum(1, &enumImpl));
             HCORENUMImpl::InitTableEnum(*enumImpl, 0, begin, count);

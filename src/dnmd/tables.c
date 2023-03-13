@@ -643,26 +643,15 @@ bool consume_table_rows(mdtable_t* table, uint8_t const** data, size_t* data_len
 
 bool table_is_indirect_table(mdtable_id_t table_id)
 {
-    if (table_id == mdtid_FieldPtr)
+    switch (table_id)
     {
-        return true;
+        case mdtid_FieldPtr:
+        case mdtid_MethodPtr:
+        case mdtid_ParamPtr:
+        case mdtid_EventPtr:
+        case mdtid_PropertyPtr:
+            return true;
+        default:
+            return false;
     }
-    else if (table_id == mdtid_MethodPtr)
-    {
-        return true;
-    }
-    else if (table_id == mdtid_ParamPtr)
-    {
-        return true;
-    }
-    else if (table_id == mdtid_EventPtr)
-    {
-        return true;
-    }
-    else if (table_id == mdtid_PropertyPtr)
-    {
-        return true;
-    }
-
-    return false;
 }

@@ -95,7 +95,7 @@ typedef enum
     mdc_large_guid_heap   = 0x0002,
     mdc_large_blob_heap   = 0x0004,
     mdc_extra_data        = 0x0040,
-    mdc_image_flags       = 0xFFFF,
+    mdc_image_flags       = 0xffff,
     mdc_minimal_delta     = 0x00010000,
 } mdcxt_flag_t;
 
