@@ -974,7 +974,7 @@ bool md_resolve_indirect_cursor(mdcursor_t c, mdcursor_t* target)
 {
     if (table_is_indirect_table(CursorTable(&c)->table_id))
     {
-        return 1 == md_get_column_value_as_cursor(c, index_to_col(0, ExtractTable(CursorTable(&c)->table_id)), 1, &target);
+        return 1 == md_get_column_value_as_cursor(c, index_to_col(0, ExtractTable(CursorTable(&c)->table_id)), 1, target);
     }
     return true;
 }
