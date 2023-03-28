@@ -970,13 +970,11 @@ bool md_find_cursor_of_range_element(mdcursor_t element, mdcursor_t* cursor)
     return find_range_element(element, cursor);
 }
 
-mdcursor_t md_resolve_indirect_cursor(mdcursor_t c)
+bool md_resolve_indirect_cursor(mdcursor_t c, mdcursor_t* target)
 {
     if (table_is_indirect_table(CursorTable(&c)->table_id))
     {
-        mdcursor_t pointed_to = { 0 };
-        (void)md_get_column_value_as_cursor(c, index_to_col(0, ExtractTable(CursorTable(&c)->table_id)), 1, &pointed_to);
-        return pointed_to;
+        return 1 == md_get_column_value_as_cursor(c, index_to_col(0, ExtractTable(CursorTable(&c)->table_id)), 1, &target);
     }
-    return c;
+    return true;
 }

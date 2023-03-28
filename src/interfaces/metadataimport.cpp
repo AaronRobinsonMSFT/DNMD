@@ -114,7 +114,9 @@ namespace
             mdcursor_t curr = begin;
             for (uint32_t i = 0; i < count; ++i)
             {
-                mdcursor_t target =  md_resolve_indirect_cursor(curr);
+                mdcursor_t target;
+                if (!md_resolve_indirect_cursor(curr, &target))
+                    return CLDB_E_FILE_CORRUPT;
                 if (1 != md_get_column_value_as_utf8(target, filter->FilterColumn, 1, &toMatch))
                     return CLDB_E_FILE_CORRUPT;
 
@@ -779,7 +781,9 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumMembersWithName(
         // Iterate the Type's methods
         for (uint32_t i = 0; i < methodListCount; ++i)
         {
-            mdcursor_t methodCursor = md_resolve_indirect_cursor(methodList);
+            mdcursor_t methodCursor;
+            if (!md_resolve_indirect_cursor(methodList, &methodCursor))
+                return CLDB_E_FILE_CORRUPT;
             if (1 != md_get_column_value_as_utf8(methodCursor, mdtMethodDef_Name, 1, &toMatch))
                 return CLDB_E_FILE_CORRUPT;
 
@@ -794,7 +798,9 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumMembersWithName(
         // Iterate the Type's fields
         for (uint32_t i = 0; i < fieldListCount; ++i)
         {
-            mdcursor_t fieldCursor = md_resolve_indirect_cursor(fieldList);
+            mdcursor_t fieldCursor;
+            if (!md_resolve_indirect_cursor(fieldList, &fieldCursor))
+                return CLDB_E_FILE_CORRUPT;
             if (1 != md_get_column_value_as_utf8(fieldCursor, mdtField_Name, 1, &toMatch))
                 return CLDB_E_FILE_CORRUPT;
 
@@ -1049,8 +1055,8 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumPermissionSets(
             for (uint32_t i = 0; i < count; ++i)
             {
                 if ((IsDclActionNil(dwActions)
-                    || (1 == md_get_column_value_as_constant(cursor, mdtDeclSecurity_Action, 1, &action)
-                        && action == dwActions))
+                        || (1 == md_get_column_value_as_constant(cursor, mdtDeclSecurity_Action, 1, &action)
+                            && action == dwActions))
                     && (IsNilToken(tk)
                         || (1 == md_get_column_value_as_token(cursor, mdtDeclSecurity_Parent, 1, &parent)
                             && parent == tk)))
@@ -1117,7 +1123,9 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::FindMethod(
 
     for (uint32_t i = 0; i < count; (void)md_cursor_next(&methodCursor), ++i)
     {
-        mdcursor_t target = md_resolve_indirect_cursor(methodCursor);
+        mdcursor_t target;
+        if (!md_resolve_indirect_cursor(methodCursor, &target))
+            return CLDB_E_FILE_CORRUPT;
         uint32_t flags;
         if (1 != md_get_column_value_as_constant(target, mdtMethodDef_Flags, 1, &flags))
             return CLDB_E_FILE_CORRUPT;
@@ -1180,7 +1188,9 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::FindField(
 
     for (uint32_t i = 0; i < count; (void)md_cursor_next(&fieldCursor), ++i)
     {
-        mdcursor_t target = md_resolve_indirect_cursor(fieldCursor);
+        mdcursor_t target;
+        if (!md_resolve_indirect_cursor(fieldCursor, &target))
+            return CLDB_E_FILE_CORRUPT;
         uint32_t flags;
         if (1 != md_get_column_value_as_constant(target, mdtField_Flags, 1, &flags))
             return CLDB_E_FILE_CORRUPT;
@@ -2138,7 +2148,9 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetParamForMethodIndex(
     uint32_t seqMaybe;
     for (uint32_t i = 0; i < count; ++i)
     {
-        mdcursor_t target = md_resolve_indirect_cursor(curr);
+        mdcursor_t target;
+        if (!md_resolve_indirect_cursor(curr, &target))
+            return CLDB_E_FILE_CORRUPT;
         if (1 != md_get_column_value_as_constant(target, mdtParam_Sequence, 1, &seqMaybe))
             return CLDB_E_FILE_CORRUPT;
 

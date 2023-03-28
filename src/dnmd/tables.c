@@ -276,9 +276,9 @@ bool initialize_table_details(
     if (all_table_row_counts[id] == 0)
         return false;
 
-    mdtcol_t const string_index = mdtc_idx_heap | mdtc_hstring | (context_flags & 0x1 ? mdtc_b4 : mdtc_b2);
-    mdtcol_t const guid_index = mdtc_idx_heap | mdtc_hguid | (context_flags & 0x2 ? mdtc_b4 : mdtc_b2);
-    mdtcol_t const blob_index = mdtc_idx_heap | mdtc_hblob | (context_flags & 0x4 ? mdtc_b4 : mdtc_b2);
+    mdtcol_t const string_index = mdtc_idx_heap | mdtc_hstring | (context_flags & mdc_large_string_heap ? mdtc_b4 : mdtc_b2);
+    mdtcol_t const guid_index = mdtc_idx_heap | mdtc_hguid | (context_flags & mdc_large_guid_heap ? mdtc_b4 : mdtc_b2);
+    mdtcol_t const blob_index = mdtc_idx_heap | mdtc_hblob | (context_flags & mdc_large_blob_heap ? mdtc_b4 : mdtc_b2);
     
     bool is_minimal_delta = (context_flags & mdc_minimal_delta) == mdc_minimal_delta;
 
