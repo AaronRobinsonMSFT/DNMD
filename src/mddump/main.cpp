@@ -344,12 +344,15 @@ bool get_metadata_from_pe(malloc_span<uint8_t>& b)
     if (cor_header->MetaData.VirtualAddress < tgt_header->VirtualAddress)
         return false;
 
-    size_t metadata_length = cor_header->MetaData.Size;
     DWORD metadata_offset = (DWORD)(cor_header->MetaData.VirtualAddress - tgt_header->VirtualAddress) + tgt_header->PointerToRawData;
-    if (metadata_length > (b.size() - metadata_offset))
+    if (metadata_offset > b.size())
         return false;
 
     void* ptr = (void*)(b + metadata_offset);
+
+    size_t metadata_length = cor_header->MetaData.Size;
+    if (metadata_length > b.size() - metadata_offset)
+        return false;
 
     // Capture the metadata portion of the image.
     malloc_span<uint8_t> metadata = { (uint8_t*)std::malloc(metadata_length), metadata_length };
