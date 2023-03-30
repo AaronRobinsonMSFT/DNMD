@@ -99,6 +99,8 @@ bool md_create_handle(void const* data, size_t data_len, mdhandle_t* handle)
 
     // The version count is aligned to 4-bytes
     ver_buf_count = align_to(ver_buf_count, 4);
+    if (ver_buf_count > curr_len)
+        return false;
 
     // Confirm terminator and consume the version/aligned length
     cxt.version = (char const*)curr;

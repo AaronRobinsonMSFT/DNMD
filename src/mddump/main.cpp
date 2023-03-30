@@ -294,6 +294,9 @@ bool get_metadata_from_pe(malloc_span<uint8_t>& b)
     // Section headers begin immediately after the NT_HEADERS.
     span<IMAGE_SECTION_HEADER> section_headers;
 
+    if (dos_header->e_lfanew > b.size())
+        return false;
+
     PIMAGE_NT_HEADERS nt_header_any = (PIMAGE_NT_HEADERS)(b + dos_header->e_lfanew);
     if (nt_header_any->FileHeader.Machine == IMAGE_FILE_MACHINE_AMD64)
     {
@@ -317,12 +320,28 @@ bool get_metadata_from_pe(malloc_span<uint8_t>& b)
     if (tgt_header == nullptr)
         return false;
 
-    PIMAGE_COR20_HEADER cor_header = (PIMAGE_COR20_HEADER)(b + (dotnet_dir->VirtualAddress - tgt_header->VirtualAddress) + tgt_header->PointerToRawData);
+    // Sanity check
+    if (dotnet_dir->VirtualAddress < tgt_header->VirtualAddress)
+        return false;
+
+    DWORD cor_header_offset = (DWORD)(dotnet_dir->VirtualAddress - tgt_header->VirtualAddress) + tgt_header->PointerToRawData;
+    if (cor_header_offset > b.size() - sizeof(IMAGE_COR20_HEADER))
+        return false;
+
+    PIMAGE_COR20_HEADER cor_header = (PIMAGE_COR20_HEADER)(b + cor_header_offset);
     tgt_header = find_section_header(section_headers, cor_header->MetaData.VirtualAddress);
     if (tgt_header == nullptr)
         return false;
 
-    void* ptr = (void*)(b + (cor_header->MetaData.VirtualAddress - tgt_header->VirtualAddress) + tgt_header->PointerToRawData);
+    // Sanity check
+    if (cor_header->MetaData.VirtualAddress < tgt_header->VirtualAddress)
+        return false;
+
+    DWORD metadata_offset = (DWORD)(cor_header->MetaData.VirtualAddress - tgt_header->VirtualAddress) + tgt_header->PointerToRawData;
+    if (metadata_offset > b.size())
+        return false;
+
+    void* ptr = (void*)(b + metadata_offset);
     size_t metadata_length = cor_header->MetaData.Size;
 
     // Capture the metadata portion of the image.
