@@ -2,15 +2,16 @@ name: DNMD
 
 on:
   push:
-    branches: [ master ]
   pull_request:
     branches: [ master ]
-  
+    paths-ignore:
+      - '**/*.md'
+
 jobs:
   build:
     strategy:
       matrix:
-        os: [windows-latest, macos-latest]
+        os: [windows-latest, macos-latest, ubuntu-latest]
         flavor: [Debug, Release]
       fail-fast: false
     runs-on: ${{ matrix.os }}
