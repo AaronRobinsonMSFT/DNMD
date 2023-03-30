@@ -298,17 +298,24 @@ bool get_metadata_from_pe(malloc_span<uint8_t>& b)
         return false;
 
     PIMAGE_NT_HEADERS nt_header_any = (PIMAGE_NT_HEADERS)(b + dos_header->e_lfanew);
-    if (nt_header_any->FileHeader.Machine == IMAGE_FILE_MACHINE_AMD64)
+    if (nt_header_any->FileHeader.Machine == IMAGE_FILE_MACHINE_AMD64
+        || nt_header_any->FileHeader.Machine == IMAGE_FILE_MACHINE_ARM64)
     {
         PIMAGE_NT_HEADERS64 nt_header64 = (PIMAGE_NT_HEADERS64)nt_header_any;
         dotnet_dir = &nt_header64->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR];
         section_headers = { (PIMAGE_SECTION_HEADER)&nt_header64[1], nt_header64->FileHeader.NumberOfSections };
     }
-    else
+    else if (nt_header_any->FileHeader.Machine == IMAGE_FILE_MACHINE_I386
+            || nt_header_any->FileHeader.Machine == IMAGE_FILE_MACHINE_ARM)
     {
         PIMAGE_NT_HEADERS32 nt_header32 = (PIMAGE_NT_HEADERS32)nt_header_any;
         dotnet_dir = &nt_header32->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR];
         section_headers = { (PIMAGE_SECTION_HEADER)&nt_header32[1], nt_header32->FileHeader.NumberOfSections };
+    }
+    else
+    {
+        // Unknown machine type
+        return false;
     }
 
     // Doesn't contain a .NET header
@@ -337,12 +344,12 @@ bool get_metadata_from_pe(malloc_span<uint8_t>& b)
     if (cor_header->MetaData.VirtualAddress < tgt_header->VirtualAddress)
         return false;
 
+    size_t metadata_length = cor_header->MetaData.Size;
     DWORD metadata_offset = (DWORD)(cor_header->MetaData.VirtualAddress - tgt_header->VirtualAddress) + tgt_header->PointerToRawData;
-    if (metadata_offset > b.size())
+    if (metadata_length > (b.size() - metadata_offset))
         return false;
 
     void* ptr = (void*)(b + metadata_offset);
-    size_t metadata_length = cor_header->MetaData.Size;
 
     // Capture the metadata portion of the image.
     malloc_span<uint8_t> metadata = { (uint8_t*)std::malloc(metadata_length), metadata_length };
