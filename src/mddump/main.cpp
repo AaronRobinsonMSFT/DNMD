@@ -288,8 +288,8 @@ bool get_metadata_from_pe(malloc_span<uint8_t>& b)
         return false;
 
     // Handle headers that are 32 or 64
-    PIMAGE_DATA_DIRECTORY dotnet_dir;
     PIMAGE_SECTION_HEADER tgt_header;
+    PIMAGE_DATA_DIRECTORY dotnet_dir;
 
     // Section headers begin immediately after the NT_HEADERS.
     span<IMAGE_SECTION_HEADER> section_headers;
@@ -297,20 +297,24 @@ bool get_metadata_from_pe(malloc_span<uint8_t>& b)
     if (dos_header->e_lfanew > b.size())
         return false;
 
+    WORD section_header_count = 0;
+    uint8_t* section_header_begin = nullptr;
     PIMAGE_NT_HEADERS nt_header_any = (PIMAGE_NT_HEADERS)(b + dos_header->e_lfanew);
     if (nt_header_any->FileHeader.Machine == IMAGE_FILE_MACHINE_AMD64
         || nt_header_any->FileHeader.Machine == IMAGE_FILE_MACHINE_ARM64)
     {
         PIMAGE_NT_HEADERS64 nt_header64 = (PIMAGE_NT_HEADERS64)nt_header_any;
+        section_header_count = nt_header64->FileHeader.NumberOfSections;
+        section_header_begin = (uint8_t*)&nt_header64[1];
         dotnet_dir = &nt_header64->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR];
-        section_headers = { (PIMAGE_SECTION_HEADER)&nt_header64[1], nt_header64->FileHeader.NumberOfSections };
     }
     else if (nt_header_any->FileHeader.Machine == IMAGE_FILE_MACHINE_I386
             || nt_header_any->FileHeader.Machine == IMAGE_FILE_MACHINE_ARM)
     {
         PIMAGE_NT_HEADERS32 nt_header32 = (PIMAGE_NT_HEADERS32)nt_header_any;
+        section_header_count = nt_header32->FileHeader.NumberOfSections;
+        section_header_begin = (uint8_t*)&nt_header32[1];
         dotnet_dir = &nt_header32->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR];
-        section_headers = { (PIMAGE_SECTION_HEADER)&nt_header32[1], nt_header32->FileHeader.NumberOfSections };
     }
     else
     {
@@ -322,6 +326,13 @@ bool get_metadata_from_pe(malloc_span<uint8_t>& b)
     bool is_dotnet = dotnet_dir->Size != 0;
     if (!is_dotnet)
         return false;
+
+    // Compute the maximum space in the PE to validate section header count.
+    size_t remaining = b.size() - (section_header_begin - b);
+    if (remaining / sizeof(IMAGE_SECTION_HEADER) < section_header_count)
+        return false;
+
+    section_headers = { (PIMAGE_SECTION_HEADER)section_header_begin, section_header_count };
 
     tgt_header = find_section_header(section_headers, dotnet_dir->VirtualAddress);
     if (tgt_header == nullptr)
