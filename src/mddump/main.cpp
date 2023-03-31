@@ -294,7 +294,7 @@ bool get_metadata_from_pe(malloc_span<uint8_t>& b)
     // Section headers begin immediately after the NT_HEADERS.
     span<IMAGE_SECTION_HEADER> section_headers;
 
-    if (dos_header->e_lfanew > b.size())
+    if ((size_t)dos_header->e_lfanew > b.size())
         return false;
 
     size_t remaining_pe_size = b.size() - dos_header->e_lfanew;
