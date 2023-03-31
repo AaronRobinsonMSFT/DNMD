@@ -176,7 +176,7 @@ bool md_create_handle(void const* data, size_t data_len, mdhandle_t* handle)
             // ENC minimal delta images require the precise size of the base image string heap to be known,
             // so we trim the trailing padding.
             uint8_t const* p = cxt.strings_heap.ptr + cxt.strings_heap.size - 1;
-            while (p [0] == 0 && p [-1] == 0)
+            while (cxt.strings_heap.size >= 2 && p[0] == 0 && p[-1] == 0)
             {
                 p--;
                 cxt.strings_heap.size--;
