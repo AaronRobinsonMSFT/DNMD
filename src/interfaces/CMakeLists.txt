@@ -35,8 +35,8 @@ add_library(dnmd_interfaces
 set_target_properties(dnmd_interfaces PROPERTIES EXPORT_NAME interfaces)
 add_library(dnmd::interfaces ALIAS dnmd_interfaces)
 
-target_include_directories(dnmd_interfaces_static PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../inc> $<INSTALL_INTERFACE:include>)
-target_include_directories(dnmd_interfaces PRIVATE ../inc)
+target_include_directories(dnmd_interfaces_static PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../inc> $<INSTALL_INTERFACE:include>)
+target_include_directories(dnmd_interfaces PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../inc> $<INSTALL_INTERFACE:include>)
 
 target_compile_definitions(dnmd_interfaces PRIVATE DNMD_BUILD_SHARED)
 
@@ -45,13 +45,13 @@ target_link_libraries(dnmd_interfaces_static
   dnmd::dnmd
   dncp::dncp)
 target_link_libraries(dnmd_interfaces
-  PUBLIC
+  PRIVATE
   dnmd::dnmd
   dncp::dncp)
 
 if(NOT MSVC)
   target_link_libraries(dnmd_interfaces_static PUBLIC dncp::winhdrs)
-  target_link_libraries(dnmd_interfaces PUBLIC dncp::winhdrs)
+  target_link_libraries(dnmd_interfaces PRIVATE dncp::winhdrs)
 endif()
 
 if (NOT WIN32)
@@ -69,9 +69,6 @@ if (NOT WIN32)
   target_link_libraries(dnmd_interfaces_static PUBLIC ${ICU_TARGET_NAME})
   target_link_libraries(dnmd_interfaces PRIVATE ${ICU_TARGET_NAME})
 endif()
-
-set_target_properties(dnmd_interfaces_static PROPERTIES
-  PUBLIC_HEADER ../inc/dnmd_interfaces.hpp)
 
 set_target_properties(dnmd_interfaces PROPERTIES
   PUBLIC_HEADER ../inc/dnmd_interfaces.hpp
