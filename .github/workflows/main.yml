@@ -19,7 +19,7 @@ jobs:
         use-vendored-libs: [true, false]
       fail-fast: false
     runs-on: ${{ matrix.os }}
-    name: Build (${{ matrix.os }}, ${{ matrix.flavor }})
+    name: Build (${{ matrix.os }}, ${{ matrix.flavor }}, Single Build = ${{ matrix.use-vendored-libs }})
     steps:
     - uses: actions/checkout@v2
       with:
