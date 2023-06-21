@@ -42,12 +42,12 @@ target_compile_definitions(dnmd_interfaces PRIVATE DNMD_BUILD_SHARED)
 
 target_link_libraries(dnmd_interfaces_static
   PUBLIC
-  dnmd
-  dncp)
+  dnmd::dnmd
+  dncp::dncp)
 target_link_libraries(dnmd_interfaces
   PUBLIC
-  dnmd
-  dncp)
+  dnmd::dnmd
+  dncp::dncp)
 
 if(NOT MSVC)
   target_link_libraries(dnmd_interfaces_static PUBLIC dncp::winhdrs)
