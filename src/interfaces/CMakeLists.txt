@@ -66,7 +66,8 @@ if (NOT WIN32)
     set(ICU_TARGET_NAME ICU::uc)
   endif()
   include(FindICU)
-  target_link_libraries(dnmd_interfaces PUBLIC ${ICU_TARGET_NAME})
+  target_link_libraries(dnmd_interfaces_static PUBLIC ${ICU_TARGET_NAME})
+  target_link_libraries(dnmd_interfaces PRIVATE ${ICU_TARGET_NAME})
 endif()
 
 set_target_properties(dnmd_interfaces_static PROPERTIES
