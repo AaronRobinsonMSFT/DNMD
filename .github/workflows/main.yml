@@ -35,7 +35,11 @@ jobs:
       run: |
         cmake -S external/dncp -B dncp-artifacts -DCMAKE_BUILD_TYPE=${{ matrix.flavor }}
         cmake --build dncp-artifacts --config ${{ matrix.flavor }} --target install
-        echo "CMAKE_PREFIX_PATH=${{ github.workspace }}/dncp-artifacts" >> $GITHUB_ENV
+
+    - name: Set CMake Module Path
+      if: ${{ !matrix.use-vendored-libs &&  matrix.os != 'windows-latest'}}
+      run: echo "CMAKE_PREFIX_PATH=${{ github.workspace }}/dncp-artifacts" >> $GITHUB_ENV
+      shell: bash
 
     - name: Build
       run: |
