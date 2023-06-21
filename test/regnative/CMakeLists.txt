@@ -17,4 +17,6 @@ if(NOT MSVC)
 endif()
 
 install(TARGETS regnative
-  DESTINATION lib)
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION bin)
