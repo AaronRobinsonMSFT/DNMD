@@ -1,10 +1,25 @@
 #ifndef _SRC_INC_DNMD_H_
 #define _SRC_INC_DNMD_H_
 
+#include <stdint.h>
+#include <stddef.h>
+
+#ifndef __cplusplus
+#include <stdbool.h>
+#endif
+
+#ifdef _WIN32
+#include <windef.h>
+#include <guiddef.h>
+#else
+#include <dncp.h>
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+typedef uint32_t mdToken;                // Generic token
 typedef void* mdhandle_t;
 
 // Create a metadata handle that can be used to parse the supplied metadata.

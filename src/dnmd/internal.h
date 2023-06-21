@@ -6,16 +6,8 @@
 #include <stdbool.h>
 #include <assert.h>
 #include <string.h>
-
-// Reused Win32 data types
-typedef uint16_t WCHAR;
-typedef struct _GUID
-{
-    uint32_t Data1;
-    uint16_t Data2;
-    uint16_t Data3;
-    uint8_t  Data4[8];
-} GUID;
+#include <corhdr.h>
+#include <dnmd.h>
 
 // Implementations for missing bounds checking APIs.
 // See https://en.cppreference.com/w/c/error#Bounds_checking
@@ -23,9 +15,6 @@ typedef struct _GUID
 typedef size_t rsize_t;
 #endif // !__STDC_LIB_EXT1__
 
-#include <corhdr.h>
-
-#include <dnmd.h>
 
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof(*a))
 
