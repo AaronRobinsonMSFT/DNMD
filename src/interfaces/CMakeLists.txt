@@ -46,8 +46,13 @@ target_link_libraries(dnmd_interfaces_static
   dncp::dncp)
 target_link_libraries(dnmd_interfaces
   PRIVATE
-  dnmd::dnmd
   dncp::dncp)
+
+# Link dnmd publicly when building in the repo to get the correct include paths set up
+# for downstream targets in the project that use the internal headers.
+target_link_libraries(dnmd_interfaces
+  PUBLIC
+  $<BUILD_INTERFACE:dnmd::dnmd>)
 
 if(NOT MSVC)
   target_link_libraries(dnmd_interfaces_static PUBLIC dncp::winhdrs)
