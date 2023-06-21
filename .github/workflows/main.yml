@@ -33,14 +33,12 @@ jobs:
     - name: Build Vendored Dependencies
       if: ${{ !matrix.use-vendored-libs }}
       run: |
-        mkdir dncp-artifacts
         cmake -S external/dncp -B dncp-artifacts -DCMAKE_BUILD_TYPE=${{ matrix.flavor }}
         cmake --build dncp-artifacts --config ${{ matrix.flavor }} --target install
         echo "CMAKE_PREFIX_PATH=${{ github.workspace }}/dncp-artifacts" >> $GITHUB_ENV
 
     - name: Build
       run: |
-        mkdir artifacts
         cmake -S . -B artifacts -DCMAKE_BUILD_TYPE=${{ matrix.flavor }} -DINCLUDE_VENDORED_LIBS=${{ matrix.use-vendored-libs }}
         cmake --build artifacts --config ${{ matrix.flavor }} --target install
 
