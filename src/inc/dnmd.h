@@ -9,8 +9,8 @@
 #endif
 
 #ifdef _WIN32
-#include <windef.h>
 #include <guiddef.h>
+typedef wchar_t WCHAR;
 #else
 #include <dncp.h>
 #endif
