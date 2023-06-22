@@ -163,7 +163,7 @@ bool try_get_blob(mdcxt_t* cxt, size_t offset, uint8_t const** blob, uint32_t* b
 bool validate_blob_heap(mdcxt_t* cxt);
 
 // GUID heap, #GUID - II.24.2.5
-bool try_get_guid(mdcxt_t* cxt, size_t idx, GUID* guid);
+bool try_get_guid(mdcxt_t* cxt, size_t idx, md_guid_t* guid);
 bool validate_guid_heap(mdcxt_t* cxt);
 
 // Table heap, #~ - II.24.2.6

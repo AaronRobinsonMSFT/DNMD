@@ -20,13 +20,7 @@ add_library(dnmd
 
 add_library(dnmd::dnmd ALIAS dnmd)
 
-target_include_directories(dnmd PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../inc>)
-target_include_directories(dnmd PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../inc/external>) # Hiding the "external" subdirectory due to uses of <...> in cor.h.
-target_include_directories(dnmd INTERFACE $<INSTALL_INTERFACE:include>)
-
-if (NOT WIN32)
-  target_link_libraries(dnmd PUBLIC dncp::dncp dncp::winhdrs)
-endif()
+target_include_directories(dnmd PUBLIC $<INSTALL_INTERFACE:include>)
 
 set_target_properties(dnmd PROPERTIES
   PUBLIC_HEADER "../inc/dnmd.h;../inc/dnmd.hpp")

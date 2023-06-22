@@ -35,8 +35,8 @@ add_library(dnmd_interfaces
 set_target_properties(dnmd_interfaces PROPERTIES EXPORT_NAME interfaces)
 add_library(dnmd::interfaces ALIAS dnmd_interfaces)
 
-target_include_directories(dnmd_interfaces_static PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../inc> $<INSTALL_INTERFACE:include>)
-target_include_directories(dnmd_interfaces PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../inc> $<INSTALL_INTERFACE:include>)
+target_include_directories(dnmd_interfaces_static PUBLIC $<INSTALL_INTERFACE:include>)
+target_include_directories(dnmd_interfaces PUBLIC $<INSTALL_INTERFACE:include>)
 
 target_compile_definitions(dnmd_interfaces PRIVATE DNMD_BUILD_SHARED)
 
@@ -44,15 +44,11 @@ target_link_libraries(dnmd_interfaces_static
   PUBLIC
   dnmd::dnmd
   dncp::dncp)
+
 target_link_libraries(dnmd_interfaces
   PRIVATE
-  dncp::dncp)
-
-# Link dnmd publicly when building in the repo to get the correct include paths set up
-# for downstream targets in the project that use the internal headers.
-target_link_libraries(dnmd_interfaces
-  PUBLIC
-  $<BUILD_INTERFACE:dnmd::dnmd>)
+  dncp::dncp
+  dnmd::dnmd)
 
 if(NOT MSVC)
   target_link_libraries(dnmd_interfaces_static PUBLIC dncp::winhdrs)
