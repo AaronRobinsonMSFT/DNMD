@@ -3,7 +3,6 @@
 
 #include "dnmd.h"
 #include <memory>
-#include <cstdlib>
 
 struct mdhandle_deleter_t
 {
