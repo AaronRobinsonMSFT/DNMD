@@ -5,8 +5,18 @@
 #include <stddef.h>
 
 #ifndef __cplusplus
+
 #include <stdbool.h>
+// MacOS doesn't have uchar.h
+#if defined(__has_include)
+#if __has_include(<uchar.h>)
 #include <uchar.h>
+#else
+// When uchar.h isn't available, define char16_t as per the C standard.
+typedef uint_least16_t char16_t;
+#endif
+#endif
+
 #endif
 
 #ifdef __cplusplus
