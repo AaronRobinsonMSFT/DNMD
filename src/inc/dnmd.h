@@ -8,8 +8,8 @@
 #if defined(__has_include)
 #if __has_include(<uchar.h>)
 #include <uchar.h>
-#else
-// When uchar.h isn't available, define char16_t as per the C standard.
+#elif !defined(__cplusplus)
+// When uchar.h isn't available and we're in C, define char16_t as per the C standard.
 typedef uint_least16_t char16_t;
 #endif
 
