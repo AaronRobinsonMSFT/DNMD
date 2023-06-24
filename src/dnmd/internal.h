@@ -141,6 +141,9 @@ typedef struct _mdcxt_t
 
     // Metadata tables - II.22
     mdtable_t* tables;
+
+    // Delta to apply
+    struct _mdcxt_t* delta;
 } mdcxt_t;
 
 // Extract a context from the mdhandle_t.
