@@ -184,12 +184,8 @@ bool update_table_references_for_shifted_rows(mdeditor_t* editor, mdtable_id_t u
                 || (col_details & mdtc_idx_coded) == mdtc_idx_coded && is_coded_index_target(col_details, updated_table))
             {
                 // We've found a column that will need updating.
-                mdcursor_t c;
-                uint32_t row_count;
-                if (!md_create_cursor(editor->cxt, table_id, &c, &row_count))
-                    return false;
-
-                update_shifted_row_references(&c, row_count, i, updated_table, changed_row_start, (uint32_t)(changed_row_start + shift));
+                mdcursor_t c = create_cursor(table, 1);
+                update_shifted_row_references(&c, table->row_count, i, updated_table, changed_row_start, (uint32_t)(changed_row_start + shift));
             }
         }
     }
@@ -270,7 +266,8 @@ bool insert_row_into_table(mdeditor_t* editor, mdtable_id_t table_id, uint32_t r
     target_table_editor->table->data.size += target_table_editor->table->row_size_bytes;
     target_table_editor->table->row_count++;
 
-    return md_token_to_cursor(editor->cxt, CreateTokenType(table_id) | row_index, new_row);
+    *new_row = create_cursor(target_table_editor->table, row_index);
+    return true;
 }
 
 static bool reserve_heap_space(mdeditor_t* editor, md_heap_editor_t* heap_editor, uint32_t space_size, mdtcol_t heap_id, uint32_t* heap_offset)
