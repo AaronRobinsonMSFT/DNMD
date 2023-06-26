@@ -77,6 +77,7 @@ typedef enum
     mdtc_hstring    = 0x20000000, // #Strings
     mdtc_hus        = 0x40000000, // #US
     mdtc_hblob      = 0x80000000, // #Blob
+    mdtc_hmask      = 0xf0000000, // Mask for storing heap type
 } mdtcol_t;
 
 // Flags and masks for context details
@@ -103,6 +104,10 @@ typedef enum
 // Macros used to insert/extract the coded index map index
 #define InsertCodedIndex(s) ((s << 24) & mdtc_cimask)
 #define ExtractCodedIndex(s) ((s & mdtc_cimask) >> 24)
+
+// Macros used to insert/extract the heap type
+#define InsertHeapType(h) ((h << 28) & mdtc_hmask)
+#define ExtractHeapType(h) ((h & mdtc_hmask) >> 28)
 
 // Forward declare.
 struct _mdcxt_t;
@@ -187,18 +192,22 @@ mdcxt_t* extract_mdcxt(mdhandle_t md);
 // Strings heap, #Strings - II.24.2.3
 bool try_get_string(mdcxt_t* cxt, size_t offset, char const** str);
 bool validate_strings_heap(mdcxt_t* cxt);
+uint32_t add_to_string_heap(mdeditor_t* editor, char const* str);
 
 // User strings heap, #US - II.24.2.4
 bool try_get_user_string(mdcxt_t* cxt, size_t offset, mduserstring_t* str, size_t* next_offset);
 bool validate_user_string_heap(mdcxt_t* cxt);
+uint32_t add_to_user_string_heap(mdeditor_t* editor, char16_t const* str);
 
 // Blob heap, #Blob - II.24.2.4
 bool try_get_blob(mdcxt_t* cxt, size_t offset, uint8_t const** blob, uint32_t* blob_len);
 bool validate_blob_heap(mdcxt_t* cxt);
+uint32_t add_to_blob_heap(mdeditor_t* editor, uint8_t const* data, uint32_t length);
 
 // GUID heap, #GUID - II.24.2.5
 bool try_get_guid(mdcxt_t* cxt, size_t idx, md_guid_t* guid);
 bool validate_guid_heap(mdcxt_t* cxt);
+uint32_t add_to_guid_heap(mdeditor_t* editor, md_guid_t guid);
 
 // Table heap, #~ - II.24.2.6
 // Note: This can only be done after all streams have been read in.
@@ -326,7 +335,12 @@ bool initialize_new_table_details(mdtable_id_t id, mdtable_t* table);
 int32_t update_shifted_row_references(mdcursor_t* c, uint32_t count, uint8_t col_index, mdtable_id_t updated_table, uint32_t original_starting_table_index, uint32_t new_starting_table_index);
 
 // Editing (Public in the future)
-int32_t md_set_column_value_as_token(mdcursor_t* c, col_index_t col, mdToken* tk, uint32_t in_length);
-int32_t md_set_column_value_as_cursor(mdcursor_t* c, col_index_t col, mdcursor_t* cursor, uint32_t in_length);
+int32_t md_set_column_value_as_token(mdcursor_t c, col_index_t col, uint32_t in_length, mdToken* tk);
+int32_t md_set_column_value_as_cursor(mdcursor_t c, col_index_t col, uint32_t in_length, mdcursor_t* cursor);
+int32_t md_set_column_value_as_constant(mdcursor_t c, col_index_t col_idx, uint32_t in_length, uint32_t* constant);
+int32_t md_set_column_value_as_utf8(mdcursor_t c, col_index_t col_idx, uint32_t in_length, char const** str);
+int32_t md_set_column_value_as_blob(mdcursor_t c, col_index_t col_idx, uint32_t in_length, uint8_t const** blob, uint32_t* blob_len);
+int32_t md_set_column_value_as_guid(mdcursor_t c, col_index_t col_idx, uint32_t in_length, md_guid_t const* guid);
+int32_t md_set_column_value_as_userstring(mdcursor_t c, col_index_t col_idx, uint32_t in_length, char16_t const** userstring);
 
 #endif // _SRC_DNMD_INTERNAL_H_

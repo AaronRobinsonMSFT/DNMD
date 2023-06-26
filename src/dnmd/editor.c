@@ -57,7 +57,7 @@ uint8_t* get_writable_table_data(mdtable_t* table, bool make_writable)
     return table_data->ptr;
 }
 
-bool set_column_size_for_max_row_count(mdeditor_t* editor, mdtable_t* table, mdtable_id_t updated_table, uint32_t new_max_row_count)
+static bool set_column_size_for_max_row_count(mdeditor_t* editor, mdtable_t* table, mdtable_id_t updated_table, mdtcol_t updated_heap, uint32_t new_max_row_count)
 {
     assert(table->column_count <= MDTABLE_MAX_COLUMN_COUNT);
     assert(mdtid_First <= updated_table && updated_table <= mdtid_End);
@@ -81,6 +81,11 @@ bool set_column_size_for_max_row_count(mdeditor_t* editor, mdtable_t* table, mdt
             composed = compose_coded_index(TokenFromRid(new_max_row_count, updated_table), col_details, &new_max_column_value);
             assert(composed);
         }
+        else if ((col_details & (mdtc_idx_heap)) == mdtc_idx_heap && ExtractHeapType(col_details) == updated_heap)
+        {
+            initial_max_column_value = initial_row_count;
+            new_max_column_value = new_max_row_count;
+        }
         else
         {
             new_column_details[col_index] = table->column_details[col_index];
@@ -102,6 +107,11 @@ bool set_column_size_for_max_row_count(mdeditor_t* editor, mdtable_t* table, mdt
     {
         new_row_size += (new_column_details[col_index] & mdtc_b2) == mdtc_b2 ? 2 : 4;
     }
+
+    // If the row size is the same, then we didn't have to change any column sizes.
+    // We are either only expanding or reducing, so we can't end up at the same size with changed column sizes.
+    if (new_row_size == table->row_size_bytes)
+        return true;
 
     size_t new_allocation_size = max_original_rows_in_size * new_row_size;
 
@@ -165,7 +175,7 @@ bool update_table_references_for_shifted_rows(mdeditor_t* editor, mdtable_id_t u
 
         // Update all columns in the table that can refer to the updated table
         // to be the correct width for the updated table's new size.
-        set_column_size_for_max_row_count(editor, table, updated_table, (uint32_t)(table->row_count + shift));
+        set_column_size_for_max_row_count(editor, table, updated_table, mdtc_none, (uint32_t)(table->row_count + shift));
 
         for (uint8_t i = 0; i < table->column_count; i++)
         {
@@ -186,6 +196,31 @@ bool update_table_references_for_shifted_rows(mdeditor_t* editor, mdtable_id_t u
     return true;
 }
 
+static bool allocate_more_editable_space(mddata_t* editable_data, mdcdata_t* data)
+{
+    size_t new_size = data->size * 2;
+    void* new_ptr;
+    // If we've already allocated space for this table, then we can just realloc.
+    // Otherwise we need to allocate for the first time.
+    if (editable_data->ptr != NULL)
+        new_ptr = realloc(editable_data->ptr, new_size);
+    else
+    {
+        new_ptr = malloc(new_size);
+        if (new_ptr == NULL)
+            return false;
+        memcpy(new_ptr, data->ptr, data->size);
+    }
+
+    if (new_ptr == NULL)
+        return false;
+    editable_data->ptr = new_ptr;
+    editable_data->size = new_size;
+    data->ptr = new_ptr;
+    // We don't update data->size as the space has been allocated, but it is not in use in the image yet.
+    return true;
+}
+
 bool insert_row_into_table(mdeditor_t* editor, mdtable_id_t table_id, uint32_t row_index, mdcursor_t* new_row)
 {
     mdtable_editor_t* target_table_editor = &editor->tables[table_id];
@@ -196,26 +231,8 @@ bool insert_row_into_table(mdeditor_t* editor, mdtable_id_t table_id, uint32_t r
     // If we are out of space in our table, then we need to allocate a new table buffer.
     if (target_table_editor->table->data.size < target_table_editor->table->row_size_bytes * row_index)
     {
-        size_t new_size = target_table_editor->data.size * 2;
-        void* new_ptr;
-        // If we've already allocated space for this table, then we can just realloc.
-        // Otherwise we need to allocate for the first time.
-        if (target_table_editor->data.ptr != NULL)
-            new_ptr = realloc(target_table_editor->data.ptr, new_size);
-        else
-        {
-            new_ptr = malloc(new_size);
-            if (new_ptr == NULL)
-                return false;
-            memcpy(new_ptr, target_table_editor->table->data.ptr, target_table_editor->table->data.size);
-        }
-
-        if (new_ptr == NULL)
+        if (!allocate_more_editable_space(&target_table_editor->data, &target_table_editor->table->data))
             return false;
-        target_table_editor->data.ptr = new_ptr;
-        target_table_editor->data.size = new_size;
-        target_table_editor->table->data.ptr = new_ptr;
-        target_table_editor->table->data.size = new_size;
     }
 
     size_t next_row_start_offset = target_table_editor->table->row_size_bytes * row_index;
@@ -246,9 +263,153 @@ bool insert_row_into_table(mdeditor_t* editor, mdtable_id_t table_id, uint32_t r
 
             // Update all columns in the table that can refer to the updated table
             // to be the correct width for the updated table's new size.
-            set_column_size_for_max_row_count(editor, table, target_table_editor->table->table_id, target_table_editor->table->row_count + 1);
+            set_column_size_for_max_row_count(editor, table, target_table_editor->table->table_id, mdtc_none, target_table_editor->table->row_count + 1);
         }
     }
 
+    target_table_editor->table->data.size += target_table_editor->table->row_size_bytes;
+    target_table_editor->table->row_count++;
+
     return md_token_to_cursor(editor->cxt, CreateTokenType(table_id) | row_index, new_row);
+}
+
+static bool reserve_heap_space(mdeditor_t* editor, md_heap_editor_t* heap_editor, uint32_t space_size, mdtcol_t heap_id, uint32_t* heap_offset)
+{
+    // TODO: Need to add setting up a new heap if the image doesn't already have the heap.
+    // TODO: Alignment
+    *heap_offset = (uint32_t)heap_editor->stream->size;
+    uint32_t new_heap_size = *heap_offset + space_size;
+    if (new_heap_size > heap_editor->heap.size)
+    {
+        if (!allocate_more_editable_space(&heap_editor->heap, heap_editor->stream))
+            return false;
+    }
+    heap_editor->stream->size += space_size;
+
+    // Update heap references in case the additional used space crosses the boundary for index sizes.
+    uint32_t index_scale = (heap_id == mdtc_hguid ? sizeof(md_guid_t) : 1);
+    assert(heap_editor->stream->size % index_scale == 0);
+    for (mdtable_id_t i = mdtid_First; i < mdtid_End; i++)
+    {
+        mdtable_t* table = &editor->cxt->tables[i];
+        if (table->cxt == NULL) // This table is not used in the current image
+            continue;
+
+        // Update all columns in the table that can refer to the updated heap
+        // to be the correct width for the updated heap's new size.
+        set_column_size_for_max_row_count(editor, table, mdtid_Unused, heap_id, (uint32_t)(heap_editor->stream->size / index_scale));
+    }
+
+    return true;
+}
+
+uint32_t add_to_string_heap(mdeditor_t* editor, char const* str)
+{
+    // TODO: Deduplicate heap
+    uint32_t str_len = (uint32_t)strlen(str);
+    uint32_t heap_offset;
+    if (!reserve_heap_space(editor, &editor->strings_heap, str_len + 1, mdtc_hstring, &heap_offset))
+    {
+        return 0;
+    }
+    memcpy((uint8_t*)editor->strings_heap.heap.ptr + heap_offset, str, str_len);
+    ((uint8_t*)editor->strings_heap.heap.ptr)[heap_offset + str_len] = '\0';
+    return heap_offset;
+}
+
+uint32_t add_to_blob_heap(mdeditor_t* editor, uint8_t const* data, uint32_t length)
+{
+    // TODO: Deduplicate heap
+    uint8_t compressed_length[4];
+    size_t compressed_length_size = 0;
+    if (!compress_u32(length, compressed_length, &compressed_length_size))
+        return 0;
+    
+    uint32_t heap_slot_size = length + (uint32_t)compressed_length_size;
+
+    uint32_t heap_offset;
+    if (!reserve_heap_space(editor, &editor->blob_heap, heap_slot_size, mdtc_hblob, &heap_offset))
+    {
+        return 0;
+    }
+
+    memcpy(editor->blob_heap.heap.ptr + heap_offset, compressed_length, compressed_length_size);
+    memcpy(editor->blob_heap.heap.ptr + heap_offset + compressed_length_size, data, length);
+    return heap_offset;
+}
+
+uint32_t add_to_user_string_heap(mdeditor_t* editor, char16_t const* str)
+{
+    // TODO: Deduplicate heap
+    uint32_t str_len;
+    uint8_t has_special_char = 0;
+    for (str_len = 0; str[str_len] != (char16_t)0; str_len++)
+    {
+        char16_t c = str[str_len];
+        // II.23.2.4
+        // There is an additional terminal byte which holds a 1 or 0.
+        // The 1 signifies Unicode characters that require handling beyond
+        // that normally provided for 8-bit encoding sets.
+        //  This final byte holds the value 1 if and only if any UTF16 character
+        // within the string has any bit set in its top byte,
+        // or its low byte is any of the following: 0x01-0x08, 0x0E–0x1F, 0x27, 0x2D, 0x7F.
+        // Otherwise, it holds 0. 
+        if ((c & 0x80) != 0)
+        {
+            has_special_char = 1;
+        }
+        else if (c >= 0x1 && c <= 0x8)
+        {
+            has_special_char = 1;
+        }
+        else if (c >= 0xe && c <= 0x1f)
+        {
+            has_special_char = 1;
+        }
+        else if (c == 0x27)
+        {
+            has_special_char = 1;
+        }
+        else if (c == 0x2d)
+        {
+            has_special_char = 1;
+        }
+        else if (c == 0x7f)
+        {
+            has_special_char = 1;
+        }
+    }
+    
+    
+    uint8_t compressed_length[4];
+    size_t compressed_length_size = 0;
+    if (!compress_u32(str_len, compressed_length, &compressed_length_size))
+        return 0;
+    
+    uint32_t heap_slot_size = str_len + (uint32_t)compressed_length_size + 1;
+    uint32_t heap_offset;
+    if (!reserve_heap_space(editor, &editor->user_string_heap, heap_slot_size, mdtc_hus, &heap_offset))
+    {
+        return 0;
+    }
+
+    memcpy(editor->user_string_heap.heap.ptr + heap_offset, compressed_length, compressed_length_size);
+    memcpy(editor->user_string_heap.heap.ptr + heap_offset + compressed_length_size, str, str_len);
+
+    editor->user_string_heap.heap.ptr[heap_offset + compressed_length_size + str_len] = has_special_char;
+    return heap_offset;
+}
+
+uint32_t add_to_guid_heap(mdeditor_t* editor, md_guid_t guid)
+{
+    // TODO: Deduplicate heap
+
+    uint32_t heap_offset;
+    if (!reserve_heap_space(editor, &editor->guid_heap, sizeof(md_guid_t), mdtc_hguid, &heap_offset))
+    {
+        return 0;
+    }
+
+    memcpy(editor->guid_heap.heap.ptr + heap_offset, &guid, sizeof(md_guid_t));
+    return heap_offset / sizeof(md_guid_t);
 }

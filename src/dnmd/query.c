@@ -1003,12 +1003,12 @@ static bool write_column_data(query_cxt_t* qcxt, uint32_t data)
         : write_u32(&qcxt->writable_data, &qcxt->data_len, data);
 }
 
-static int32_t set_column_value_as_token_or_cursor(mdcursor_t* c, uint32_t col_idx, mdToken* tk, mdcursor_t* cursor, uint32_t in_length)
+static int32_t set_column_value_as_token_or_cursor(mdcursor_t c, uint32_t col_idx, mdToken* tk, mdcursor_t* cursor, uint32_t in_length)
 {
-    assert(c != NULL && in_length != 0 && (tk != NULL || cursor != NULL));
+    assert(in_length != 0 && (tk != NULL || cursor != NULL));
 
     query_cxt_t qcxt;
-    if (!create_query_context(c, col_idx, in_length, false, &qcxt))
+    if (!create_query_context(&c, col_idx, in_length, false, &qcxt))
         return -1;
     
     // If we can't write on the underlying table, then fail.
@@ -1061,18 +1061,166 @@ static int32_t set_column_value_as_token_or_cursor(mdcursor_t* c, uint32_t col_i
     return written;
 }
 
-int32_t md_set_column_value_as_token(mdcursor_t* c, col_index_t col, mdToken* tk, uint32_t in_length)
+int32_t md_set_column_value_as_token(mdcursor_t c, col_index_t col, uint32_t in_length, mdToken* tk)
 {
-    if (c == NULL || tk == NULL || in_length == 0)
+    if (tk == NULL || in_length == 0)
         return -1;
-    return set_column_value_as_token_or_cursor(c, col_to_index(col, CursorTable(c)), tk, NULL, in_length);
+    return set_column_value_as_token_or_cursor(c, col_to_index(col, CursorTable(&c)), tk, NULL, in_length);
 }
 
-int32_t md_set_column_value_as_cursor(mdcursor_t* c, col_index_t col, mdcursor_t* cursor, uint32_t in_length)
+int32_t md_set_column_value_as_cursor(mdcursor_t c, col_index_t col, uint32_t in_length, mdcursor_t* cursor)
 {
-    if (c == NULL || cursor == NULL || in_length == 0)
+    if (cursor == NULL || in_length == 0)
         return -1;
-    return set_column_value_as_token_or_cursor(c, col_to_index(col, CursorTable(c)), NULL, cursor, in_length);
+    return set_column_value_as_token_or_cursor(c, col_to_index(col, CursorTable(&c)), NULL, cursor, in_length);
+}
+
+int32_t md_set_column_value_as_constant(mdcursor_t c, col_index_t col_idx, uint32_t in_length, uint32_t* constant)
+{
+    if (in_length == 0)
+        return 0;
+    assert(constant != NULL);
+
+    query_cxt_t qcxt;
+    if (!create_query_context(&c, col_idx, in_length, true, &qcxt))
+        return -1;
+
+    // If this isn't an constant column, then fail.
+    if (!(qcxt.col_details & mdtc_constant))
+        return -1;
+
+    int32_t read_in = 0;
+    do
+    {
+        if (!write_column_data(&qcxt, constant[read_in]))
+            return -1;
+        read_in++;
+    } while (in_length > 1 && next_row(&qcxt));
+
+    return read_in;
+}
+
+int32_t md_set_column_value_as_utf8(mdcursor_t c, col_index_t col_idx, uint32_t in_length, char const** str)
+{
+    if (in_length == 0)
+        return 0;
+
+    query_cxt_t qcxt;
+    if (!create_query_context(&c, col_idx, in_length, true, &qcxt))
+        return -1;
+
+    // If this isn't an constant column, then fail.
+    if (!(qcxt.col_details & mdtc_hstring))
+        return -1;
+
+    int32_t written = 0;
+    do
+    {
+        uint32_t heap_offset;
+        if (str[written][0] == '\0')
+        {
+            heap_offset = 0;
+        }
+        else
+        {
+            heap_offset = add_to_string_heap(CursorTable(&c)->cxt->editor, str[written]);
+            if (heap_offset == 0)
+                return -1;
+        }
+
+        if (!write_column_data(&qcxt, heap_offset))
+            return -1;
+        written++;
+    } while (in_length > 1 && next_row(&qcxt));
+
+    return written;
+}
+
+int32_t md_set_column_value_as_blob(mdcursor_t c, col_index_t col_idx, uint32_t in_length, uint8_t const** blob, uint32_t* blob_len)
+{
+    if (in_length == 0)
+        return 0;
+
+    query_cxt_t qcxt;
+    if (!create_query_context(&c, col_idx, in_length, true, &qcxt))
+        return -1;
+
+    // If this isn't an constant column, then fail.
+    if (!(qcxt.col_details & mdtc_hblob))
+        return -1;
+
+    int32_t written = 0;
+    do
+    {
+        uint32_t heap_offset = add_to_blob_heap(CursorTable(&c)->cxt->editor, blob[written], blob_len[written]);
+
+        if (heap_offset == 0)
+            return -1;
+
+        if (!write_column_data(&qcxt, heap_offset))
+            return -1;
+        written++;
+    } while (in_length > 1 && next_row(&qcxt));
+
+    return written;
+}
+
+int32_t md_set_column_value_as_guid(mdcursor_t c, col_index_t col_idx, uint32_t in_length, md_guid_t const* guid)
+{
+    if (in_length == 0)
+        return 0;
+
+    query_cxt_t qcxt;
+    if (!create_query_context(&c, col_idx, in_length, true, &qcxt))
+        return -1;
+
+    // If this isn't an constant column, then fail.
+    if (!(qcxt.col_details & mdtc_hblob))
+        return -1;
+
+    int32_t written = 0;
+    do
+    {
+        uint32_t index = add_to_guid_heap(CursorTable(&c)->cxt->editor, guid[written]);
+
+        if (index == 0)
+            return -1;
+
+        if (!write_column_data(&qcxt, index))
+            return -1;
+        written++;
+    } while (in_length > 1 && next_row(&qcxt));
+
+    return written;
+}
+
+int32_t md_set_column_value_as_userstring(mdcursor_t c, col_index_t col_idx, uint32_t in_length, char16_t const** userstring)
+{
+    if (in_length == 0)
+        return 0;
+
+    query_cxt_t qcxt;
+    if (!create_query_context(&c, col_idx, in_length, true, &qcxt))
+        return -1;
+
+    // If this isn't an constant column, then fail.
+    if (!(qcxt.col_details & mdtc_hblob))
+        return -1;
+
+    int32_t written = 0;
+    do
+    {
+        uint32_t index = add_to_user_string_heap(CursorTable(&c)->cxt->editor, userstring[written]);
+
+        if (index == 0)
+            return -1;
+
+        if (!write_column_data(&qcxt, index))
+            return -1;
+        written++;
+    } while (in_length > 1 && next_row(&qcxt));
+
+    return written;
 }
 
 int32_t update_shifted_row_references(mdcursor_t* c, uint32_t count, uint8_t col_index, mdtable_id_t updated_table, uint32_t original_starting_table_index, uint32_t new_starting_table_index)
