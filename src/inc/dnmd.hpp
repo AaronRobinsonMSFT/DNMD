@@ -2,7 +2,6 @@
 #define _SRC_INC_DNMD_HPP_
 
 #include "dnmd.h"
-#include <dncp.h>
 #include <memory>
 
 struct mdhandle_deleter_t
