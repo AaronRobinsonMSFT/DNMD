@@ -412,3 +412,40 @@ uint32_t add_to_guid_heap(mdeditor_t* editor, md_guid_t guid)
     memcpy(editor->guid_heap.heap.ptr + heap_offset, &guid, sizeof(md_guid_t));
     return heap_offset / sizeof(md_guid_t);
 }
+
+bool append_heaps_from_delta(mdeditor_t* editor, mdhandle_t delta)
+{
+    mdcxt_t* delta_context = extract_mdcxt(delta);
+    if (delta_context == NULL)
+        return false;
+    
+    // TODO: Do we want to support "full delta" images?
+    // If so, we need to copy all heaps from the delta image starting at the base image's heap size (as the offset)
+    // when delta isn't a minimal delta.
+    uint32_t heap_offset;
+    if (!reserve_heap_space(editor, &editor->strings_heap, delta_context->strings_heap.size, mdtc_hstring, &heap_offset))
+        return false;
+    
+    memcpy(editor->strings_heap.heap.ptr + heap_offset, delta_context->strings_heap.ptr, delta_context->strings_heap.size);
+
+    if (!reserve_heap_space(editor, &editor->blob_heap, delta_context->blob_heap.size, mdtc_hblob, &heap_offset))
+        return false;
+    
+    memcpy(editor->blob_heap.heap.ptr + heap_offset, delta_context->blob_heap.ptr, delta_context->blob_heap.size);
+
+    if (!reserve_heap_space(editor, &editor->user_string_heap, delta_context->user_string_heap.size, mdtc_hus, &heap_offset))
+        return false;
+    
+    memcpy(editor->user_string_heap.heap.ptr + heap_offset, delta_context->user_string_heap.ptr, delta_context->user_string_heap.size);
+
+    // The delta's GUID heap is never fully copied.
+    // Rather we merge only the newer portion of the heap.
+    size_t heap_size_to_copy = delta_context->guid_heap.size - editor->guid_heap.stream->size;
+    assert(heap_size_to_copy <= UINT32_MAX);
+    if (!reserve_heap_space(editor, &editor->guid_heap, (uint32_t)heap_size_to_copy, mdtc_hguid, &heap_offset))
+        return false;
+    
+    memcpy(editor->guid_heap.heap.ptr + heap_offset, delta_context->guid_heap.ptr + editor->guid_heap.stream->size, heap_size_to_copy);
+
+    return true;
+}
