@@ -1284,3 +1284,71 @@ int32_t update_shifted_row_references(mdcursor_t* c, uint32_t count, uint8_t col
     
     return written;
 }
+
+// TODO: How to update ambient state when a row is inserted into a table?
+// We already update row references, but there's other cases to consider
+// - Whose job is it to determine that the table is no longer going to be sorted?
+
+bool md_insert_row_after(mdcursor_t row, mdcursor_t* new_row)
+{
+    mdtable_t* table = CursorTable(&row);
+
+    if ((table->cxt->context_flags & mdc_editable) == 0)
+        return false;
+
+    // If this is not an append scenario,
+    // then we need to check if the table is one that has a corresponding indirection table
+    // and create it as we are about to shift rows.
+
+    uint32_t new_row_index = CursorRow(&row) + 1;
+
+    if (new_row_index <= table->row_count)
+    {
+        mdtable_id_t indirect_table_maybe;
+        switch (table->table_id)
+        {
+        case mdtid_Field:
+            indirect_table_maybe = mdtid_FieldPtr;
+            break;
+        case mdtid_MethodDef:
+            indirect_table_maybe = mdtid_MethodPtr;
+            break;
+        case mdtid_Param:
+            indirect_table_maybe = mdtid_ParamPtr;
+            break;
+        case mdtid_Event:
+            indirect_table_maybe = mdtid_EventPtr;
+            break;
+        case mdtid_Property:
+            indirect_table_maybe = mdtid_PropertyPtr;
+            break;
+        default:
+            indirect_table_maybe = mdtid_Unused;
+            break;
+        }
+        if (indirect_table_maybe != mdtid_Unused)
+        {
+            if (!create_and_fill_indirect_table(table->cxt->editor, table->table_id, indirect_table_maybe))
+            {
+                return false;
+            }
+        }
+    }
+    
+    return insert_row_into_table(table->cxt->editor, table->table_id, new_row_index, new_row);
+}
+
+bool md_append_row(mdhandle_t handle, mdtable_id_t table_id, mdcursor_t* new_row)
+{
+    mdcxt_t* cxt = extract_mdcxt(handle);
+    
+    if ((cxt->context_flags & mdc_editable) == 0)
+        return false;
+
+    if (table_id < mdtid_First || table_id > mdtid_End)
+        return false;
+
+    mdtable_t* table = &cxt->tables[table_id];
+
+    return insert_row_into_table(handle, table, table->cxt != NULL ? table->row_count : 0, new_row);
+}
