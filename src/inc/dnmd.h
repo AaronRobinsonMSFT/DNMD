@@ -310,6 +310,13 @@ typedef enum
     MDTABLE_COLUMN(FieldRva, Field, 1),
     MDTABLE_COLUMN_COUNT(FieldRva, 2),
 
+    MDTABLE_COLUMN(ENCLog, Token, 0),
+    MDTABLE_COLUMN(ENCLog, Op, 1),
+    MDTABLE_COLUMN_COUNT(ENCLog, 2),
+
+    MDTABLE_COLUMN(ENCMap, Token, 0),
+    MDTABLE_COLUMN_COUNT(ENCMap, 1),
+
     MDTABLE_COLUMN(Assembly, HashAlgId, 0),
     MDTABLE_COLUMN(Assembly, MajorVersion, 1),
     MDTABLE_COLUMN(Assembly, MinorVersion, 2),

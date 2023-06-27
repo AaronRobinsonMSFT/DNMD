@@ -48,7 +48,7 @@ static mdcxt_t* allocate_full_context(mdcxt_t* cxt)
     mem += cxt_mem;
     memcpy(pcxt, cxt, sizeof(*cxt));
     assert(pcxt->tables == NULL);
-    assert(pcxt->delta == NULL);
+    assert(pcxt->mem == NULL);
 
     // Zero out the remaining memory
     memset(mem, 0, total_mem - cxt_mem);
@@ -261,27 +261,28 @@ bool md_apply_delta(mdhandle_t handle, void const* data, size_t data_len)
     assert(delta != NULL);
 
     // Verify the supplied delta is actually a delta file
-    if (!(delta->context_flags & mdc_minimal_delta))
-        return false;
+    bool result = false;
+    if (delta->context_flags & mdc_minimal_delta)
+        result = merge_in_delta(base, delta);
 
-    // Add the delta to the end of delta chain
-    mdcxt_t* curr = base;
-    while (curr->delta != NULL)
-        curr = curr->delta;
-
-    curr->delta = delta;
-    return true;
+    // Free all data for the delta
+    md_destroy_handle(h);
+    return result;
 }
 
 void md_destroy_handle(mdhandle_t handle)
 {
-    mdcxt_t* tmp;
     mdcxt_t* cxt = extract_mdcxt(handle);
-    while (cxt != NULL)
+    if (cxt == NULL)
+        return;
+
+    mdmem_t* tmp;
+    mdmem_t* curr = cxt->mem;
+    while(curr != NULL)
     {
-        tmp = cxt->delta;
-        free(cxt);
-        cxt = tmp;
+        tmp = curr->next;
+        free(curr);
+        curr = tmp;
     }
 }
 
@@ -423,4 +424,17 @@ mdcxt_t* extract_mdcxt(mdhandle_t md)
     if (!cxt || cxt->magic != MDLIB_MAGIC_NUMBER)
         return NULL;
     return cxt;
+}
+
+mdmem_t* alloc_mdmem(mdcxt_t* cxt, size_t length)
+{
+    assert(cxt != NULL);
+    mdmem_t* m = (mdmem_t*)malloc(sizeof(mdmem_t) + length);
+    if (m != NULL)
+    {
+        m->next = cxt->mem;
+        m->size = length;
+        cxt->mem = m;
+    }
+    return m;
 }
