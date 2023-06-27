@@ -1350,5 +1350,19 @@ bool md_append_row(mdhandle_t handle, mdtable_id_t table_id, mdcursor_t* new_row
 
     mdtable_t* table = &cxt->tables[table_id];
 
+    if (table->cxt == NULL)
+    {
+        initialize_new_table_details(table_id, table);
+        table->cxt = cxt;
+        // Allocate some memory for the table.
+        // The number of rows in this allocation is arbitrary.
+        // It may be interesting to change the default depending on the target table.
+        size_t initial_allocation_size = table->row_size_bytes * 20;
+        // The initial table has a size 0 as it has no rows.
+        table->data.size = 0;
+        cxt->editor->tables[table_id].data.ptr = table->data.ptr = malloc(initial_allocation_size);
+        cxt->editor->tables[table_id].data.size = initial_allocation_size;
+    }
+
     return insert_row_into_table(handle, table, table->cxt != NULL ? table->row_count : 0, new_row);
 }

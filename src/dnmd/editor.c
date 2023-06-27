@@ -5,8 +5,9 @@ bool create_and_fill_indirect_table(mdeditor_t* editor, mdtable_id_t original_ta
 {
     // Assert that this image does not have the indirect table yet.
     mdtable_t* target_table = editor->tables[indirect_table].table;
-    assert(target_table->row_count == 0);
+    assert(target_table->cxt == NULL);
     initialize_new_table_details(indirect_table, target_table);
+    target_table->cxt = editor->cxt;
     // Assert that the indirection table has exactly one column that points back at the original table.
     assert(target_table->column_count == 1 && target_table->column_details[0] == (InsertTable(original_table) | mdtc_b4 | mdtc_idx_table));
     // If we're allocating an indirection table, then we're about to add new rows to the original table.
