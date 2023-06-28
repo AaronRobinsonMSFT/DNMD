@@ -148,6 +148,7 @@ typedef struct _query_cxt_t
 {
     mdtable_t* table;
     mdtcol_t col_details;
+    uint8_t const* start;
     uint8_t const* data;
     uint8_t* writable_data;
     uint8_t const* end;
@@ -205,11 +206,12 @@ static bool create_query_context(mdcursor_t* cursor, col_index_t col_idx, uint32
 
     // Compute the offset into the first row.
     uint32_t offset = ExtractOffset(qcxt->col_details);
-    qcxt->data = table->data.ptr + (row * table->row_size_bytes) + offset;
+    qcxt->start = qcxt->data = table->data.ptr + (row * table->row_size_bytes) + offset;
 
     if (table->cxt->context_flags & mdc_editable)
     {
         qcxt->writable_data = get_writable_table_data(table, make_writable);
+        qcxt->writable_data = qcxt->writable_data + (row * table->row_size_bytes) + offset;
     }
     else
         qcxt->writable_data = NULL;
@@ -234,6 +236,10 @@ static bool read_column_data(query_cxt_t* qcxt, uint32_t* data)
 {
     assert(qcxt != NULL && data != NULL);
     *data = 0;
+
+    if (qcxt->writable_data != NULL)
+        qcxt->writable_data += (qcxt->col_details & mdtc_b2) ? 2 : 4;
+
     return (qcxt->col_details & mdtc_b2)
         ? read_u16(&qcxt->data, &qcxt->data_len, (uint16_t*)data)
         : read_u32(&qcxt->data, &qcxt->data_len, data);
@@ -243,6 +249,9 @@ static bool next_row(query_cxt_t* qcxt)
 {
     assert(qcxt != NULL);
     qcxt->data += qcxt->next_row_stride;
+
+    if (qcxt->writable_data != NULL)
+        qcxt->writable_data += qcxt->next_row_stride;
 
     // Restore the data length of the column data.
     qcxt->data_len = qcxt->data_len_col;
@@ -997,7 +1006,10 @@ bool md_resolve_indirect_cursor(mdcursor_t c, mdcursor_t* target)
 
 static bool write_column_data(query_cxt_t* qcxt, uint32_t data)
 {
-    assert(qcxt != NULL);
+    assert(qcxt != NULL && qcxt->writable_data != NULL);
+
+    qcxt->data += (qcxt->col_details & mdtc_b2) ? 2 : 4;
+
     return (qcxt->col_details & mdtc_b2)
         ? write_u16(&qcxt->writable_data, &qcxt->data_len, (uint16_t)data)
         : write_u32(&qcxt->writable_data, &qcxt->data_len, data);
