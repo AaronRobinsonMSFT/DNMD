@@ -220,8 +220,8 @@ static bool allocate_more_editable_space(mddata_t* editable_data, mdcdata_t* dat
 
 bool insert_row_into_table(mdeditor_t* editor, mdtable_id_t table_id, uint32_t row_index, mdcursor_t* new_row)
 {
-    // TODO: Handle creating a new table.
     mdtable_editor_t* target_table_editor = &editor->tables[table_id];
+    assert(target_table_editor->table->cxt != NULL); // The table should exist in the image before a row is added to it.
 
     if (target_table_editor->table->row_count + 1 < row_index)
         return false;
