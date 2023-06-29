@@ -271,6 +271,17 @@ bool is_coded_index_target(mdtcol_t col_details, mdtable_id_t table);
 // Get the column count for a table.
 uint8_t get_table_column_count(mdtable_id_t id);
 
+// II.22 Metadata logical format tables
+// Sort key info for tables
+
+typedef struct _md_key_info
+{
+    uint8_t index;
+    bool descending;
+} md_key_info;
+
+uint8_t get_table_keys(mdtable_id_t id, md_key_info** keys);
+
 // Initialize the supplied table details
 bool initialize_table_details(
     uint32_t const* all_table_row_counts,

@@ -210,6 +210,8 @@ static bool create_query_context(mdcursor_t* cursor, col_index_t col_idx, uint32
 
     if (table->cxt->context_flags & mdc_editable)
     {
+        // TODO: Need to make writable_data also track changes to data
+        // so they are always pointing to the same table location.
         qcxt->writable_data = get_writable_table_data(table, make_writable);
         qcxt->writable_data = qcxt->writable_data + (row * table->row_size_bytes) + offset;
     }
@@ -232,6 +234,26 @@ static bool create_query_context(mdcursor_t* cursor, col_index_t col_idx, uint32
     return true;
 }
 
+static void change_query_context_target_col(query_cxt_t* qcxt, col_index_t col_idx)
+{
+    assert(qcxt != NULL);
+    uint8_t idx = col_to_index(col_idx, qcxt->table);
+    assert(idx < qcxt->table->column_count);
+
+
+    int32_t offset_diff = ExtractOffset(qcxt->table->column_details[idx]) - ExtractOffset(qcxt->col_details);
+
+    qcxt->col_details = qcxt->table->column_details[idx];
+    qcxt->data_len_col = (qcxt->col_details & mdtc_b2) ? 2 : 4;
+    qcxt->data += offset_diff;
+
+    if (qcxt->writable_data != NULL)
+        qcxt->writable_data += offset_diff;
+
+    qcxt->data_len = qcxt->data_len_col;
+    qcxt->next_row_stride = qcxt->table->row_size_bytes - qcxt->data_len_col;
+}
+
 static bool read_column_data(query_cxt_t* qcxt, uint32_t* data)
 {
     assert(qcxt != NULL && data != NULL);
@@ -243,6 +265,22 @@ static bool read_column_data(query_cxt_t* qcxt, uint32_t* data)
     return (qcxt->col_details & mdtc_b2)
         ? read_u16(&qcxt->data, &qcxt->data_len, (uint16_t*)data)
         : read_u32(&qcxt->data, &qcxt->data_len, data);
+}
+
+static bool prev_row(query_cxt_t* qcxt)
+{
+    assert(qcxt != NULL);
+    // Go back the stride + the length of the column data to get to the end
+    // of the column, and then go back the length of the column data to get
+    // to the start of the column data.
+    uint32_t movement = qcxt->next_row_stride + qcxt->data_len_col * 2;
+    qcxt->data -= movement;
+    if (qcxt->writable_data != NULL)
+        qcxt->writable_data -= movement;
+
+    // Restore the data length of the column data.
+    qcxt->data_len = qcxt->data_len_col;
+    return qcxt->data > qcxt->start;
 }
 
 static bool next_row(query_cxt_t* qcxt)
@@ -718,8 +756,21 @@ md_range_result_t md_find_range_from_cursor(mdcursor_t begin, col_index_t idx, u
 {
     // If the table isn't sorted, then a range isn't possible.
     mdtable_t* table = CursorTable(&begin);
+
     if (!table->is_sorted)
         return MD_RANGE_NOT_SUPPORTED;
+        
+    md_key_info* keys;
+    uint8_t keys_count = get_table_keys(table->table_id, &keys);
+    if (keys_count == 0)
+        return MD_RANGE_NOT_SUPPORTED;
+
+    if (keys[0].index != col_to_index(idx, table))
+        return MD_RANGE_NOT_SUPPORTED;
+
+    // Currently all tables have ascending primary keys.
+    // The algorithm below only works with ascending keys.
+    assert(!keys[0].descending);
 
     // Look for any instance of the value.
     mdcursor_t found;
@@ -1015,12 +1066,52 @@ static bool write_column_data(query_cxt_t* qcxt, uint32_t data)
         : write_u32(&qcxt->writable_data, &qcxt->data_len, data);
 }
 
+static bool is_column_sorted_with_next_column(query_cxt_t* qcxt, md_key_info* keys, uint8_t col_key_index)
+{
+    // Copy the original context so we can use it to avoid rewinding to the prior row
+    // for each parent key in the worst case (that the new row has a differing primary key)
+    query_cxt_t original_qcxt = *qcxt;
+    uint32_t raw;
+    bool success = read_column_data(&qcxt, &raw);
+    assert(success);
+
+    // If there's no next row, then we're sorted.
+    if (!next_row(&qcxt))
+        return true;
+
+    bool column_sorted = keys[col_key_index].descending ? (raw >= raw) : (raw <= raw);
+    if (!column_sorted)
+    {
+        // If the column isn't sorted, then check if this column isn't the primary key.
+        // If it isn't then check the sorting of the parent keys.
+        // If the parent keys are sorted, then the table is still sorted.
+        for (int16_t parent_key_idx = col_key_index - 1; parent_key_idx >= 0; --parent_key_idx)
+        {
+            query_cxt_t parent_qcxt = original_qcxt;
+            change_query_context_target_col(&parent_qcxt, index_to_col(keys[parent_key_idx].index, parent_qcxt.table->table_id));
+
+            uint32_t raw_parent_key;
+            if (!read_column_data(&parent_qcxt, &raw_parent_key))
+                return -1;
+
+            (void)next_row(&parent_qcxt); // We know that we will be able to read the next row as we've already read the row previously.
+
+            uint32_t raw_prev_parent_key;
+            if (!read_column_data(&parent_qcxt, &raw_parent_key))
+                return -1;
+
+            column_sorted = keys[parent_key_idx].descending ? (raw_prev_parent_key >= raw_parent_key) : (raw_prev_parent_key <= raw_parent_key);
+        }
+    }
+    return column_sorted;
+}
+
 static int32_t set_column_value_as_token_or_cursor(mdcursor_t c, uint32_t col_idx, mdToken* tk, mdcursor_t* cursor, uint32_t in_length)
 {
     assert(in_length != 0 && (tk != NULL || cursor != NULL));
 
     query_cxt_t qcxt;
-    if (!create_query_context(&c, col_idx, in_length, false, &qcxt))
+    if (!create_query_context(&c, col_idx, in_length, true, &qcxt))
         return -1;
     
     // If we can't write on the underlying table, then fail.
@@ -1031,6 +1122,23 @@ static int32_t set_column_value_as_token_or_cursor(mdcursor_t c, uint32_t col_id
     if (!(qcxt.col_details & (mdtc_idx_table | mdtc_idx_coded)))
         return -1;
 
+    uint8_t key_idx = UINT8_MAX;
+    md_key_info* keys = NULL;
+    if (qcxt.table->is_sorted)
+    {
+        // If the table is sorted, then we need to validate that we stay sorted.
+        // We will not check here if a table goes from unsorted to sorted as that would require
+        // significantly more work to validate and is not a correctness issue.
+        uint8_t key_count = get_table_keys(qcxt.table->table_id, &keys);
+        for (uint8_t i = 0; i < key_count; i++)
+        {
+            if (keys[i].index == col_to_index(col_idx, qcxt.table->table_id))
+            {
+                key_idx = i;
+                break;
+            }
+        }
+    }
 
     int32_t written = 0;
     do
@@ -1067,8 +1175,35 @@ static int32_t set_column_value_as_token_or_cursor(mdcursor_t c, uint32_t col_id
 
         write_column_data(&qcxt, raw);
 
+        // If the column we are writing to is a key of a sorted column, then we need to validate that it is sorted correctly.
+        // We'll validate against the previous row here and then validate against the next row after we've written all of the columns that we will write.
+        if (key_idx != UINT8_MAX)
+        {
+            assert(keys != NULL);
+            // If we have a previous row, make sure that we're sorted with respect to the previous row.
+            query_cxt_t prev_row_qcxt = qcxt;
+            if (prev_row(&prev_row_qcxt))
+            {
+                bool is_sorted = is_column_sorted_with_next_column(&prev_row_qcxt, keys, key_idx);
+                qcxt.table->is_sorted = is_sorted;
+
+                // If we're not sorted, then invalidate key_idx to avoid checking if we're sorted for future row writes.
+                // We won't go from unsorted to sorted.
+                if (!is_sorted)
+                    key_idx = UINT8_MAX;
+            }
+        }
+
         written++;
     } while (in_length > 1 && next_row(&qcxt));
+
+    // Validate that the last row we wrote is sorted with respect to any following rows.
+    if (key_idx != UINT8_MAX)
+    {
+        assert(keys != NULL);
+        bool is_sorted = is_column_sorted_with_next_column(&qcxt, keys, key_idx);
+        qcxt.table->is_sorted = is_sorted;
+    }
 
     return written;
 }
@@ -1100,16 +1235,62 @@ int32_t md_set_column_value_as_constant(mdcursor_t c, col_index_t col_idx, uint3
     // If this isn't an constant column, then fail.
     if (!(qcxt.col_details & mdtc_constant))
         return -1;
+    
+    uint8_t key_idx = UINT8_MAX;
+    md_key_info* keys = NULL;
+    if (qcxt.table->is_sorted)
+    {
+        // If the table is sorted, then we need to validate that we stay sorted.
+        // We will not check here if a table goes from unsorted to sorted as that would require
+        // significantly more work to validate and is not a correctness issue.
+        uint8_t key_count = get_table_keys(qcxt.table->table_id, &keys);
+        for (uint8_t i = 0; i < key_count; i++)
+        {
+            if (keys[i].index == col_to_index(col_idx, qcxt.table->table_id))
+            {
+                key_idx = i;
+                break;
+            }
+        }
+    }
 
-    int32_t read_in = 0;
+    int32_t written = 0;
     do
     {
-        if (!write_column_data(&qcxt, constant[read_in]))
+        if (!write_column_data(&qcxt, constant[written]))
             return -1;
-        read_in++;
+        
+        // If the column we are writing to is a key of a sorted column, then we need to validate that it is sorted correctly.
+        // We'll validate against the previous row here and then validate against the next row after we've written all of the columns that we will write.
+        if (key_idx != UINT8_MAX)
+        {
+            assert(keys != NULL);
+            // If we have a previous row, make sure that we're sorted with respect to the previous row.
+            query_cxt_t prev_row_qcxt = qcxt;
+            if (prev_row(&prev_row_qcxt))
+            {
+                bool is_sorted = is_column_sorted_with_next_column(&prev_row_qcxt, keys, key_idx);
+                qcxt.table->is_sorted = is_sorted;
+
+                // If we're not sorted, then invalidate key_idx to avoid checking if we're sorted for future row writes.
+                // We won't go from unsorted to sorted.
+                if (!is_sorted)
+                    key_idx = UINT8_MAX;
+            }
+        }
+
+        written++;
     } while (in_length > 1 && next_row(&qcxt));
 
-    return read_in;
+    // Validate that the last row we wrote is sorted with respect to any following rows.
+    if (key_idx != UINT8_MAX)
+    {
+        assert(keys != NULL);
+        bool is_sorted = is_column_sorted_with_next_column(&qcxt, keys, key_idx);
+        qcxt.table->is_sorted = is_sorted;
+    }
+
+    return written;
 }
 
 int32_t md_set_column_value_as_utf8(mdcursor_t c, col_index_t col_idx, uint32_t in_length, char const** str)
@@ -1124,6 +1305,25 @@ int32_t md_set_column_value_as_utf8(mdcursor_t c, col_index_t col_idx, uint32_t 
     // If this isn't an constant column, then fail.
     if (!(qcxt.col_details & mdtc_hstring))
         return -1;
+
+#ifdef DEBUG_COLUMN_SORTING
+    uint8_t key_idx = UINT8_MAX;
+    md_key_info* keys = NULL;
+    if (qcxt.table->is_sorted)
+    {
+        // If the table is sorted, then we need to validate that we stay sorted.
+        // We will not check here if a table goes from unsorted to sorted as that would require
+        // significantly more work to validate and is not a correctness issue.
+        uint8_t key_count = get_table_keys(qcxt.table->table_id, &keys);
+        for (uint8_t i = 0; i < key_count; i++)
+        {
+            if (keys[i].index == col_to_index(col_idx, qcxt.table->table_id))
+            {
+                assert(!"Sorted columns cannot be heap references");
+            }
+        }
+    }
+#endif
 
     int32_t written = 0;
     do
@@ -1161,6 +1361,25 @@ int32_t md_set_column_value_as_blob(mdcursor_t c, col_index_t col_idx, uint32_t 
     if (!(qcxt.col_details & mdtc_hblob))
         return -1;
 
+#ifdef DEBUG_COLUMN_SORTING
+    uint8_t key_idx = UINT8_MAX;
+    md_key_info* keys = NULL;
+    if (qcxt.table->is_sorted)
+    {
+        // If the table is sorted, then we need to validate that we stay sorted.
+        // We will not check here if a table goes from unsorted to sorted as that would require
+        // significantly more work to validate and is not a correctness issue.
+        uint8_t key_count = get_table_keys(qcxt.table->table_id, &keys);
+        for (uint8_t i = 0; i < key_count; i++)
+        {
+            if (keys[i].index == col_to_index(col_idx, qcxt.table->table_id))
+            {
+                assert(!"Sorted columns cannot be heap references");
+            }
+        }
+    }
+#endif
+
     int32_t written = 0;
     do
     {
@@ -1189,6 +1408,25 @@ int32_t md_set_column_value_as_guid(mdcursor_t c, col_index_t col_idx, uint32_t 
     // If this isn't an constant column, then fail.
     if (!(qcxt.col_details & mdtc_hblob))
         return -1;
+
+#ifdef DEBUG_COLUMN_SORTING
+    uint8_t key_idx = UINT8_MAX;
+    md_key_info* keys = NULL;
+    if (qcxt.table->is_sorted)
+    {
+        // If the table is sorted, then we need to validate that we stay sorted.
+        // We will not check here if a table goes from unsorted to sorted as that would require
+        // significantly more work to validate and is not a correctness issue.
+        uint8_t key_count = get_table_keys(qcxt.table->table_id, &keys);
+        for (uint8_t i = 0; i < key_count; i++)
+        {
+            if (keys[i].index == col_to_index(col_idx, qcxt.table->table_id))
+            {
+                assert(!"Sorted columns cannot be heap references");
+            }
+        }
+    }
+#endif
 
     int32_t written = 0;
     do
@@ -1219,6 +1457,25 @@ int32_t md_set_column_value_as_userstring(mdcursor_t c, col_index_t col_idx, uin
     if (!(qcxt.col_details & mdtc_hblob))
         return -1;
 
+#ifdef DEBUG_COLUMN_SORTING
+    uint8_t key_idx = UINT8_MAX;
+    md_key_info* keys = NULL;
+    if (qcxt.table->is_sorted)
+    {
+        // If the table is sorted, then we need to validate that we stay sorted.
+        // We will not check here if a table goes from unsorted to sorted as that would require
+        // significantly more work to validate and is not a correctness issue.
+        uint8_t key_count = get_table_keys(qcxt.table->table_id, &keys);
+        for (uint8_t i = 0; i < key_count; i++)
+        {
+            if (keys[i].index == col_to_index(col_idx, qcxt.table->table_id))
+            {
+                assert(!"Sorted columns cannot be heap references");
+            }
+        }
+    }
+#endif
+
     int32_t written = 0;
     do
     {
@@ -1241,7 +1498,7 @@ int32_t update_shifted_row_references(mdcursor_t* c, uint32_t count, uint8_t col
     col_index_t col = index_to_col(col_index, CursorTable(c)->table_id);
 
     query_cxt_t qcxt;
-    if (!create_query_context(c, col, count, false, &qcxt))
+    if (!create_query_context(c, col, count, true, &qcxt))
         return -1;
 
     // If this isn't an index column, then fail.
@@ -1300,6 +1557,11 @@ int32_t update_shifted_row_references(mdcursor_t* c, uint32_t count, uint8_t col
 // TODO: How to update ambient state when a row is inserted into a table?
 // We already update row references, but there's other cases to consider
 // - Whose job is it to determine that the table is no longer going to be sorted?
+//
+// IDEA: Change is_sorted to a column index for the key column
+// and check when setting the column value that it is ordered correctly.
+// Question: What to do for multiple key columns? Can we pack multiple key columns into the object?
+// Do we want to have a "key index" model similar to the coded-index setup with arrays that define the ordering of the column keys?
 
 bool md_insert_row_after(mdcursor_t row, mdcursor_t* new_row)
 {
