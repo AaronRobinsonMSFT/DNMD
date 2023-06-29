@@ -157,7 +157,7 @@ typedef struct _query_cxt_t
     uint32_t next_row_stride;
 } query_cxt_t;
 
-static uint8_t col_to_index(col_index_t col_idx, mdtable_t* table)
+static uint8_t col_to_index(col_index_t col_idx, mdtable_t const* table)
 {
     assert(table != NULL);
     uint32_t idx = (uint32_t)col_idx;
@@ -1292,6 +1292,17 @@ int32_t md_set_column_value_as_constant(mdcursor_t c, col_index_t col_idx, uint3
     return written;
 }
 
+static void validate_column_not_sorted(mdtable_t const* table, col_index_t col_idx)
+{
+    md_key_info const* keys = NULL;
+    uint8_t key_count = get_table_keys(table->table_id, &keys);
+    for (uint8_t i = 0; i < key_count; i++)
+    {
+        if (keys[i].index == col_to_index(col_idx, table))
+            assert(!"Sorted columns cannot be heap references");
+    }
+}
+
 int32_t md_set_column_value_as_utf8(mdcursor_t c, col_index_t col_idx, uint32_t in_length, char const** str)
 {
     if (in_length == 0)
@@ -1306,22 +1317,7 @@ int32_t md_set_column_value_as_utf8(mdcursor_t c, col_index_t col_idx, uint32_t 
         return -1;
 
 #ifdef DEBUG_COLUMN_SORTING
-    uint8_t key_idx = UINT8_MAX;
-    md_key_info const* keys = NULL;
-    if (qcxt.table->is_sorted)
-    {
-        // If the table is sorted, then we need to validate that we stay sorted.
-        // We will not check here if a table goes from unsorted to sorted as that would require
-        // significantly more work to validate and is not a correctness issue.
-        uint8_t key_count = get_table_keys(qcxt.table->table_id, &keys);
-        for (uint8_t i = 0; i < key_count; i++)
-        {
-            if (keys[i].index == col_to_index(col_idx, qcxt.table))
-            {
-                assert(!"Sorted columns cannot be heap references");
-            }
-        }
-    }
+    validate_column_not_sorted(qcxt.table, col_idx);
 #endif
 
     int32_t written = 0;
@@ -1361,22 +1357,7 @@ int32_t md_set_column_value_as_blob(mdcursor_t c, col_index_t col_idx, uint32_t 
         return -1;
 
 #ifdef DEBUG_COLUMN_SORTING
-    uint8_t key_idx = UINT8_MAX;
-    md_key_info const* keys = NULL;
-    if (qcxt.table->is_sorted)
-    {
-        // If the table is sorted, then we need to validate that we stay sorted.
-        // We will not check here if a table goes from unsorted to sorted as that would require
-        // significantly more work to validate and is not a correctness issue.
-        uint8_t key_count = get_table_keys(qcxt.table->table_id, &keys);
-        for (uint8_t i = 0; i < key_count; i++)
-        {
-            if (keys[i].index == col_to_index(col_idx, qcxt.table))
-            {
-                assert(!"Sorted columns cannot be heap references");
-            }
-        }
-    }
+    validate_column_not_sorted(qcxt.table, col_idx);
 #endif
 
     int32_t written = 0;
@@ -1409,22 +1390,7 @@ int32_t md_set_column_value_as_guid(mdcursor_t c, col_index_t col_idx, uint32_t 
         return -1;
 
 #ifdef DEBUG_COLUMN_SORTING
-    uint8_t key_idx = UINT8_MAX;
-    md_key_info const* keys = NULL;
-    if (qcxt.table->is_sorted)
-    {
-        // If the table is sorted, then we need to validate that we stay sorted.
-        // We will not check here if a table goes from unsorted to sorted as that would require
-        // significantly more work to validate and is not a correctness issue.
-        uint8_t key_count = get_table_keys(qcxt.table->table_id, &keys);
-        for (uint8_t i = 0; i < key_count; i++)
-        {
-            if (keys[i].index == col_to_index(col_idx, qcxt.table->table_id))
-            {
-                assert(!"Sorted columns cannot be heap references");
-            }
-        }
-    }
+    validate_column_not_sorted(qcxt.table, col_idx);
 #endif
 
     int32_t written = 0;
@@ -1457,22 +1423,7 @@ int32_t md_set_column_value_as_userstring(mdcursor_t c, col_index_t col_idx, uin
         return -1;
 
 #ifdef DEBUG_COLUMN_SORTING
-    uint8_t key_idx = UINT8_MAX;
-    md_key_info const* keys = NULL;
-    if (qcxt.table->is_sorted)
-    {
-        // If the table is sorted, then we need to validate that we stay sorted.
-        // We will not check here if a table goes from unsorted to sorted as that would require
-        // significantly more work to validate and is not a correctness issue.
-        uint8_t key_count = get_table_keys(qcxt.table->table_id, &keys);
-        for (uint8_t i = 0; i < key_count; i++)
-        {
-            if (keys[i].index == col_to_index(col_idx, qcxt.table->table_id))
-            {
-                assert(!"Sorted columns cannot be heap references");
-            }
-        }
-    }
+    validate_column_not_sorted(qcxt.table, col_idx);
 #endif
 
     int32_t written = 0;
