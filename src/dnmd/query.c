@@ -210,8 +210,6 @@ static bool create_query_context(mdcursor_t* cursor, col_index_t col_idx, uint32
 
     if (table->cxt->context_flags & mdc_editable)
     {
-        // TODO: Need to make writable_data also track changes to data
-        // so they are always pointing to the same table location.
         qcxt->writable_data = get_writable_table_data(table, make_writable);
         qcxt->writable_data = qcxt->writable_data + (row * table->row_size_bytes) + offset;
     }
@@ -1553,15 +1551,6 @@ int32_t update_shifted_row_references(mdcursor_t* c, uint32_t count, uint8_t col
     
     return written;
 }
-
-// TODO: How to update ambient state when a row is inserted into a table?
-// We already update row references, but there's other cases to consider
-// - Whose job is it to determine that the table is no longer going to be sorted?
-//
-// IDEA: Change is_sorted to a column index for the key column
-// and check when setting the column value that it is ordered correctly.
-// Question: What to do for multiple key columns? Can we pack multiple key columns into the object?
-// Do we want to have a "key index" model similar to the coded-index setup with arrays that define the ordering of the column keys?
 
 bool md_insert_row_after(mdcursor_t row, mdcursor_t* new_row)
 {
