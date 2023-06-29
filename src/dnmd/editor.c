@@ -423,17 +423,17 @@ bool append_heaps_from_delta(mdeditor_t* editor, mdhandle_t delta)
     // If so, we need to copy all heaps from the delta image starting at the base image's heap size (as the offset)
     // when delta isn't a minimal delta.
     uint32_t heap_offset;
-    if (!reserve_heap_space(editor, &editor->strings_heap, delta_context->strings_heap.size, mdtc_hstring, &heap_offset))
+    if (!reserve_heap_space(editor, &editor->strings_heap, (uint32_t)delta_context->strings_heap.size, mdtc_hstring, &heap_offset))
         return false;
     
     memcpy(editor->strings_heap.heap.ptr + heap_offset, delta_context->strings_heap.ptr, delta_context->strings_heap.size);
 
-    if (!reserve_heap_space(editor, &editor->blob_heap, delta_context->blob_heap.size, mdtc_hblob, &heap_offset))
+    if (!reserve_heap_space(editor, &editor->blob_heap, (uint32_t)delta_context->blob_heap.size, mdtc_hblob, &heap_offset))
         return false;
     
     memcpy(editor->blob_heap.heap.ptr + heap_offset, delta_context->blob_heap.ptr, delta_context->blob_heap.size);
 
-    if (!reserve_heap_space(editor, &editor->user_string_heap, delta_context->user_string_heap.size, mdtc_hus, &heap_offset))
+    if (!reserve_heap_space(editor, &editor->user_string_heap, (uint32_t)delta_context->user_string_heap.size, mdtc_hus, &heap_offset))
         return false;
     
     memcpy(editor->user_string_heap.heap.ptr + heap_offset, delta_context->user_string_heap.ptr, delta_context->user_string_heap.size);

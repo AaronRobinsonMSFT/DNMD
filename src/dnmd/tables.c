@@ -229,12 +229,6 @@ uint8_t get_table_column_count(mdtable_id_t id)
     return table_column_counts[id];
 }
 
-typedef struct
-{
-    uint8_t col_index;
-    bool descending;
-} md_key_info;
-
 // II.22 Metadata logical format tables
 // DNMD implements the augments to the metadata logical format in the ECMA-335 spec located at https://github.com/dotnet/runtime/blob/main/docs/design/specs/Ecma-335-Augments.md
 static md_key_info const keys_ClassLayout[] = { { mdtClassLayout_Parent, false } };
@@ -330,7 +324,7 @@ static keys_info const table_keys[] =
 
 // II.22 Metadata logical format tables
 // Primary and secondary key info for tables
-uint8_t get_table_keys(mdtable_id_t id, md_key_info** keys)
+uint8_t get_table_keys(mdtable_id_t id, md_key_info const** keys)
 {
     assert(mdtid_First <= id && id < mdtid_End);
     *keys = table_keys[id].keys;

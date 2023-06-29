@@ -280,7 +280,7 @@ typedef struct _md_key_info
     bool descending;
 } md_key_info;
 
-uint8_t get_table_keys(mdtable_id_t id, md_key_info** keys);
+uint8_t get_table_keys(mdtable_id_t id, md_key_info const** keys);
 
 // Initialize the supplied table details
 bool initialize_table_details(
