@@ -272,11 +272,40 @@ bool insert_row_into_table(mdeditor_t* editor, mdtable_id_t table_id, uint32_t r
     return true;
 }
 
-static bool reserve_heap_space(mdeditor_t* editor, md_heap_editor_t* heap_editor, uint32_t space_size, mdtcol_t heap_id, uint32_t* heap_offset)
+static bool reserve_heap_space(mdeditor_t* editor, md_heap_editor_t* heap_editor, uint32_t space_size, mdtcol_t heap_id, uint32_t* heap_offset, bool preserve_offsets)
 {
-    // TODO: Need to add setting up a new heap if the image doesn't already have the heap.
-    // TODO: Alignment
+    if (heap_editor->stream->ptr == NULL)
+    {
+        // Set the default heap size based on likely reasonable sizes for the heaps.
+        // In most images, there won't be more than three guids, so we can start with a small heap in that case.
+        const size_t initial_heap_size = heap_id == mdtc_hguid ? sizeof(md_guid_t) * 3 : 0x100;
+        heap_editor->heap.ptr = heap_editor->stream->ptr = malloc(initial_heap_size);
+        if (heap_editor->heap.ptr == NULL)
+            return false;
+        heap_editor->heap.size = initial_heap_size;
+
+        // The first character in the strings heap must be the '\0' - II.24.2.3
+        // The first character in the user_string and blob heaps must be the 0 - II.24.2.4
+        // The guid heap doesn't start with a 0 byte, but it must be emitted in sizeof(md_guid_t)-based chuncks.
+        // If we are preserving offsets, then we don't initialize the heap, as we will be copying an existing heap that has already been validated and
+        // we must have the exact same offsets as the existing heap to avoid breaking heap references.
+        if (heap_id != mdtc_hguid && !preserve_offsets)
+        {
+            heap_editor->heap.ptr[0] = 0;
+            heap_editor->stream->size = heap_id == mdtc_hguid ? 0 : 1;
+        }
+    }
+
     *heap_offset = (uint32_t)heap_editor->stream->size;
+    
+    
+    if (heap_offset > UINT32_MAX - space_size)
+    {
+        // The max heap size is 2^32-1, so we don't have space left to allocate.
+        return false;
+    }
+
+
     uint32_t new_heap_size = *heap_offset + space_size;
     if (new_heap_size > heap_editor->heap.size)
     {
@@ -307,7 +336,7 @@ uint32_t add_to_string_heap(mdeditor_t* editor, char const* str)
     // TODO: Deduplicate heap
     uint32_t str_len = (uint32_t)strlen(str);
     uint32_t heap_offset;
-    if (!reserve_heap_space(editor, &editor->strings_heap, str_len + 1, mdtc_hstring, &heap_offset))
+    if (!reserve_heap_space(editor, &editor->strings_heap, str_len + 1, mdtc_hstring, &heap_offset, false))
     {
         return 0;
     }
@@ -327,7 +356,7 @@ uint32_t add_to_blob_heap(mdeditor_t* editor, uint8_t const* data, uint32_t leng
     uint32_t heap_slot_size = length + (uint32_t)compressed_length_size;
 
     uint32_t heap_offset;
-    if (!reserve_heap_space(editor, &editor->blob_heap, heap_slot_size, mdtc_hblob, &heap_offset))
+    if (!reserve_heap_space(editor, &editor->blob_heap, heap_slot_size, mdtc_hblob, &heap_offset, false))
     {
         return 0;
     }
@@ -387,7 +416,7 @@ uint32_t add_to_user_string_heap(mdeditor_t* editor, char16_t const* str)
     
     uint32_t heap_slot_size = str_len + (uint32_t)compressed_length_size + 1;
     uint32_t heap_offset;
-    if (!reserve_heap_space(editor, &editor->user_string_heap, heap_slot_size, mdtc_hus, &heap_offset))
+    if (!reserve_heap_space(editor, &editor->user_string_heap, heap_slot_size, mdtc_hus, &heap_offset, false))
     {
         return 0;
     }
@@ -404,7 +433,7 @@ uint32_t add_to_guid_heap(mdeditor_t* editor, md_guid_t guid)
     // TODO: Deduplicate heap
 
     uint32_t heap_offset;
-    if (!reserve_heap_space(editor, &editor->guid_heap, sizeof(md_guid_t), mdtc_hguid, &heap_offset))
+    if (!reserve_heap_space(editor, &editor->guid_heap, sizeof(md_guid_t), mdtc_hguid, &heap_offset, false))
     {
         return 0;
     }
@@ -423,17 +452,17 @@ bool append_heaps_from_delta(mdeditor_t* editor, mdhandle_t delta)
     // If so, we need to copy all heaps from the delta image starting at the base image's heap size (as the offset)
     // when delta isn't a minimal delta.
     uint32_t heap_offset;
-    if (!reserve_heap_space(editor, &editor->strings_heap, (uint32_t)delta_context->strings_heap.size, mdtc_hstring, &heap_offset))
+    if (!reserve_heap_space(editor, &editor->strings_heap, (uint32_t)delta_context->strings_heap.size, mdtc_hstring, &heap_offset, true))
         return false;
     
     memcpy(editor->strings_heap.heap.ptr + heap_offset, delta_context->strings_heap.ptr, delta_context->strings_heap.size);
 
-    if (!reserve_heap_space(editor, &editor->blob_heap, (uint32_t)delta_context->blob_heap.size, mdtc_hblob, &heap_offset))
+    if (!reserve_heap_space(editor, &editor->blob_heap, (uint32_t)delta_context->blob_heap.size, mdtc_hblob, &heap_offset, true))
         return false;
     
     memcpy(editor->blob_heap.heap.ptr + heap_offset, delta_context->blob_heap.ptr, delta_context->blob_heap.size);
 
-    if (!reserve_heap_space(editor, &editor->user_string_heap, (uint32_t)delta_context->user_string_heap.size, mdtc_hus, &heap_offset))
+    if (!reserve_heap_space(editor, &editor->user_string_heap, (uint32_t)delta_context->user_string_heap.size, mdtc_hus, &heap_offset, true))
         return false;
     
     memcpy(editor->user_string_heap.heap.ptr + heap_offset, delta_context->user_string_heap.ptr, delta_context->user_string_heap.size);
@@ -442,7 +471,7 @@ bool append_heaps_from_delta(mdeditor_t* editor, mdhandle_t delta)
     // Rather we merge only the newer portion of the heap.
     size_t heap_size_to_copy = delta_context->guid_heap.size - editor->guid_heap.stream->size;
     assert(heap_size_to_copy <= UINT32_MAX);
-    if (!reserve_heap_space(editor, &editor->guid_heap, (uint32_t)heap_size_to_copy, mdtc_hguid, &heap_offset))
+    if (!reserve_heap_space(editor, &editor->guid_heap, (uint32_t)heap_size_to_copy, mdtc_hguid, &heap_offset, true))
         return false;
     
     memcpy(editor->guid_heap.heap.ptr + heap_offset, delta_context->guid_heap.ptr + editor->guid_heap.stream->size, heap_size_to_copy);
