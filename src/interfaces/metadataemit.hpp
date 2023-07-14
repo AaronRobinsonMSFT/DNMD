@@ -39,7 +39,10 @@ public:
 
     virtual ~MetadataEmit() = default;
 
-    mdhandle_t MetaData() const;
+    mdhandle_t MetaData() const
+    {
+        return _md_ptr;
+    }
 
     // TODO: provide implementations all of the methods below (starting with E_NOTIMPL stubs)
 

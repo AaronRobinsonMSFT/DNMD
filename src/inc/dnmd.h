@@ -486,6 +486,21 @@ bool md_create_methoddefsig_from_methodrefsig(uint8_t const* ref_sig, size_t ref
 // Returns true if the cursor was not an indirect cursor or if the indirection was resolved, or false if the cursor pointed to an invalid indirection table entry.
 bool md_resolve_indirect_cursor(mdcursor_t c, mdcursor_t* target);
 
+
+int32_t md_set_column_value_as_token(mdcursor_t c, col_index_t col, uint32_t in_length, mdToken* tk);
+int32_t md_set_column_value_as_cursor(mdcursor_t c, col_index_t col, uint32_t in_length, mdcursor_t* cursor);
+int32_t md_set_column_value_as_constant(mdcursor_t c, col_index_t col_idx, uint32_t in_length, uint32_t* constant);
+int32_t md_set_column_value_as_utf8(mdcursor_t c, col_index_t col_idx, uint32_t in_length, char const** str);
+int32_t md_set_column_value_as_blob(mdcursor_t c, col_index_t col_idx, uint32_t in_length, uint8_t const** blob, uint32_t* blob_len);
+int32_t md_set_column_value_as_guid(mdcursor_t c, col_index_t col_idx, uint32_t in_length, md_guid_t const* guid);
+int32_t md_set_column_value_as_userstring(mdcursor_t c, col_index_t col_idx, uint32_t in_length, char16_t const** userstring);
+
+// Create a new row after the row specified by the cursor.
+bool md_insert_row_after(mdcursor_t row, mdcursor_t* new_row);
+
+// Create a new row at the end of the specified table.
+bool md_append_row(mdhandle_t handle, mdtable_id_t table_id, mdcursor_t* new_row);
+
 #ifdef __cplusplus
 }
 #endif

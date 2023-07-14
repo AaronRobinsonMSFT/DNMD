@@ -348,15 +348,4 @@ int32_t update_shifted_row_references(mdcursor_t* c, uint32_t count, uint8_t col
 bool insert_row_into_table(mdeditor_t* editor, mdtable_id_t table_id, uint32_t row_index, mdcursor_t* new_row);
 bool append_heaps_from_delta(mdeditor_t* editor, mdhandle_t delta);
 
-// Editing (Public in the future)
-int32_t md_set_column_value_as_token(mdcursor_t c, col_index_t col, uint32_t in_length, mdToken* tk);
-int32_t md_set_column_value_as_cursor(mdcursor_t c, col_index_t col, uint32_t in_length, mdcursor_t* cursor);
-int32_t md_set_column_value_as_constant(mdcursor_t c, col_index_t col_idx, uint32_t in_length, uint32_t* constant);
-int32_t md_set_column_value_as_utf8(mdcursor_t c, col_index_t col_idx, uint32_t in_length, char const** str);
-int32_t md_set_column_value_as_blob(mdcursor_t c, col_index_t col_idx, uint32_t in_length, uint8_t const** blob, uint32_t* blob_len);
-int32_t md_set_column_value_as_guid(mdcursor_t c, col_index_t col_idx, uint32_t in_length, md_guid_t const* guid);
-int32_t md_set_column_value_as_userstring(mdcursor_t c, col_index_t col_idx, uint32_t in_length, char16_t const** userstring);
-bool md_insert_row_after(mdcursor_t row, mdcursor_t* new_row);
-bool md_append_row(mdhandle_t handle, mdtable_id_t table_id, mdcursor_t* new_row);
-
 #endif // _SRC_DNMD_INTERNAL_H_

@@ -1,10 +1,48 @@
 #include "metadataemit.hpp"
+#include "pal.hpp"
+
+#define RETURN_IF_FAILED(exp) \
+{ \
+    hr = (exp); \
+    if (FAILED(hr)) \
+    { \
+        return hr; \
+    } \
+}
 
 HRESULT MetadataEmit::SetModuleProps(
         LPCWSTR     szName)
 {
-    UNREFERENCED_PARAMETER(szName);
-    return E_NOTIMPL;
+    pal::StringConvert<WCHAR, char> cvt(szName);
+    if (!cvt.Success())
+        return E_INVALIDARG;
+    
+    mdcursor_t c;
+    uint32_t count;
+    if (!md_create_cursor(MetaData(), mdtid_Module, &c, &count)
+        && !md_append_row(MetaData(), mdtid_Module, &c))
+        return E_FAIL;
+
+    // Search for a file name in the provided path
+    // and use that as the module name.
+    char* modulePath = cvt;
+    std::size_t len = strlen(modulePath);
+    const char* start = modulePath;
+    for (int i = len - 1; i >= 0; i--)
+    {
+        if (modulePath[i] == '\\')
+        {
+            start = modulePath + i + 1;
+            break;
+        }
+    }
+    
+    if (1 != md_set_column_value_as_utf8(c, mdtModule_Name, 1, &start))
+        return E_FAIL;
+
+    // TODO: Record ENC Log.
+
+    return S_OK;
 }
 
 HRESULT MetadataEmit::Save(
@@ -41,12 +79,67 @@ HRESULT MetadataEmit::DefineTypeDef(
         mdToken     rtkImplements[],
         mdTypeDef   *ptd)
 {
-    UNREFERENCED_PARAMETER(szTypeDef);
-    UNREFERENCED_PARAMETER(dwTypeDefFlags);
-    UNREFERENCED_PARAMETER(tkExtends);
-    UNREFERENCED_PARAMETER(rtkImplements);
-    UNREFERENCED_PARAMETER(ptd);
-    return E_NOTIMPL;
+    mdcursor_t c;
+    if (!md_append_row(MetaData(), mdtid_TypeDef, &c))
+        return E_FAIL;
+    
+    pal::StringConvert<WCHAR, char> cvt(szTypeDef);
+
+    const char* szName = cvt;
+    
+    // TODO: Check for duplicate type definitions
+
+    // TODO: split name into namespace and type name
+    if (1 != md_set_column_value_as_utf8(c, mdtTypeDef_TypeName, 1, &szName))
+        return E_FAIL;
+    
+    // TODO: Handle reserved flags
+    uint32_t flags = (uint32_t)dwTypeDefFlags;
+    if (1 != md_set_column_value_as_constant(c, mdtTypeDef_Flags, 1, &flags))
+        return E_FAIL;
+    
+    if (1 != md_set_column_value_as_token(c, mdtTypeDef_Extends, 1, &tkExtends))
+        return E_FAIL;
+    
+    mdcursor_t fieldCursor;
+    uint32_t numFields;
+    if (!md_create_cursor(MetaData(), mdtid_Field, &fieldCursor, &numFields))
+        return E_FAIL;
+    
+    md_cursor_move(&fieldCursor, numFields);
+    if (1 != md_set_column_value_as_cursor(c, mdtTypeDef_FieldList, 1, &fieldCursor))
+        return E_FAIL;
+    
+    mdcursor_t methodCursor;
+    uint32_t numMethods;
+    if (!md_create_cursor(MetaData(), mdtid_MethodDef, &methodCursor, &numMethods))
+        return E_FAIL;
+    
+    md_cursor_move(&methodCursor, numMethods);
+    if (1 != md_set_column_value_as_cursor(c, mdtTypeDef_MethodList, 1, &methodCursor))
+        return E_FAIL;
+    
+    size_t i = 0;
+    mdToken currentImplementation = rtkImplements[i];
+    do
+    {
+        mdcursor_t interfaceImpl;
+        if (!md_append_row(MetaData(), mdtid_InterfaceImpl, &interfaceImpl))
+            return E_FAIL;
+        
+        if (1 != md_set_column_value_as_cursor(interfaceImpl, mdtInterfaceImpl_Class, 1, &c))
+            return E_FAIL;
+        
+        if (1 != md_set_column_value_as_token(interfaceImpl, mdtInterfaceImpl_Interface, 1, &currentImplementation))
+            return E_FAIL;
+    } while ((currentImplementation = rtkImplements[++i]) != mdTokenNil);
+    
+    // TODO: Update Enc Log
+
+    if (!md_cursor_to_token(c, ptd))
+        return E_FAIL;
+    
+    return S_OK;
 }
 
 HRESULT MetadataEmit::DefineNestedType(
@@ -57,13 +150,28 @@ HRESULT MetadataEmit::DefineNestedType(
         mdTypeDef   tdEncloser,
         mdTypeDef   *ptd)
 {
-    UNREFERENCED_PARAMETER(szTypeDef);
-    UNREFERENCED_PARAMETER(dwTypeDefFlags);
-    UNREFERENCED_PARAMETER(tkExtends);
-    UNREFERENCED_PARAMETER(rtkImplements);
-    UNREFERENCED_PARAMETER(tdEncloser);
-    UNREFERENCED_PARAMETER(ptd);
-    return E_NOTIMPL;
+    HRESULT hr;
+
+    if (!TypeFromToken(tdEncloser) != mdtTypeDef || IsNilToken(tdEncloser))
+        return E_INVALIDARG;
+
+    if (IsTdNested(dwTypeDefFlags))
+        return E_INVALIDARG;
+
+    RETURN_IF_FAILED(DefineTypeDef(szTypeDef, dwTypeDefFlags, tkExtends, rtkImplements, ptd));
+
+    mdcursor_t c;
+    if (!md_append_row(MetaData(), mdtid_NestedClass, &c))
+        return E_FAIL;
+
+    if (1 != md_set_column_value_as_token(c, mdtNestedClass_NestedClass, 1, ptd))
+        return E_FAIL;
+    
+    if (1 != md_set_column_value_as_token(c, mdtNestedClass_EnclosingClass, 1, &tdEncloser))
+        return E_FAIL;
+
+    // TODO: Update ENC log
+    return S_OK;
 }
 
 HRESULT MetadataEmit::SetHandler(
@@ -99,10 +207,21 @@ HRESULT MetadataEmit::DefineMethodImpl(
         mdToken     tkBody,
         mdToken     tkDecl)
 {
-    UNREFERENCED_PARAMETER(td);
-    UNREFERENCED_PARAMETER(tkBody);
-    UNREFERENCED_PARAMETER(tkDecl);
-    return E_NOTIMPL;
+    mdcursor_t c;
+    if (!md_append_row(MetaData(), mdtid_MethodImpl, &c))
+        return E_FAIL;
+
+    if (1 != md_set_column_value_as_token(c, mdtMethodImpl_Class, 1, &td))
+        return E_FAIL;
+    
+    if (1 != md_set_column_value_as_token(c, mdtMethodImpl_MethodBody, 1, &tkBody))
+        return E_FAIL;
+
+    if (1 != md_set_column_value_as_token(c, mdtMethodImpl_MethodDeclaration, 1, &tkDecl))
+        return E_FAIL;
+
+    // TODO: Update ENC log
+    return S_OK;
 }
 
 HRESULT MetadataEmit::DefineTypeRefByName(
@@ -110,10 +229,28 @@ HRESULT MetadataEmit::DefineTypeRefByName(
         LPCWSTR     szName,
         mdTypeRef   *ptr)
 {
-    UNREFERENCED_PARAMETER(tkResolutionScope);
-    UNREFERENCED_PARAMETER(szName);
-    UNREFERENCED_PARAMETER(ptr);
-    return E_NOTIMPL;
+    mdcursor_t c;
+    if (!md_append_row(MetaData(), mdtid_TypeRef, &c))
+        return E_FAIL;
+
+    if (1 != md_set_column_value_as_token(c, mdtTypeRef_ResolutionScope, 1, &tkResolutionScope))
+        return E_FAIL;
+    
+    pal::StringConvert<WCHAR, char> cv(szName);
+
+    if (!cv.Success())
+        return E_FAIL;
+
+    // TODO: Split type name
+    const char* name = cv;
+    if (1 != md_set_column_value_as_utf8(c, mdtTypeRef_TypeName, 1, &name))
+        return E_FAIL;
+
+    if (!md_cursor_to_token(c, ptr))
+        return E_FAIL;
+    
+    // TODO: Update ENC log
+    return S_OK;
 }
 
 HRESULT MetadataEmit::DefineImportType(
@@ -622,18 +759,56 @@ HRESULT MetadataEmit::SetMethodImplFlags(
         mdMethodDef md,
         DWORD       dwImplFlags)
 {
-    UNREFERENCED_PARAMETER(md);
-    UNREFERENCED_PARAMETER(dwImplFlags);
-    return E_NOTIMPL;
+    mdcursor_t c;
+    if (!md_token_to_cursor(MetaData(), md, &c))
+        return E_INVALIDARG;
+    
+    uint32_t flags = (uint32_t)dwImplFlags;
+    if (1 != md_set_column_value_as_constant(c, mdtMethodDef_ImplFlags, 1, &flags))
+        return E_FAIL;
+
+    // TODO: Update ENC log
+    return S_OK;
 }
 
 HRESULT MetadataEmit::SetFieldRVA(
         mdFieldDef  fd,
         ULONG       ulRVA)
 {
-    UNREFERENCED_PARAMETER(fd);
-    UNREFERENCED_PARAMETER(ulRVA);
-    return E_NOTIMPL;
+    uint32_t rva = (uint32_t)ulRVA;
+
+    mdcursor_t c;
+    uint32_t count;
+    if (!md_create_cursor(MetaData(), mdtid_FieldRva, &c, &count))
+        return E_FAIL;
+
+    if (!md_find_row_from_cursor(c, mdtFieldRva_Field, RidFromToken(fd), &c))
+    {
+        mdcursor_t field;
+        if (!md_token_to_cursor(MetaData(), fd, &field))
+            return E_INVALIDARG;
+        
+        uint32_t flags;
+        if (1 != md_get_column_value_as_constant(field, mdtField_Flags, 1, &flags))
+            return CLDB_E_FILE_CORRUPT;
+        
+        flags |= fdHasFieldRVA;
+        if (1 != md_set_column_value_as_constant(field, mdtField_Flags, 1, &flags))
+            return E_FAIL;
+
+        if (!md_append_row(MetaData(), mdtid_FieldRva, &c))
+            return E_FAIL;
+        
+        if (1 != md_set_column_value_as_token(c, mdtFieldRva_Field, 1, &fd))
+            return E_FAIL;
+    }
+        
+    if (1 != md_set_column_value_as_constant(c, mdtFieldRva_Rva, 1, &rva))
+        return E_FAIL;
+
+    // TODO: Update ENC log
+    
+    return S_OK;
 }
 
 HRESULT MetadataEmit::Merge(
