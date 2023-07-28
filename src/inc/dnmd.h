@@ -59,6 +59,9 @@ bool md_create_handle(void const* data, size_t data_len, mdhandle_t* handle);
 // with the data have been destroyed. This data will not be updated in place.
 bool md_create_writable_handle(void const* data, size_t data_len, mdhandle_t* handle);
 
+// Apply delta data to the current metadata.
+bool md_apply_delta(mdhandle_t handle, void const* data, size_t data_len);
+
 // Destroy the metadata handle and free all associated memory.
 void md_destroy_handle(mdhandle_t handle);
 
@@ -329,6 +332,13 @@ typedef enum
     MDTABLE_COLUMN(FieldRva, Rva, 0),
     MDTABLE_COLUMN(FieldRva, Field, 1),
     MDTABLE_COLUMN_COUNT(FieldRva, 2),
+
+    MDTABLE_COLUMN(ENCLog, Token, 0),
+    MDTABLE_COLUMN(ENCLog, Op, 1),
+    MDTABLE_COLUMN_COUNT(ENCLog, 2),
+
+    MDTABLE_COLUMN(ENCMap, Token, 0),
+    MDTABLE_COLUMN_COUNT(ENCMap, 1),
 
     MDTABLE_COLUMN(Assembly, HashAlgId, 0),
     MDTABLE_COLUMN(Assembly, MajorVersion, 1),
