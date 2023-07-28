@@ -37,8 +37,11 @@ static mdcxt_t* allocate_full_context(mdcxt_t* cxt)
     size_t cxt_mem = align_to(sizeof(mdcxt_t), sizeof(void*));
     size_t tables_mem = MDTABLE_MAX_COUNT * align_to(sizeof(mdtable_t), sizeof(void*));
     size_t col_mem = align_to(total_col_size, sizeof(void*));
+    
+    size_t editor_mem = align_to(sizeof(mdeditor_t), sizeof(void*));
+    size_t table_editor_mem = MDTABLE_MAX_COUNT * align_to(sizeof(mdtable_editor_t), sizeof(void*));
 
-    size_t total_mem = cxt_mem + tables_mem + col_mem;
+    size_t total_mem = cxt_mem + tables_mem + col_mem + editor_mem + table_editor_mem;
     uint8_t* mem = (uint8_t*)malloc(total_mem);
     if (mem == NULL)
         return NULL;
@@ -64,6 +67,26 @@ static mdcxt_t* allocate_full_context(mdcxt_t* cxt)
         uint32_t size = table_col_sizes[id];
         mem += size;
     }
+
+    // Configure the editor object
+    mdeditor_t* editor = (mdeditor_t*)mem;
+    // Point the read-only view of the heaps at the image heaps.
+    editor->strings_heap.stream = &cxt->strings_heap;
+    editor->guid_heap.stream = &cxt->guid_heap;
+    editor->blob_heap.stream = &cxt->blob_heap;
+    editor->user_string_heap.stream = &cxt->user_string_heap;
+
+    mem += editor_mem;
+    editor->tables = (mdtable_editor_t*)mem;
+    mem += tables_mem;
+
+    // Update each table editor to point to its table view.
+    for (mdtable_id_t id = mdtid_First; id < mdtid_End; ++id)
+    {
+        editor->tables[id].table = &cxt->tables[id];
+    }
+
+    editor->cxt = cxt;
 
     assert(mem <= (uint8_t*)(pcxt + total_mem));
     return pcxt;
@@ -247,80 +270,6 @@ bool md_create_handle(void const* data, size_t data_len, mdhandle_t* handle)
     return true;
 }
 
-static mdeditor_t* allocate_editor(mdcxt_t* cxt)
-{
-    // The intent here is to call the allocator once.
-    // Therefore we compute the full size and then call
-    // malloc a single time. The following needs to be
-    // done:
-    //  1. Compute total amount of needed memory:
-    //     - sizeof(mdeditor_t)
-    //     - table count
-    //     - column count for each table
-    //  3. Determine table array offset
-    //  4. Set table pointer in mdcxt_t
-    //  5. Determine column details array offsets
-    //  6. Set column details array in each table
-    //  7. Return the newly allocated context
-
-    uint32_t table_col_sizes[MDTABLE_MAX_COUNT];
-    uint32_t total_col_size = 0;
-    for (mdtable_id_t id = mdtid_First; id < mdtid_End; ++id)
-    {
-        table_col_sizes[id] = sizeof(mdtcol_t) * get_table_column_count(id);
-        total_col_size += table_col_sizes[id];
-    }
-
-    // Ensure all sections of the allocation are pointer aligned.
-    size_t editor_mem = align_to(sizeof(mdeditor_t), sizeof(void*));
-    size_t tables_mem = MDTABLE_MAX_COUNT * align_to(sizeof(mdtable_editor_t), sizeof(void*));
-
-    size_t total_mem = editor_mem + tables_mem;
-    uint8_t* mem = (uint8_t*)malloc(total_mem);
-    if (mem == NULL)
-        return NULL;
-
-    memset(mem, 0, sizeof(total_mem));
-    mdeditor_t* editor = (mdeditor_t*)mem;
-    editor->strings_heap.stream = &cxt->strings_heap;
-    editor->guid_heap.stream = &cxt->guid_heap;
-    editor->blob_heap.stream = &cxt->blob_heap;
-    editor->user_string_heap.stream = &cxt->user_string_heap;
-
-    mem += editor_mem;
-    editor->tables = (mdtable_editor_t*)mem;
-    mem += tables_mem;
-
-    // Update each table editor to point to its table view.
-    for (mdtable_id_t id = mdtid_First; id < mdtid_End; ++id)
-    {
-        editor->tables[id].table = &cxt->tables[id];
-    }
-
-    assert(mem <= (uint8_t*)(editor + total_mem));
-    editor->cxt = cxt;
-    return editor;
-}
-
-bool md_create_writable_handle(void const* data, size_t data_len, mdhandle_t* handle)
-{
-    mdhandle_t read_only_handle;
-    if (!md_create_handle(data, data_len, &read_only_handle))
-        return false;
-    
-    mdcxt_t* pcxt = extract_mdcxt(read_only_handle);
-    pcxt->context_flags |= mdc_editable;
-    pcxt->editor = allocate_editor(pcxt);
-    if (pcxt->editor == NULL)
-    {
-        md_destroy_handle(read_only_handle);
-        return false;
-    }
-
-    *handle = pcxt;
-    return true;
-}
-
 bool md_apply_delta(mdhandle_t handle, void const* data, size_t data_len)
 {
     mdcxt_t* base = extract_mdcxt(handle);
@@ -355,29 +304,11 @@ void md_destroy_handle(mdhandle_t handle)
     while(curr != NULL)
     {
         tmp = curr->next;
-    }
-        
-    if (cxt->flags & mdc_editable)
-    {
-        if (cxt->editor->blob_heap.heap.ptr != NULL)
-            free(cxt->editor->blob_heap.heap.ptr);
-        if (cxt->editor->strings_heap.heap.ptr != NULL)
-            free(cxt->editor->strings_heap.heap.ptr);
-        if (cxt->editor->user_string_heap.heap.ptr != NULL)
-            free(cxt->editor->user_string_heap.heap.ptr);
-        if (cxt->editor->guid_heap.heap.ptr != NULL)
-            free(cxt->editor->guid_heap.heap.ptr);
-        
-        for (mdtable_id_t id = mdtid_First; id < mdtid_End; ++id)
-        {
-            if (cxt->editor->tables[id].data.ptr != NULL)
-                free(cxt->editor->tables[id].data.ptr);
-        }
-        free(cxt->editor);
+        free(curr);
+        curr = tmp;
     }
 
-    free(curr);
-        curr = tmp;
+    free(cxt);
 }
 
 bool md_validate(mdhandle_t handle)
@@ -520,7 +451,7 @@ mdcxt_t* extract_mdcxt(mdhandle_t md)
     return cxt;
 }
 
-mdmem_t* alloc_mdmem(mdcxt_t* cxt, size_t length)
+void* alloc_mdmem(mdcxt_t* cxt, size_t length)
 {
     assert(cxt != NULL);
     mdmem_t* m = (mdmem_t*)malloc(sizeof(mdmem_t) + length);
@@ -529,6 +460,37 @@ mdmem_t* alloc_mdmem(mdcxt_t* cxt, size_t length)
         m->next = cxt->mem;
         m->size = length;
         cxt->mem = m;
+        return m->data;
     }
-    return m;
+    return NULL;
+}
+
+void free_mdmem(mdcxt_t* cxt, void* mem)
+{
+    assert(cxt != NULL);
+    if (mem == NULL)
+        return;
+
+    // We need to get back to the mdmem_t header from the start of the block.
+    mdmem_t* m = (mdmem_t*)((char*)mem - offsetof(mdmem_t, data));
+
+    // Remove m from the chain of tracked memory.
+    if (cxt->mem == m)
+    {
+        cxt->mem = m->next;
+    }
+    else
+    {
+        for (mdmem_t* p = cxt->mem; p != NULL; p = p->next)
+        {
+            if (p->next == m)
+            {
+                p->next = m->next;
+                break;
+            }
+        }
+    }
+
+    // Now that we aren't tracking the memory, free it.
+    free(m);
 }

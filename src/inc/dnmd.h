@@ -47,17 +47,12 @@ typedef struct _GUID
 } GUID;
 #endif
 
-// Create a metadata handle that can be used to parse the supplied metadata.
+// Create a metadata handle that can be used to parse and modify the supplied metadata.
 //
 // The supplied data is expected to be unmoved and available until all
 // handles created with the data have been destroyed.
+// If modifications are made, the data will not be updatd in place.
 bool md_create_handle(void const* data, size_t data_len, mdhandle_t* handle);
-
-// Create a metadata handle that can be used to parse and modify the supplied metadata.
-//
-// The supplied data is expected to be unmoved and available until all handles created
-// with the data have been destroyed. This data will not be updated in place.
-bool md_create_writable_handle(void const* data, size_t data_len, mdhandle_t* handle);
 
 // Apply delta data to the current metadata.
 bool md_apply_delta(mdhandle_t handle, void const* data, size_t data_len);

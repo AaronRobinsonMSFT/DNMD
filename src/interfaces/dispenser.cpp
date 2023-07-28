@@ -69,16 +69,8 @@ namespace
             }
 
             mdhandle_t mdhandle;
-            if (dwOpenFlags & ofReadOnly)
-            {
-                if (!md_create_handle(pData, cbData, &mdhandle))
-                    return CLDB_E_FILE_CORRUPT;
-            }
-            else
-            {
-                if (!md_create_writable_handle(pData, cbData, &mdhandle))
-                    return CLDB_E_FILE_CORRUPT;
-            }
+            if (!md_create_handle(pData, cbData, &mdhandle))
+                return CLDB_E_FILE_CORRUPT;
 
             mdhandle_ptr md_ptr{ mdhandle };
 

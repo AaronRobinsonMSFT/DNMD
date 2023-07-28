@@ -1,80 +1,23 @@
 #include "internal.h"
 
-static bool merge_into_base(mdcxt_t* cxt, mdstream_t* base, mdstream_t* delta, size_t delta_offset)
+static bool append_heaps_from_delta(mdcxt_t* cxt, mdcxt_t* delta)
 {
-    assert(cxt != NULL);
-    assert(base != NULL);
-    assert(delta != NULL && delta->size > 0);
-
-    // Check if we are only copying a portion of the delta.
-    size_t delta_size = delta->size;
-    if (delta_offset != 0)
-    {
-        if (delta->size < delta_offset)
-            return false;
-        delta_size -= delta_offset;
-    }
-
-    // Check for overflow
-    if (delta_size > (SIZE_MAX - base->size))
+    if (delta == NULL)
+        return false;
+    
+    if (!append_heap(cxt, delta, mdtc_hstring))
         return false;
 
-    size_t new_len = base->size + delta_size;
-    mdmem_t* mem = alloc_mdmem(cxt, new_len);
-    if (mem == NULL)
+    if (!append_heap(cxt, delta, mdtc_hguid))
         return false;
 
-    // Copy over base and delta
-    memcpy(mem->data, base->ptr, base->size);
-    memcpy(mem->data + base->size, delta->ptr + delta_offset, delta_size);
+    if (!append_heap(cxt, delta, mdtc_hblob))
+        return false;
 
-    // Update base with new memory allocation
-    base->ptr = mem->data;
-    base->size = mem->size;
+    if (!append_heap(cxt, delta, mdtc_hus))
+        return false;
+
     return true;
-}
-
-static bool merge_string_heap(mdcxt_t* cxt, mdcxt_t* delta)
-{
-    if (delta->strings_heap.size == 0)
-        return true;
-
-    mdstream_t* base = &cxt->strings_heap;
-    mdstream_t* str = &delta->strings_heap;
-    return merge_into_base(cxt, base, str, 0);
-}
-
-static bool merge_guid_heap(mdcxt_t* cxt, mdcxt_t* delta)
-{
-    if (delta->guid_heap.size == 0)
-        return true;
-
-    mdstream_t* base = &cxt->guid_heap;
-    mdstream_t* guid = &delta->guid_heap;
-
-    // The delta's GUID heap is never fully copied.
-    // Rather we merge only the newer portion of the heap.
-    return merge_into_base(cxt, base, guid, base->size);
-}
-
-static bool merge_blob_heap(mdcxt_t* cxt, mdcxt_t* delta)
-{
-    if (delta->blob_heap.size == 0)
-        return true;
-
-    mdstream_t* base = &cxt->blob_heap;
-    mdstream_t* blob = &delta->blob_heap;
-    return merge_into_base(cxt, base, blob, 0);
-}
-
-static bool merge_us_heap(mdcxt_t* cxt, mdcxt_t* delta)
-{
-    if (delta->user_string_heap.size == 0)
-        return true;
-
-    mdstream_t* base = &cxt->user_string_heap;
-    mdstream_t* blob = &delta->user_string_heap;
-    return merge_into_base(cxt, base, blob, 0);
 }
 
 typedef enum
@@ -135,10 +78,7 @@ bool merge_in_delta(mdcxt_t* cxt, mdcxt_t* delta)
     }
 
     // Merge heaps
-    if (!merge_string_heap(cxt, delta)
-        || !merge_guid_heap(cxt, delta)
-        || !merge_blob_heap(cxt, delta)
-        || !merge_us_heap(cxt, delta))
+    if (!append_heaps_from_delta(cxt, delta))
     {
         return false;
     }

@@ -90,7 +90,7 @@ typedef enum
     mdc_extra_data        = 0x0040,
     mdc_image_flags       = 0xffff,
     mdc_minimal_delta     = 0x00010000,
-    mdc_editable          = 0x00020000,
+    mdc_edited            = 0x00020000, // This flag is set if any edits have been made to the image.
 } mdcxt_flag_t;
 
 // Macros used to insert/extract the column offset.
@@ -130,7 +130,7 @@ typedef struct _mdmem_t
 {
     struct _mdmem_t* next;
     size_t size;
-    uint8_t data[1]; // Arbitrary sized array
+    uint8_t data[];
 } mdmem_t;
 
 typedef struct _mdtable_editor_t
@@ -162,11 +162,8 @@ typedef struct _mdeditor_t
 typedef struct _mdcxt_t
 {
     uint32_t magic; // mdlib magic
-    union
-    {
-        mdcdata_t raw_metadata; // metadata raw bytes
-        mdeditor_t* editor; // metadata editor
-    };
+    mdcdata_t raw_metadata; // metadata raw bytes
+    mdeditor_t* editor; // metadata editor
     mdcxt_flag_t context_flags;
 
     // Metadata root details - II.24.2.1
@@ -195,8 +192,9 @@ typedef struct _mdcxt_t
 // Extract a context from the mdhandle_t.
 mdcxt_t* extract_mdcxt(mdhandle_t md);
 
-// Allocate tracked memory.
-mdmem_t* alloc_mdmem(mdcxt_t* cxt, size_t length);
+// Allocate and free tracked memory.
+void* alloc_mdmem(mdcxt_t* cxt, size_t length);
+void free_mdmem(mdcxt_t* cxt, void* mem);
 
 // Merge the supplied delta into the context.
 bool merge_in_delta(mdcxt_t* cxt, mdcxt_t* delta);
@@ -362,6 +360,6 @@ uint8_t* get_writable_table_data(mdtable_t* table, bool make_writable);
 bool initialize_new_table_details(mdtable_id_t id, mdtable_t* table);
 int32_t update_shifted_row_references(mdcursor_t* c, uint32_t count, uint8_t col_index, mdtable_id_t updated_table, uint32_t original_starting_table_index, uint32_t new_starting_table_index);
 bool insert_row_into_table(mdeditor_t* editor, mdtable_id_t table_id, uint32_t row_index, mdcursor_t* new_row);
-bool append_heaps_from_delta(mdeditor_t* editor, mdhandle_t delta);
+bool append_heap(mdcxt_t* cxt, mdcxt_t* delta, mdtcol_t heap_id);
 
 #endif // _SRC_DNMD_INTERNAL_H_

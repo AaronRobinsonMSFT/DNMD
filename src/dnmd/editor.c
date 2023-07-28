@@ -3,6 +3,7 @@
 
 bool create_and_fill_indirect_table(mdeditor_t* editor, mdtable_id_t original_table, mdtable_id_t indirect_table)
 {
+    editor->cxt->context_flags |= mdc_edited;
     // Assert that this image does not have the indirect table yet.
     mdtable_t* target_table = editor->tables[indirect_table].table;
     assert(target_table->cxt == NULL);
@@ -13,7 +14,10 @@ bool create_and_fill_indirect_table(mdeditor_t* editor, mdtable_id_t original_ta
     // If we're allocating an indirection table, then we're about to add new rows to the original table.
     // Allocate more space than we need for the rows we're copying over to be able to handle adding new rows.
     size_t allocation_space = target_table->row_size_bytes * editor->tables[original_table].table->row_count * 2;
-    editor->tables[indirect_table].data.ptr = malloc(allocation_space);
+    void* mem = alloc_mdmem(editor->cxt, allocation_space);
+    if (mem == NULL)
+        return false;
+    editor->tables[indirect_table].data.ptr = mem;
 
     if (editor->tables[indirect_table].data.ptr == NULL)
         return false;
@@ -37,17 +41,19 @@ bool create_and_fill_indirect_table(mdeditor_t* editor, mdtable_id_t original_ta
 
 uint8_t* get_writable_table_data(mdtable_t* table, bool make_writable)
 {
-    assert((table->cxt->context_flags & mdc_editable) == mdc_editable);
-
     mddata_t* table_data = &table->cxt->editor->tables[table->table_id].data;
 
     if (table_data->ptr == NULL && make_writable)
     {
+        table->cxt->context_flags |= mdc_edited;
         // If we're trying to get writable data for a table that has not been edited,
         // then we need to allocate space for it and copy the contents for editing.
         // TODO: Should we allocate more space than the table currently uses to ensure
         // immediate table growth doesn't require a realloc?
-        table_data->ptr = malloc(table->data.size);
+        void* mem = alloc_mdmem(table->cxt, table->data.size);
+        if (mem == NULL)
+            return NULL;
+        table_data->ptr = mem;
         if (table_data->ptr == NULL)
             return NULL;
         table_data->size = table->data.size;
@@ -114,9 +120,14 @@ static bool set_column_size_for_max_row_count(mdeditor_t* editor, mdtable_t* tab
     if (new_row_size == table->row_size_bytes)
         return true;
 
+    table->cxt->context_flags |= mdc_edited;
+
     size_t new_allocation_size = max_original_rows_in_size * new_row_size;
 
-    uint8_t* new_data_blob = malloc(new_allocation_size);
+    void* mem = alloc_mdmem(editor->cxt, new_allocation_size);
+    if (mem == NULL)
+        return false;
+    uint8_t* new_data_blob = mem;
 
     if (new_data_blob == NULL)
         return false;
@@ -154,9 +165,10 @@ static bool set_column_size_for_max_row_count(mdeditor_t* editor, mdtable_t* tab
     table->data.size = (size_t)table->row_count * table->row_size_bytes;
     memcpy(table->column_details, new_column_details, sizeof(mdtcol_t) * table->column_count);
 
-    // Update the table's corresponding editor to point to the newly-allocated memory.
+    // Update the table's corresponding editor to point to the newly-allocated memory,
+    // and free the previous allocation if necessary.
     if (editor->tables[table->table_id].data.ptr != NULL)
-        free(editor->tables[table->table_id].data.ptr);
+        free_mdmem(editor->cxt, editor->tables[table->table_id].data.ptr);
 
     editor->tables[table->table_id].data.ptr = new_data_blob;
     editor->tables[table->table_id].data.size = new_allocation_size;
@@ -193,19 +205,26 @@ bool update_table_references_for_shifted_rows(mdeditor_t* editor, mdtable_id_t u
     return true;
 }
 
-static bool allocate_more_editable_space(mddata_t* editable_data, mdcdata_t* data)
+static bool allocate_more_editable_space(mdcxt_t* cxt, mddata_t* editable_data, mdcdata_t* data)
 {
+    cxt->context_flags |= mdc_edited;
     size_t new_size = data->size * 2;
     void* new_ptr;
-    // If we've already allocated space for this table, then we can just realloc.
-    // Otherwise we need to allocate for the first time.
     if (editable_data->ptr != NULL)
-        new_ptr = realloc(editable_data->ptr, new_size);
+    {
+        void* mem = alloc_mdmem(cxt, new_size);
+        if (mem == NULL)
+            return false;
+        memcpy(mem, data->ptr, data->size);
+        new_ptr = mem;
+        free_mdmem(cxt, editable_data->ptr);
+    }
     else
     {
-        new_ptr = malloc(new_size);
-        if (new_ptr == NULL)
+        void* mem = alloc_mdmem(cxt, new_size);
+        if (mem == NULL)
             return false;
+        new_ptr = mem;
         memcpy(new_ptr, data->ptr, data->size);
     }
 
@@ -220,6 +239,7 @@ static bool allocate_more_editable_space(mddata_t* editable_data, mdcdata_t* dat
 
 bool insert_row_into_table(mdeditor_t* editor, mdtable_id_t table_id, uint32_t row_index, mdcursor_t* new_row)
 {
+    editor->cxt->context_flags |= mdc_edited;
     mdtable_editor_t* target_table_editor = &editor->tables[table_id];
     assert(target_table_editor->table->cxt != NULL); // The table should exist in the image before a row is added to it.
 
@@ -227,9 +247,9 @@ bool insert_row_into_table(mdeditor_t* editor, mdtable_id_t table_id, uint32_t r
         return false;
     
     // If we are out of space in our table, then we need to allocate a new table buffer.
-    if (target_table_editor->table->data.size < target_table_editor->table->row_size_bytes * row_index)
+    if (target_table_editor->data.ptr == NULL || target_table_editor->data.size < target_table_editor->table->row_size_bytes * row_index)
     {
-        if (!allocate_more_editable_space(&target_table_editor->data, &target_table_editor->table->data))
+        if (!allocate_more_editable_space(editor->cxt, &target_table_editor->data, &target_table_editor->table->data))
             return false;
     }
 
@@ -272,16 +292,59 @@ bool insert_row_into_table(mdeditor_t* editor, mdtable_id_t table_id, uint32_t r
     return true;
 }
 
-static bool reserve_heap_space(mdeditor_t* editor, md_heap_editor_t* heap_editor, uint32_t space_size, mdtcol_t heap_id, uint32_t* heap_offset, bool preserve_offsets)
+static md_heap_editor_t* get_heap_editor_by_id(mdeditor_t* editor, mdtcol_t heap_id)
 {
+    switch (heap_id)
+    {
+        case mdtc_hblob:
+            return &editor->blob_heap;
+        case mdtc_hguid:
+            return &editor->guid_heap;
+        case mdtc_hstring:
+            return &editor->strings_heap;
+        case mdtc_hus:
+            return &editor->user_string_heap;
+        default:
+            return NULL;
+    }
+}
+
+static mdstream_t* get_heap_by_id(mdcxt_t* cxt, mdtcol_t heap_id)
+{
+    switch (heap_id)
+    {
+        case mdtc_hblob:
+            return &cxt->blob_heap;
+        case mdtc_hguid:
+            return &cxt->guid_heap;
+        case mdtc_hstring:
+            return &cxt->strings_heap;
+        case mdtc_hus:
+            return &cxt->user_string_heap;
+        default:
+            return NULL;
+    }
+}
+
+static bool reserve_heap_space(mdeditor_t* editor, uint32_t space_size, mdtcol_t heap_id, bool preserve_offsets, uint32_t* heap_offset)
+{
+    editor->cxt->context_flags |= mdc_edited;
+
+    md_heap_editor_t* heap_editor = get_heap_editor_by_id(editor, heap_id);
+    if (heap_editor == NULL)
+        return false;
+
     if (heap_editor->stream->ptr == NULL)
     {
         // Set the default heap size based on likely reasonable sizes for the heaps.
         // In most images, there won't be more than three guids, so we can start with a small heap in that case.
         const size_t initial_heap_size = heap_id == mdtc_hguid ? sizeof(md_guid_t) * 3 : 0x100;
-        heap_editor->heap.ptr = heap_editor->stream->ptr = malloc(initial_heap_size);
-        if (heap_editor->heap.ptr == NULL)
+        void* mem = alloc_mdmem(editor->cxt, initial_heap_size);
+        if (mem == NULL)
             return false;
+
+        heap_editor->stream->ptr = mem;
+        heap_editor->heap.ptr = mem;
         heap_editor->heap.size = initial_heap_size;
 
         // The first character in the strings heap must be the '\0' - II.24.2.3
@@ -298,8 +361,7 @@ static bool reserve_heap_space(mdeditor_t* editor, md_heap_editor_t* heap_editor
 
     *heap_offset = (uint32_t)heap_editor->stream->size;
     
-    
-    if (heap_offset > UINT32_MAX - space_size)
+    if (*heap_offset > UINT32_MAX - space_size)
     {
         // The max heap size is 2^32-1, so we don't have space left to allocate.
         return false;
@@ -309,7 +371,7 @@ static bool reserve_heap_space(mdeditor_t* editor, md_heap_editor_t* heap_editor
     uint32_t new_heap_size = *heap_offset + space_size;
     if (new_heap_size > heap_editor->heap.size)
     {
-        if (!allocate_more_editable_space(&heap_editor->heap, heap_editor->stream))
+        if (!allocate_more_editable_space(editor->cxt, &heap_editor->heap, heap_editor->stream))
             return false;
     }
     heap_editor->stream->size += space_size;
@@ -336,7 +398,7 @@ uint32_t add_to_string_heap(mdeditor_t* editor, char const* str)
     // TODO: Deduplicate heap
     uint32_t str_len = (uint32_t)strlen(str);
     uint32_t heap_offset;
-    if (!reserve_heap_space(editor, &editor->strings_heap, str_len + 1, mdtc_hstring, &heap_offset, false))
+    if (!reserve_heap_space(editor, str_len + 1, mdtc_hstring, false, &heap_offset))
     {
         return 0;
     }
@@ -356,7 +418,7 @@ uint32_t add_to_blob_heap(mdeditor_t* editor, uint8_t const* data, uint32_t leng
     uint32_t heap_slot_size = length + (uint32_t)compressed_length_size;
 
     uint32_t heap_offset;
-    if (!reserve_heap_space(editor, &editor->blob_heap, heap_slot_size, mdtc_hblob, &heap_offset, false))
+    if (!reserve_heap_space(editor, heap_slot_size, mdtc_hblob, false, &heap_offset))
     {
         return 0;
     }
@@ -416,7 +478,7 @@ uint32_t add_to_user_string_heap(mdeditor_t* editor, char16_t const* str)
     
     uint32_t heap_slot_size = str_len + (uint32_t)compressed_length_size + 1;
     uint32_t heap_offset;
-    if (!reserve_heap_space(editor, &editor->user_string_heap, heap_slot_size, mdtc_hus, &heap_offset, false))
+    if (!reserve_heap_space(editor, heap_slot_size, mdtc_hus, false, &heap_offset))
     {
         return 0;
     }
@@ -433,7 +495,7 @@ uint32_t add_to_guid_heap(mdeditor_t* editor, md_guid_t guid)
     // TODO: Deduplicate heap
 
     uint32_t heap_offset;
-    if (!reserve_heap_space(editor, &editor->guid_heap, sizeof(md_guid_t), mdtc_hguid, &heap_offset, false))
+    if (!reserve_heap_space(editor, sizeof(md_guid_t), mdtc_hguid, false, &heap_offset))
     {
         return 0;
     }
@@ -442,39 +504,41 @@ uint32_t add_to_guid_heap(mdeditor_t* editor, md_guid_t guid)
     return heap_offset / sizeof(md_guid_t);
 }
 
-bool append_heaps_from_delta(mdeditor_t* editor, mdhandle_t delta)
+bool append_heap(mdcxt_t* cxt, mdcxt_t* delta, mdtcol_t heap_id)
 {
-    mdcxt_t* delta_context = extract_mdcxt(delta);
-    if (delta_context == NULL)
-        return false;
+    bool is_minimal_delta = (delta->context_flags & mdc_minimal_delta) == mdc_minimal_delta;
+    md_heap_editor_t* heap_editor = get_heap_editor_by_id(cxt->editor, heap_id);
+    mdstream_t* delta_heap = get_heap_by_id(delta, heap_id);
+    if (delta_heap->size == 0)
+        return true;
     
-    // TODO: Do we want to support "full delta" images?
-    // If so, we need to copy all heaps from the delta image starting at the base image's heap size (as the offset)
-    // when delta isn't a minimal delta.
+    size_t copy_offset;
+    size_t delta_size;
+    if (is_minimal_delta && heap_id != mdtc_hguid)
+    {
+        // If the delta image is a minimal delta and the heap is not the GUID heap, we do a full copy from the delta image.
+        copy_offset = 0;
+        delta_size = delta_heap->size;
+    }
+    else
+    {
+        // Otherwise, we only do a partial copy from the stream starting at the end of the existing heap.
+        copy_offset = heap_editor->heap.size;
+        delta_size = delta_heap->size - copy_offset;
+    }
+
+    if (delta_size > UINT32_MAX)
+    {
+        return false;
+    }
+
     uint32_t heap_offset;
-    if (!reserve_heap_space(editor, &editor->strings_heap, (uint32_t)delta_context->strings_heap.size, mdtc_hstring, &heap_offset, true))
+    if (!reserve_heap_space(cxt->editor, (uint32_t)delta_size, heap_id, true, &heap_offset))
+    {
         return false;
-    
-    memcpy(editor->strings_heap.heap.ptr + heap_offset, delta_context->strings_heap.ptr, delta_context->strings_heap.size);
+    }
 
-    if (!reserve_heap_space(editor, &editor->blob_heap, (uint32_t)delta_context->blob_heap.size, mdtc_hblob, &heap_offset, true))
-        return false;
-    
-    memcpy(editor->blob_heap.heap.ptr + heap_offset, delta_context->blob_heap.ptr, delta_context->blob_heap.size);
-
-    if (!reserve_heap_space(editor, &editor->user_string_heap, (uint32_t)delta_context->user_string_heap.size, mdtc_hus, &heap_offset, true))
-        return false;
-    
-    memcpy(editor->user_string_heap.heap.ptr + heap_offset, delta_context->user_string_heap.ptr, delta_context->user_string_heap.size);
-
-    // The delta's GUID heap is never fully copied.
-    // Rather we merge only the newer portion of the heap.
-    size_t heap_size_to_copy = delta_context->guid_heap.size - editor->guid_heap.stream->size;
-    assert(heap_size_to_copy <= UINT32_MAX);
-    if (!reserve_heap_space(editor, &editor->guid_heap, (uint32_t)heap_size_to_copy, mdtc_hguid, &heap_offset, true))
-        return false;
-    
-    memcpy(editor->guid_heap.heap.ptr + heap_offset, delta_context->guid_heap.ptr + editor->guid_heap.stream->size, heap_size_to_copy);
+    memcpy(heap_editor->heap.ptr + heap_offset, delta_heap->ptr + copy_offset, delta_size);
 
     return true;
 }
