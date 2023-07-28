@@ -89,11 +89,12 @@ typedef enum
 
 static bool process_log(mdcxt_t* cxt, mdcxt_t* delta)
 {
+    (void)cxt;
     mdtable_t* log = &delta->tables[mdtid_ENCLog];
     //mdtable_t* map = &delta->tables[mdtid_ENCMap];
     mdcursor_t cur = create_cursor(log, 1);
     mdToken tk;
-    delta_ops_t op;
+    uint32_t op;
     for (uint32_t i = 0; i < log->row_count; (void)md_cursor_next(&cur), ++i)
     {
         if (1 != md_get_column_value_as_constant(cur, mdtENCLog_Token, 1, &tk)
@@ -102,7 +103,7 @@ static bool process_log(mdcxt_t* cxt, mdcxt_t* delta)
             return false;
         }
 
-        switch (op)
+        switch ((delta_ops_t)op)
         {
         case dops_MethodCreate:
         case dops_ParamCreate:
@@ -110,6 +111,7 @@ static bool process_log(mdcxt_t* cxt, mdcxt_t* delta)
         case dops_PropertyCreate:
         case dops_EventCreate:
         case dops_Default:
+            assert(!"Not implemented delta operation");
             break;
         default:
             assert(!"Unknown delta operation");
@@ -117,7 +119,7 @@ static bool process_log(mdcxt_t* cxt, mdcxt_t* delta)
         }
     }
 
-    return true;
+    return false;
 }
 
 bool merge_in_delta(mdcxt_t* cxt, mdcxt_t* delta)
