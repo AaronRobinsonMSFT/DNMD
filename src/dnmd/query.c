@@ -1078,8 +1078,13 @@ static bool is_column_sorted_with_next_column(query_cxt_t* qcxt, md_key_info con
     // If there's no next row, then we're sorted.
     if (!next_row(qcxt))
         return true;
+        
+    uint32_t raw_next;
+    bool success = read_column_data(qcxt, &raw_next);
+    assert(success);
+    (void)success;
 
-    bool column_sorted = keys[col_key_index].descending ? (raw >= raw) : (raw <= raw);
+    bool column_sorted = keys[col_key_index].descending ? (raw >= raw_next) : (raw <= raw_next);
     if (!column_sorted)
     {
         // If the column isn't sorted, then check if this column isn't the primary key.
