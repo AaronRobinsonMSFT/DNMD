@@ -11,6 +11,8 @@
 #include "controllingiunknown.hpp"
 #include "metadataimportro.hpp"
 
+#include <cstring>
+
 namespace
 {
     class MDDispenserStateless final : IMetaDataDispenser
