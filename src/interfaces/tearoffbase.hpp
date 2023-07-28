@@ -26,17 +26,17 @@ public:
     virtual ~TearOffUnknown() = default;
 
 public: // IUnknown
-    STDMETHODIMP_(ULONG) AddRef() override
+    STDMETHOD_(ULONG, AddRef)() override
     {
         return _pUnkOuter->AddRef();
     }
 
-    STDMETHODIMP_(ULONG) Release() override
+    STDMETHOD_(ULONG, Release)() override
     {
         return _pUnkOuter->Release();
     }
 
-    STDMETHODIMP QueryInterface(REFIID riid, void** ppvObject) override
+    STDMETHOD(QueryInterface)(REFIID riid, void** ppvObject) override
     {
         if (ppvObject == nullptr)
             return E_POINTER;
@@ -69,15 +69,15 @@ class TearOffBase : public TearOffUnknown, public T...
 public:
     using TearOffUnknown::TearOffUnknown;
 
-    STDMETHODIMP_(ULONG) AddRef() override final
+    STDMETHOD_(ULONG, AddRef)() override final
     {
         return TearOffUnknown::AddRef();
     }
-    STDMETHODIMP_(ULONG) Release() override final
+    STDMETHOD_(ULONG, Release)() override final
     {
         return TearOffUnknown::Release();
     }
-    STDMETHODIMP QueryInterface(REFIID riid, void** ppvObject) override final
+    STDMETHOD(QueryInterface)(REFIID riid, void** ppvObject) override final
     {
         return TearOffUnknown::QueryInterface(riid, ppvObject);
     }

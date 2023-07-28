@@ -18,7 +18,7 @@ class MetadataImportRO final : public TearOffBase<IMetaDataImport2, IMetaDataAss
     dncp::cotaskmem_ptr<void> _cotaskmem_to_free;
 
 protected:
-    STDMETHODIMP TryGetInterfaceOnThis(REFIID riid, void** ppvObject) override
+    STDMETHOD(TryGetInterfaceOnThis)(REFIID riid, void** ppvObject) override
     {
         if (riid == IID_IMetaDataImport || riid == IID_IMetaDataImport2)
         {
