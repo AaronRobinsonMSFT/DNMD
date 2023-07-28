@@ -38,11 +38,6 @@ add_library(dnmd_interfaces
 set_target_properties(dnmd_interfaces PROPERTIES EXPORT_NAME interfaces)
 add_library(dnmd::interfaces ALIAS dnmd_interfaces)
 
-if (WIN32)
-  target_compile_definitions(dnmd_interfaces PUBLIC DNMD_INTERFACES_WINDOWS)
-  target_compile_definitions(dnmd_interfaces_static PUBLIC DNMD_INTERFACES_WINDOWS)
-endif()
-
 target_include_directories(dnmd_interfaces_static PUBLIC $<INSTALL_INTERFACE:include>)
 target_include_directories(dnmd_interfaces PUBLIC $<INSTALL_INTERFACE:include>)
 
