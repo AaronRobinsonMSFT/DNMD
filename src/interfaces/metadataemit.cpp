@@ -10,6 +10,30 @@
     } \
 }
 
+namespace
+{
+    void SplitTypeName(
+        char* typeName,
+        char const** nspace,
+        char const** name)
+    {
+        // Search for the last delimiter.
+        char* pos = ::strrchr(typeName, '.');
+        if (pos == nullptr)
+        {
+            // No namespace is indicated by an empty string.
+            *nspace = "";
+            *name = typeName;
+        }
+        else
+        {
+            *pos = '\0';
+            *nspace = typeName;
+            *name = pos + 1;
+        }
+    }
+}
+
 HRESULT MetadataEmit::SetModuleProps(
         LPCWSTR     szName)
 {
@@ -89,8 +113,12 @@ HRESULT MetadataEmit::DefineTypeDef(
     
     // TODO: Check for duplicate type definitions
 
-    // TODO: split name into namespace and type name
-    if (1 != md_set_column_value_as_utf8(c, mdtTypeDef_TypeName, 1, &szName))
+    const char* ns;
+    const char* name;
+    SplitTypeName(cvt, &ns, &name);
+    if (1 != md_set_column_value_as_utf8(c, mdtTypeDef_TypeNamespace, 1, &ns))
+        return E_FAIL;
+    if (1 != md_set_column_value_as_utf8(c, mdtTypeDef_TypeName, 1, &name))
         return E_FAIL;
     
     // TODO: Handle reserved flags
@@ -191,15 +219,48 @@ HRESULT MetadataEmit::DefineMethod(
         DWORD           dwImplFlags,
         mdMethodDef     *pmd)
 {
-    UNREFERENCED_PARAMETER(td);
-    UNREFERENCED_PARAMETER(szName);
-    UNREFERENCED_PARAMETER(dwMethodFlags);
-    UNREFERENCED_PARAMETER(pvSigBlob);
-    UNREFERENCED_PARAMETER(cbSigBlob);
-    UNREFERENCED_PARAMETER(ulCodeRVA);
-    UNREFERENCED_PARAMETER(dwImplFlags);
-    UNREFERENCED_PARAMETER(pmd);
-    return E_NOTIMPL;
+    mdcursor_t type;
+    if (!md_token_to_cursor(MetaData(), td, &type))
+        return CLDB_E_FILE_CORRUPT;
+
+    mdcursor_t existingMethod;
+    uint32_t count;
+    if (!md_get_column_value_as_range(type, mdtTypeDef_MethodList, &existingMethod, &count))
+        return CLDB_E_FILE_CORRUPT;
+
+    md_cursor_move(&existingMethod, count);
+
+    mdcursor_t newMethod;
+    if (!md_insert_row_after(existingMethod, &newMethod))
+        return E_FAIL;
+
+    pal::StringConvert<WCHAR, char> cvt(szName);
+
+    const char* name = cvt;
+    if (1 != md_set_column_value_as_utf8(newMethod, mdtMethodDef_Name, 1, &name))
+        return E_FAIL;
+    
+    uint32_t flags = dwMethodFlags;
+    if (1 != md_set_column_value_as_constant(newMethod, mdtMethodDef_Flags, 1, &flags))
+        return E_FAIL;
+    
+    uint32_t sigLength = cbSigBlob;
+    if (1 != md_set_column_value_as_blob(newMethod, mdtMethodDef_Signature, 1, &pvSigBlob, &sigLength))
+        return E_FAIL;
+    
+    uint32_t implFlags = dwImplFlags;
+    if (1 != md_set_column_value_as_constant(newMethod, mdtMethodDef_ImplFlags, 1, &implFlags))
+        return E_FAIL;
+    
+    uint32_t rva = ulCodeRVA;
+    if (1 != md_set_column_value_as_constant(newMethod, mdtMethodDef_Rva, 1, &rva))
+        return E_FAIL;
+
+    if (!md_cursor_to_token(newMethod, pmd))
+        return CLDB_E_FILE_CORRUPT;
+    
+    // TODO: Update ENC log
+    return S_OK;
 }
 
 HRESULT MetadataEmit::DefineMethodImpl(
@@ -241,8 +302,12 @@ HRESULT MetadataEmit::DefineTypeRefByName(
     if (!cv.Success())
         return E_FAIL;
 
-    // TODO: Split type name
-    const char* name = cv;
+    const char* ns;
+    const char* name;
+    SplitTypeName(cv, &ns, &name);
+
+    if (1 != md_set_column_value_as_utf8(c, mdtTypeRef_TypeNamespace, 1, &ns))
+        return E_FAIL;
     if (1 != md_set_column_value_as_utf8(c, mdtTypeRef_TypeName, 1, &name))
         return E_FAIL;
 
@@ -388,9 +453,16 @@ HRESULT MetadataEmit::SetRVA(
         mdMethodDef md,
         ULONG       ulRVA)
 {
-    UNREFERENCED_PARAMETER(md);
-    UNREFERENCED_PARAMETER(ulRVA);
-    return E_NOTIMPL;
+    mdcursor_t method;
+    if (!md_token_to_cursor(MetaData(), md, &method))
+        return CLDB_E_FILE_CORRUPT;
+    
+    uint32_t rva = ulRVA;
+    if (1 != md_set_column_value_as_constant(method, mdtMethodDef_Rva, 1, &rva))
+        return E_FAIL;
+
+    // TODO: Update EncLog
+    return S_OK;
 }
 
 HRESULT MetadataEmit::GetTokenFromSig(
@@ -398,19 +470,37 @@ HRESULT MetadataEmit::GetTokenFromSig(
         ULONG       cbSig,
         mdSignature *pmsig)
 {
-    UNREFERENCED_PARAMETER(pvSig);
-    UNREFERENCED_PARAMETER(cbSig);
-    UNREFERENCED_PARAMETER(pmsig);
-    return E_NOTIMPL;
+    mdcursor_t c;
+    if (!md_append_row(MetaData(), mdtid_StandAloneSig, &c))
+        return E_FAIL;
+
+    uint32_t sigLength = cbSig;
+    if (1 != md_set_column_value_as_blob(c, mdtStandAloneSig_Signature, 1, &pvSig, &sigLength))
+        return E_FAIL;
+
+    // TODO: Update EncLog
+    return S_OK;
 }
 
 HRESULT MetadataEmit::DefineModuleRef(
         LPCWSTR     szName,
         mdModuleRef *pmur)
 {
-    UNREFERENCED_PARAMETER(szName);
-    UNREFERENCED_PARAMETER(pmur);
-    return E_NOTIMPL;
+    mdcursor_t c;
+    if (!md_append_row(MetaData(), mdtid_ModuleRef, &c))
+        return E_FAIL;
+
+    pal::StringConvert<WCHAR, char> cvt(szName);
+    const char* name = cvt;
+
+    if (1 != md_set_column_value_as_utf8(c, mdtModuleRef_Name, 1, &name))
+        return E_FAIL;
+    
+    if (!md_cursor_to_token(c, pmur))
+        return CLDB_E_FILE_CORRUPT;
+
+    // TODO: Update EncLog
+    return S_OK;
 }
 
 
