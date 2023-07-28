@@ -6,11 +6,9 @@
 #endif // !_MSC_VER
 #endif // DNMD_BUILD_SHARED
 
-#include "impl.hpp"
-
-#include <dnmd_interfaces.hpp>
-
-#include <cstdlib>
+#include "dnmd_interfaces.hpp"
+#include "controllingiunknown.hpp"
+#include "metadataimportro.hpp"
 
 namespace
 {
@@ -57,7 +55,7 @@ namespace
             if (!(dwOpenFlags & ofReadOnly))
                 return E_INVALIDARG;
 
-            cotaskmem_ptr nowOwned;
+            dncp::cotaskmem_ptr<void> nowOwned;
             if (dwOpenFlags & ofTakeOwnership)
                 nowOwned.reset((void*)pData);
 
@@ -77,12 +75,15 @@ namespace
                 return CLDB_E_FILE_CORRUPT;
 
             mdhandle_ptr md_ptr{ mdhandle };
-            MetadataImportRO* md = new (std::nothrow) MetadataImportRO(std::move(md_ptr), std::move(copiedMem), std::move(nowOwned));
-            if (md == nullptr)
+
+            dncp::com_ptr<ControllingIUnknown> obj { new (std::nothrow) ControllingIUnknown() };
+            if (obj == nullptr)
                 return E_OUTOFMEMORY;
 
-            HRESULT hr = md->QueryInterface(riid, (void**)ppIUnk);
-            (void)md->Release();
+            if (!obj->CreateAndAddTearOff<MetadataImportRO>(std::move(md_ptr), std::move(copiedMem), std::move(nowOwned)))
+                return E_OUTOFMEMORY;
+
+            HRESULT hr = obj->QueryInterface(riid, (void**)ppIUnk);
             return hr;
         }
 

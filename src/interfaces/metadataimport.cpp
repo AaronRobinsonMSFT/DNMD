@@ -1,7 +1,8 @@
 #include <cassert>
 
 #include "pal.hpp"
-#include "impl.hpp"
+#include "metadataimportro.hpp"
+#include "hcorenum.hpp"
 
 #define MD_MODULE_TOKEN TokenFromRid(1, mdtModule)
 #define MD_GLOBAL_PARENT_TOKEN TokenFromRid(1, mdtTypeDef)

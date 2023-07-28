@@ -5,6 +5,18 @@
 #define DNMD_EXPORT
 #endif // !DNMD_EXPORT
 
+#include <cstdint>
+
+#ifdef DNMD_INTERFACES_WINDOWS
+
+#define NOMINMAX
+#include <Windows.h>
+
+#endif // !DNMD_INTERFACES_WINDOWS
+
+#include <cstdlib>
+#include <dncp.h>
+
 // Create a metadata dispenser instance.
 //
 //  IMetaDataDispenser  - {809C652E-7396-11D2-9771-00A0C9B4D50C}
