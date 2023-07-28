@@ -542,3 +542,12 @@ bool append_heap(mdcxt_t* cxt, mdcxt_t* delta, mdtcol_t heap_id)
 
     return true;
 }
+
+mduserstringcursor_t md_add_userstring_to_heap(mdhandle_t handle, char16_t const* userstring)
+{
+    mdcxt_t* cxt = extract_mdcxt(handle);
+    if (cxt == NULL)
+        return 0;
+    
+    return add_to_user_string_heap(cxt->editor, userstring);
+}

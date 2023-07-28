@@ -506,6 +506,9 @@ bool md_insert_row_after(mdcursor_t row, mdcursor_t* new_row);
 // Create a new row at the end of the specified table.
 bool md_append_row(mdhandle_t handle, mdtable_id_t table_id, mdcursor_t* new_row);
 
+// Add a user string to the #US heap.
+mduserstringcursor_t md_add_userstring_to_heap(mdhandle_t handle, char16_t const* userstring);
+
 #ifdef __cplusplus
 }
 #endif

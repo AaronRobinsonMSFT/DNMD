@@ -519,10 +519,19 @@ HRESULT MetadataEmit::GetTokenFromTypeSpec(
         ULONG       cbSig,
         mdTypeSpec *ptypespec)
 {
-    UNREFERENCED_PARAMETER(pvSig);
-    UNREFERENCED_PARAMETER(cbSig);
-    UNREFERENCED_PARAMETER(ptypespec);
-    return E_NOTIMPL;
+    mdcursor_t c;
+    if (!md_append_row(MetaData(), mdtid_TypeSpec, &c))
+        return E_FAIL;
+
+    uint32_t sigLength = cbSig;
+    if (1 != md_set_column_value_as_blob(c, mdtTypeSpec_Signature, 1, &pvSig, &sigLength))
+        return E_FAIL;
+
+    if (!md_cursor_to_token(c, ptypespec))
+        return CLDB_E_FILE_CORRUPT;
+
+    // TODO: Update EncLog
+    return S_OK;
 }
 
 HRESULT MetadataEmit::SaveToMemory(
@@ -539,9 +548,16 @@ HRESULT MetadataEmit::DefineUserString(
         ULONG       cchString,
         mdString    *pstk)
 {
-    UNREFERENCED_PARAMETER(szString);
-    UNREFERENCED_PARAMETER(cchString);
-    UNREFERENCED_PARAMETER(pstk);
+    std::unique_ptr<char16_t[]> pString{ new char16_t[cchString + 1] };
+    std::memcpy(pString.get(), szString, cchString * sizeof(char16_t));
+    pString[cchString] = u'\0';
+
+    mduserstringcursor_t c = md_add_userstring_to_heap(MetaData(), pString.get());
+
+    if (c == 0)
+        return E_FAIL;
+
+    *pstk = TokenFromRid((mdString)c, mdtString);
     return E_NOTIMPL;
 }
 
@@ -907,6 +923,7 @@ HRESULT MetadataEmit::Merge(
         IMapToken   *pHostMapToken,
         IUnknown    *pHandler)
 {
+    // Not Implemented in CoreCLR
     UNREFERENCED_PARAMETER(pImport);
     UNREFERENCED_PARAMETER(pHostMapToken);
     UNREFERENCED_PARAMETER(pHandler);
@@ -915,6 +932,7 @@ HRESULT MetadataEmit::Merge(
 
 HRESULT MetadataEmit::MergeEnd()
 {
+    // Not Implemented in CoreCLR
     return E_NOTIMPL;
 }
 
