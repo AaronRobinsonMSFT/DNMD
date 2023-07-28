@@ -52,7 +52,7 @@ HRESULT MetadataEmit::SetModuleProps(
     char* modulePath = cvt;
     std::size_t len = strlen(modulePath);
     const char* start = modulePath;
-    for (int i = len - 1; i >= 0; i--)
+    for (std::size_t i = len - 1; i >= 0; i--)
     {
         if (modulePath[i] == '\\')
         {
@@ -108,8 +108,6 @@ HRESULT MetadataEmit::DefineTypeDef(
         return E_FAIL;
     
     pal::StringConvert<WCHAR, char> cvt(szTypeDef);
-
-    const char* szName = cvt;
     
     // TODO: Check for duplicate type definitions
 
@@ -180,7 +178,7 @@ HRESULT MetadataEmit::DefineNestedType(
 {
     HRESULT hr;
 
-    if (!TypeFromToken(tdEncloser) != mdtTypeDef || IsNilToken(tdEncloser))
+    if (TypeFromToken(tdEncloser) != mdtTypeDef || IsNilToken(tdEncloser))
         return E_INVALIDARG;
 
     if (IsTdNested(dwTypeDefFlags))
@@ -477,6 +475,9 @@ HRESULT MetadataEmit::GetTokenFromSig(
     uint32_t sigLength = cbSig;
     if (1 != md_set_column_value_as_blob(c, mdtStandAloneSig_Signature, 1, &pvSig, &sigLength))
         return E_FAIL;
+
+    if (!md_cursor_to_token(c, pmsig))
+        return CLDB_E_FILE_CORRUPT;
 
     // TODO: Update EncLog
     return S_OK;
