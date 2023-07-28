@@ -1,5 +1,6 @@
 #include "metadataemit.hpp"
 #include "pal.hpp"
+#include <limits>
 
 #define RETURN_IF_FAILED(exp) \
 { \
@@ -942,11 +943,28 @@ HRESULT MetadataEmit::DefineMethodSpec(
         ULONG       cbSigBlob,
         mdMethodSpec *pmi)
 {
-    UNREFERENCED_PARAMETER(tkParent);
-    UNREFERENCED_PARAMETER(pvSigBlob);
-    UNREFERENCED_PARAMETER(cbSigBlob);
-    UNREFERENCED_PARAMETER(pmi);
-    return E_NOTIMPL;
+    if (TypeFromToken(tkParent) != mdtMethodDef && TypeFromToken(tkParent) != mdtMemberRef)
+        return META_E_BAD_INPUT_PARAMETER;
+    
+    if (cbSigBlob == 0 || pvSigBlob == nullptr || pmi == nullptr)
+        return META_E_BAD_INPUT_PARAMETER;
+
+    mdcursor_t c;
+    if (!md_append_row(MetaData(), mdtid_MethodSpec, &c))
+        return E_FAIL;
+
+    if (1 != md_set_column_value_as_token(c, mdtMethodSpec_Method, 1, &tkParent))
+        return E_FAIL;
+
+    uint32_t sigLength = cbSigBlob;
+    if (1 != md_set_column_value_as_blob(c, mdtMethodSpec_Instantiation, 1, &pvSigBlob, &sigLength))
+        return E_FAIL;
+
+    if (!md_cursor_to_token(c, pmi))
+        return CLDB_E_FILE_CORRUPT;
+
+    // TODO: Update EncLog
+    return S_OK;
 }
 
 HRESULT MetadataEmit::GetDeltaSaveSize(
@@ -1033,14 +1051,92 @@ HRESULT MetadataEmit::DefineAssembly(
         DWORD       dwAssemblyFlags,
         mdAssembly  *pma)
 {
-    UNREFERENCED_PARAMETER(pbPublicKey);
-    UNREFERENCED_PARAMETER(cbPublicKey);
-    UNREFERENCED_PARAMETER(ulHashAlgId);
-    UNREFERENCED_PARAMETER(szName);
+    if (szName == nullptr || pMetaData == nullptr || pma == nullptr)
+        return E_INVALIDARG;
+
+    pal::StringConvert<WCHAR, char> cvt(szName);
+    if (!cvt.Success())
+        return E_INVALIDARG;
+    
+    mdcursor_t c;
+    uint32_t count;
+    if (!md_create_cursor(MetaData(), mdtid_Assembly, &c, &count)
+        && !md_append_row(MetaData(), mdtid_Assembly, &c))
+        return E_FAIL;
+
+    uint32_t assemblyFlags = dwAssemblyFlags;
+    if (cbPublicKey != 0)
+    {
+        assemblyFlags |= afPublicKey;
+    }
+    
+    const uint8_t* publicKey = (const uint8_t*)pbPublicKey;
+    if (publicKey != nullptr)
+    {
+        uint32_t publicKeyLength = cbPublicKey;
+        if (1 != md_set_column_value_as_blob(c, mdtAssembly_PublicKey, 1, &publicKey, &publicKeyLength))
+            return E_FAIL;
+    }
+    
+    if (1 != md_set_column_value_as_constant(c, mdtAssembly_Flags, 1, &assemblyFlags))
+        return E_FAIL;
+
+    const char* name = cvt;
+    if (1 != md_set_column_value_as_utf8(c, mdtAssembly_Name, 1, &name))
+        return E_FAIL;
+    
+    uint32_t hashAlgId = ulHashAlgId;
+    if (1 != md_set_column_value_as_constant(c, mdtAssembly_HashAlgId, 1, &hashAlgId))
+        return E_FAIL;
+    
+    // TODO: Handle pMetaData
     UNREFERENCED_PARAMETER(pMetaData);
-    UNREFERENCED_PARAMETER(dwAssemblyFlags);
-    UNREFERENCED_PARAMETER(pma);
-    return E_NOTIMPL;
+
+    if (pMetaData->usMajorVersion != std::numeric_limits<uint16_t>::max())
+    {
+        uint32_t majorVersion = pMetaData->usMajorVersion;
+        if (1 != md_set_column_value_as_constant(c, mdtAssembly_MajorVersion, 1, &majorVersion))
+            return E_FAIL;
+    }
+
+    if (pMetaData->usMinorVersion != std::numeric_limits<uint16_t>::max())
+    {
+        uint32_t minorVersion = pMetaData->usMinorVersion;
+        if (1 != md_set_column_value_as_constant(c, mdtAssembly_MinorVersion, 1, &minorVersion))
+            return E_FAIL;
+    }
+
+    if (pMetaData->usBuildNumber != std::numeric_limits<uint16_t>::max())
+    {
+        uint32_t buildNumber = pMetaData->usBuildNumber;
+        if (1 != md_set_column_value_as_constant(c, mdtAssembly_BuildNumber, 1, &buildNumber))
+            return E_FAIL;
+    }
+
+    if (pMetaData->usRevisionNumber != std::numeric_limits<uint16_t>::max())
+    {
+        uint32_t revisionNumber = pMetaData->usRevisionNumber;
+        if (1 != md_set_column_value_as_constant(c, mdtAssembly_RevisionNumber, 1, &revisionNumber))
+            return E_FAIL;
+    }
+
+    if (pMetaData->szLocale != nullptr)
+    {
+        pal::StringConvert<WCHAR, char> cvtLocale(pMetaData->szLocale);
+        if (!cvtLocale.Success())
+            return E_INVALIDARG;
+
+        const char* locale = cvtLocale;
+        if (1 != md_set_column_value_as_utf8(c, mdtAssembly_Culture, 1, &locale))
+            return E_FAIL;
+    }
+
+    if (!md_cursor_to_token(c, pma))
+        return E_FAIL;
+
+    // TODO: Update ENC Log
+
+    return S_OK;
 }
 
 HRESULT MetadataEmit::DefineAssemblyRef(

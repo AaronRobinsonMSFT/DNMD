@@ -1080,7 +1080,7 @@ static bool is_column_sorted_with_next_column(query_cxt_t* qcxt, md_key_info con
         return true;
         
     uint32_t raw_next;
-    bool success = read_column_data(qcxt, &raw_next);
+    success = read_column_data(qcxt, &raw_next);
     assert(success);
     (void)success;
 
