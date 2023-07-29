@@ -83,8 +83,15 @@ namespace
             if (obj == nullptr)
                 return E_OUTOFMEMORY;
 
-            if (!obj->CreateAndAddTearOff<MetadataImportRO>(std::move(md_ptr), std::move(copiedMem), std::move(nowOwned)))
+            try
+            {
+                obj->CreateAndAddTearOff<MetadataImportRO>(std::move(md_ptr), std::move(copiedMem), std::move(nowOwned));
+            }
+            catch(const std::bad_alloc&)
+            {
                 return E_OUTOFMEMORY;
+            }
+            
 
             HRESULT hr = obj->QueryInterface(riid, (void**)ppIUnk);
             return hr;
