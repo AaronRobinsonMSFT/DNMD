@@ -18,19 +18,19 @@ class MetadataImportRO final : public TearOffBase<IMetaDataImport2, IMetaDataAss
     dncp::cotaskmem_ptr<void> _cotaskmem_to_free;
 
 protected:
-    STDMETHOD(TryGetInterfaceOnThis)(REFIID riid, void** ppvObject) override
+    virtual bool TryGetInterfaceOnThis(REFIID riid, void** ppvObject) override
     {
         if (riid == IID_IMetaDataImport || riid == IID_IMetaDataImport2)
         {
             *ppvObject = static_cast<IMetaDataImport2*>(this);
-            return S_OK;
+            return true;
         }
         if (riid == IID_IMetaDataAssemblyImport)
         {
             *ppvObject = static_cast<IMetaDataAssemblyImport*>(this);
-            return S_OK;
+            return true;
         }
-        return E_NOINTERFACE;
+        return false;
     }
 
 public:

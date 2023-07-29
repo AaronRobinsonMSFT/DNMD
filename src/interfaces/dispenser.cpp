@@ -87,14 +87,13 @@ namespace
             {
                 obj->CreateAndAddTearOff<MetadataImportRO>(std::move(md_ptr), std::move(copiedMem), std::move(nowOwned));
             }
-            catch(const std::bad_alloc&)
+            catch(std::bad_alloc const&)
             {
                 return E_OUTOFMEMORY;
             }
             
 
-            HRESULT hr = obj->QueryInterface(riid, (void**)ppIUnk);
-            return hr;
+            return obj->QueryInterface(riid, (void**)ppIUnk);
         }
 
     public: // IUnknown

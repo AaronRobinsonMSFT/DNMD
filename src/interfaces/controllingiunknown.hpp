@@ -39,7 +39,7 @@ public: // IUnknown
 
         for (std::unique_ptr<TearOffUnknown> const& tearOff: _tearOffs)
         {
-            if (tearOff->TryGetInterfaceOnThis(riid, ppvObject) == S_OK)
+            if (tearOff->TryGetInterfaceOnThis(riid, ppvObject))
             {
                 (void)AddRef();
                 return S_OK;

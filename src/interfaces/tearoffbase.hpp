@@ -4,6 +4,7 @@
 #include "internal/dnmd_platform.hpp"
 #include <atomic>
 #include <memory>
+#include <cassert>
 
 class ControllingIUnknown;
 
@@ -14,13 +15,13 @@ private:
     IUnknown* _pUnkOuter;
 
 protected:
-    STDMETHOD(TryGetInterfaceOnThis)(REFIID riid, void** ppvObject) PURE;
+    virtual bool TryGetInterfaceOnThis(REFIID riid, void** ppvObject) PURE;
 
 public:
     TearOffUnknown(IUnknown* outer)
-        :_pUnkOuter(outer)
+        : _pUnkOuter{ outer }
     {
-
+        assert(outer != nullptr);
     }
 
     virtual ~TearOffUnknown() = default;
@@ -51,7 +52,7 @@ public: // IUnknown
             return _pUnkOuter->QueryInterface(riid, ppvObject);
         }
 
-        if (TryGetInterfaceOnThis(riid, ppvObject) == S_OK)
+        if (TryGetInterfaceOnThis(riid, ppvObject))
         {
             (void)AddRef();
             return S_OK;
