@@ -20,6 +20,7 @@ class MetadataImportRO final : public TearOffBase<IMetaDataImport2, IMetaDataAss
 protected:
     virtual bool TryGetInterfaceOnThis(REFIID riid, void** ppvObject) override
     {
+        assert(riid != IID_IUnknown);
         if (riid == IID_IMetaDataImport || riid == IID_IMetaDataImport2)
         {
             *ppvObject = static_cast<IMetaDataImport2*>(this);
@@ -444,7 +445,7 @@ public: // IMetaDataImport
     STDMETHOD(GetCustomAttributeByName)(
         mdToken     tkObj,
         LPCWSTR     szName,
-        const void  **ppData,
+        void const**  ppData,
         ULONG       *pcbData) override;
 
     STDMETHOD_(BOOL, IsValidToken)(
