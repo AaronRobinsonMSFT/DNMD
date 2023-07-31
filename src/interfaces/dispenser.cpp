@@ -6,11 +6,13 @@
 #endif // !_MSC_VER
 #endif // DNMD_BUILD_SHARED
 
-#include <dnmd_interfaces.hpp>
-
+#include "internal/dnmd_platform.hpp"
+#include "dnmd_interfaces.hpp"
 #include "controllingiunknown.hpp"
 #include "metadataimportro.hpp"
 #include "metadataemit.hpp"
+
+#include <cstring>
 
 namespace
 {
@@ -74,21 +76,26 @@ namespace
 
             mdhandle_ptr md_ptr{ mdhandle };
 
-            com_ptr<ControllingIUnknown> obj { new (std::nothrow) ControllingIUnknown() };
+            dncp::com_ptr<ControllingIUnknown> obj { new (std::nothrow) ControllingIUnknown() };
             if (obj == nullptr)
                 return E_OUTOFMEMORY;
 
-            if (!obj->CreateAndAddTearOff<MetadataImportRO>(std::move(md_ptr), std::move(copiedMem), std::move(nowOwned)))
-                return E_OUTOFMEMORY;
-            
-            if (!(dwOpenFlags & ofReadOnly))
+            try
             {
-                if (!obj->CreateAndAddTearOff<MetadataEmit>(mdhandle))
-                    return E_OUTOFMEMORY;
-            }
+                obj->CreateAndAddTearOff<MetadataImportRO>(std::move(md_ptr), std::move(copiedMem), std::move(nowOwned));
 
-            HRESULT hr = obj->QueryInterface(riid, (void**)ppIUnk);
-            return hr;
+                if (!(dwOpenFlags & ofReadOnly))
+                {
+                    obj->CreateAndAddTearOff<MetadataEmit>(mdhandle);
+                }
+            }
+            catch(std::bad_alloc const&)
+            {
+                return E_OUTOFMEMORY;
+            }
+            
+
+            return obj->QueryInterface(riid, (void**)ppIUnk);
         }
 
     public: // IUnknown

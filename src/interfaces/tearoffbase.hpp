@@ -4,6 +4,7 @@
 #include "internal/dnmd_platform.hpp"
 #include <atomic>
 #include <memory>
+#include <cassert>
 
 class ControllingIUnknown;
 
@@ -14,29 +15,29 @@ private:
     IUnknown* _pUnkOuter;
 
 protected:
-    STDMETHOD(TryGetInterfaceOnThis)(REFIID riid, void** ppvObject) PURE;
+    virtual bool TryGetInterfaceOnThis(REFIID riid, void** ppvObject) PURE;
 
 public:
     TearOffUnknown(IUnknown* outer)
-        :_pUnkOuter(outer)
+        : _pUnkOuter{ outer }
     {
-
+        assert(outer != nullptr);
     }
 
     virtual ~TearOffUnknown() = default;
 
 public: // IUnknown
-    STDMETHODIMP_(ULONG) AddRef() override
+    STDMETHOD_(ULONG, AddRef)() override
     {
         return _pUnkOuter->AddRef();
     }
 
-    STDMETHODIMP_(ULONG) Release() override
+    STDMETHOD_(ULONG, Release)() override
     {
         return _pUnkOuter->Release();
     }
 
-    STDMETHODIMP QueryInterface(REFIID riid, void** ppvObject) override
+    STDMETHOD(QueryInterface)(REFIID riid, void** ppvObject) override
     {
         if (ppvObject == nullptr)
             return E_POINTER;
@@ -51,7 +52,7 @@ public: // IUnknown
             return _pUnkOuter->QueryInterface(riid, ppvObject);
         }
 
-        if (TryGetInterfaceOnThis(riid, ppvObject) == S_OK)
+        if (TryGetInterfaceOnThis(riid, ppvObject))
         {
             (void)AddRef();
             return S_OK;
@@ -69,33 +70,18 @@ class TearOffBase : public TearOffUnknown, public T...
 public:
     using TearOffUnknown::TearOffUnknown;
 
-    STDMETHODIMP_(ULONG) AddRef() override final
+    STDMETHOD_(ULONG, AddRef)() override final
     {
         return TearOffUnknown::AddRef();
     }
-    STDMETHODIMP_(ULONG) Release() override final
+    STDMETHOD_(ULONG, Release)() override final
     {
         return TearOffUnknown::Release();
     }
-    STDMETHODIMP QueryInterface(REFIID riid, void** ppvObject) override final
+    STDMETHOD(QueryInterface)(REFIID riid, void** ppvObject) override final
     {
         return TearOffUnknown::QueryInterface(riid, ppvObject);
     }
 };
-
-#define TEAR_OFF_IUNKNOWN_IMPLEMENTATION()
-
-template<typename T>
-struct ComReleaser
-{
-    using pointer = T*;
-    void operator()(pointer mem)
-    {
-        mem->Release();
-    }
-};
-
-template<typename T>
-using com_ptr = std::unique_ptr<T*, typename ComReleaser<T>>;
 
 #endif

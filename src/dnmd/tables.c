@@ -270,7 +270,7 @@ static keys_info const table_keys[] =
     { NULL, 0 },
     { NULL, 0 },
     { NULL, 0 },
-    { NULL, 0 },
+    { keys_InterfaceImpl, ARRAY_SIZE(keys_InterfaceImpl) },
     { NULL, 0 },
     { keys_Constant, ARRAY_SIZE(keys_Constant) },
     { keys_CustomAttribute, ARRAY_SIZE(keys_CustomAttribute) },
@@ -305,7 +305,7 @@ static keys_info const table_keys[] =
     { keys_NestedClass, ARRAY_SIZE(keys_NestedClass) },
     { keys_GenericParam, ARRAY_SIZE(keys_GenericParam) },
     { NULL, 0 },
-    keys_GenericParamConstraint,
+    { keys_GenericParamConstraint, ARRAY_SIZE(keys_GenericParamConstraint) },
 #ifdef DNMD_PORTABLE_PDB
     { NULL, 0 }, // Reserved
     { NULL, 0 }, // Reserved
