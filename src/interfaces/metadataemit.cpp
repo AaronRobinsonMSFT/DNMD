@@ -227,7 +227,7 @@ HRESULT MetadataEmit::DefineMethod(
     if (!md_get_column_value_as_range(type, mdtTypeDef_MethodList, &existingMethod, &count))
         return CLDB_E_FILE_CORRUPT;
 
-    md_cursor_move(&existingMethod, count);
+    md_cursor_move(&existingMethod, count - 1);
 
     mdcursor_t newMethod;
     if (!md_insert_row_after(existingMethod, &newMethod))

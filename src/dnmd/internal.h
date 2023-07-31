@@ -52,6 +52,8 @@ typedef enum
     mdtc_idx_heap   = 0x00000002, // Index into a heap - see flags below.
     mdtc_idx_table  = 0x00000004, // Index into a table - see mask below.
     mdtc_idx_coded  = 0x00000008, // Coded index - see II.24.2.6.
+    // Value category mask
+    mdtc_categorymask = 0x0000000f,
 
     // Size of the constant or index
     mdtc_b2         = 0x00000010, // 2-bytes
@@ -172,6 +174,8 @@ bool merge_in_delta(mdcxt_t* cxt, mdcxt_t* delta);
 // Streams
 //
 
+mdstream_t* get_heap_by_id(mdcxt_t* cxt, mdtcol_t heap_id);
+
 // Strings heap, #Strings - II.24.2.3
 bool try_get_string(mdcxt_t* cxt, size_t offset, char const** str);
 bool validate_strings_heap(mdcxt_t* cxt);
@@ -272,6 +276,10 @@ bool table_is_indirect_table(mdtable_id_t table_id);
 // Internal function used to create a cursor.
 // Limited validation is done for the arguments.
 mdcursor_t create_cursor(mdtable_t* table, uint32_t row);
+
+// Internal functions used to read/write columns with minimal validation.
+int32_t get_column_value_as_heap_offset(mdcursor_t c, col_index_t col_idx, uint32_t out_length, uint32_t* offset);
+int32_t set_column_value_as_heap_offset(mdcursor_t c, col_index_t col_idx, uint32_t in_length, uint32_t* offset);
 
 //
 // Manipulation of bits

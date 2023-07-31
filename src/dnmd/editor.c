@@ -74,9 +74,11 @@ bool create_and_fill_indirect_table(mdcxt_t* cxt, mdtable_id_t original_table, m
     if (editor == NULL)
         return false;
 
-    // Assert that this image does not have the indirect table yet.
+    // If the indirection table already exists, then we're done.
     mdtable_t* target_table = editor->tables[indirect_table].table;
-    assert(target_table->cxt == NULL);
+    if (target_table->cxt == NULL)
+        return true;
+
     initialize_new_table_details(indirect_table, target_table);
     target_table->cxt = editor->cxt;
     // Assert that the indirection table has exactly one column that points back at the original table.
@@ -135,6 +137,45 @@ uint8_t* get_writable_table_data(mdtable_t* table, bool make_writable)
     }
 
     return table_data->ptr;
+}
+
+// Copy a row from one table to another.
+// The rows must have an identical number of columns and the columns must have the same definition other than column width.
+// This function does not ensure that the destination table is still sorted after the copy, so this should only be used in cases
+// where a table will keep the same sort order after the copy (such as resizing a table).
+static bool copy_row(uint8_t** dest, size_t* dest_len, mdtcol_t const* dest_cols, uint8_t const** src, size_t* src_len, mdtcol_t const* src_cols, uint8_t num_cols)
+{
+    for (uint8_t col_index = 0; col_index < num_cols; col_index++)
+    {
+        // The source and destination column details can only differ by storage width.
+        assert((src_cols[col_index] & ~mdtc_widthmask) == (dest_cols[col_index] & ~mdtc_widthmask));
+
+        uint32_t data = 0;
+
+        if (src_cols[col_index] & mdtc_b2)
+        {
+            if (!read_u16(src, src_len, (uint16_t*)&data))
+                return false;
+        }
+        else
+        {
+            if (!read_u32(src, src_len, &data))
+                return false;
+        }
+
+        if (dest_cols[col_index] & mdtc_b2)
+        {
+            if (!write_u16(dest, dest_len, (uint16_t)data))
+                return false;
+        }
+        else
+        {
+            if (!write_u32(dest, dest_len, data))
+                return false;
+        }
+    }
+    
+    return true;
 }
 
 static bool set_column_size_for_max_row_count(mdeditor_t* editor, mdtable_t* table, mdtable_id_t updated_table, mdtcol_t updated_heap, uint32_t new_max_row_count)
@@ -211,23 +252,8 @@ static bool set_column_size_for_max_row_count(mdeditor_t* editor, mdtable_t* tab
     size_t new_table_data_length = new_allocation_size;
     for (uint32_t i = 0; i < table->row_count; i++)
     {
-        for (uint8_t col_index = 0; col_index < table->column_count; col_index++)
-        {
-            // The source and destination column details can only differ by storage width.
-            assert((table->column_details[col_index] & ~mdtc_widthmask) == (new_column_details[col_index] & ~mdtc_widthmask));
-
-            uint32_t data = 0;
-
-            if (table->column_details[col_index] & mdtc_b2)
-                read_u16(&table_data, &table_data_length, (uint16_t*)&data);
-            else
-                read_u32(&table_data, &table_data_length, &data);
-
-            if (new_column_details[col_index] & mdtc_b2)
-                write_u16(&new_table_data, &new_table_data_length, (uint16_t)data);
-            else
-                write_u32(&new_table_data, &new_table_data_length, data);
-        }
+        if (!copy_row(&new_table_data, &new_table_data_length, new_column_details, &table_data, &table_data_length, table->column_details, table->column_count))
+            return false;
     }
 
     // Update the public view of the table to have the new schema and point to the new data.
@@ -400,23 +426,6 @@ static md_heap_editor_t* get_heap_editor_by_id(mdeditor_t* editor, mdtcol_t heap
             return &editor->strings_heap;
         case mdtc_hus:
             return &editor->user_string_heap;
-        default:
-            return NULL;
-    }
-}
-
-static mdstream_t* get_heap_by_id(mdcxt_t* cxt, mdtcol_t heap_id)
-{
-    switch (heap_id)
-    {
-        case mdtc_hblob:
-            return &cxt->blob_heap;
-        case mdtc_hguid:
-            return &cxt->guid_heap;
-        case mdtc_hstring:
-            return &cxt->strings_heap;
-        case mdtc_hus:
-            return &cxt->user_string_heap;
         default:
             return NULL;
     }

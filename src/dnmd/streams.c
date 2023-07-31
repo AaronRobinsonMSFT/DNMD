@@ -328,3 +328,20 @@ bool try_get_pdb(mdcxt_t* cxt, md_pdb_t* pdb)
     return false;
 #endif // !DNMD_PORTABLE_PDB
 }
+
+mdstream_t* get_heap_by_id(mdcxt_t* cxt, mdtcol_t heap_id)
+{
+    switch (heap_id)
+    {
+        case mdtc_hblob:
+            return &cxt->blob_heap;
+        case mdtc_hguid:
+            return &cxt->guid_heap;
+        case mdtc_hstring:
+            return &cxt->strings_heap;
+        case mdtc_hus:
+            return &cxt->user_string_heap;
+        default:
+            return NULL;
+    }
+}

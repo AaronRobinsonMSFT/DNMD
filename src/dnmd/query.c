@@ -459,6 +459,40 @@ int32_t md_get_column_value_as_constant(mdcursor_t c, col_index_t col_idx, uint3
     return read_in;
 }
 
+// Set a column value as an existing offset into a heap.
+int32_t get_column_value_as_heap_offset(mdcursor_t c, col_index_t col_idx, uint32_t out_length, uint32_t* offset)
+{
+    if (out_length == 0)
+        return 0;
+    assert(offset != NULL);
+
+    query_cxt_t qcxt;
+    if (!create_query_context(&c, col_idx, out_length, false, &qcxt))
+        return -1;
+
+    // If this isn't a heap index column, then fail.
+    if (!(qcxt.col_details & mdtc_idx_heap))
+        return -1;
+
+    mdstream_t const* heap = get_heap_by_id(qcxt.table->cxt, ExtractHeapType(qcxt.col_details));
+    if (heap == NULL)
+        return -1;
+
+#ifdef DEBUG_COLUMN_SORTING
+    validate_column_not_sorted(qcxt.table, col_idx);
+#endif
+
+    int32_t read_in = 0;
+    do
+    {
+        if (!read_column_data(&qcxt, &offset[read_in]))
+            return -1;
+        read_in++;
+    } while (out_length > 1 && next_row(&qcxt));
+
+    return read_in;
+}
+
 int32_t md_get_column_value_as_utf8(mdcursor_t c, col_index_t col_idx, uint32_t out_length, char const** str)
 {
     if (out_length == 0)
@@ -700,6 +734,14 @@ static void const* cursor_to_row_bytes(mdcursor_t* c)
     assert(c != NULL && (CursorRow(c) > 0));
     // Indices into tables begin at 1 - see II.22.
     return &CursorTable(c)->data.ptr[(CursorRow(c) - 1) * CursorTable(c)->row_size_bytes];
+}
+
+static void* cursor_to_writable_row_bytes(mdcursor_t* c)
+{
+    assert(c != NULL && (CursorRow(c) > 0));
+    // Indices into tables begin at 1 - see II.22.
+    uint8_t* writable_data = get_writable_table_data(CursorTable(c), true);
+    return &writable_data[(CursorRow(c) - 1) * CursorTable(c)->row_size_bytes];
 }
 
 static bool find_row_from_cursor(mdcursor_t begin, col_index_t idx, uint32_t* value, mdcursor_t* cursor)
@@ -1309,6 +1351,50 @@ static void validate_column_not_sorted(mdtable_t const* table, col_index_t col_i
     }
 }
 
+// Set a column value as an existing offset into a heap.
+int32_t set_column_value_as_heap_offset(mdcursor_t c, col_index_t col_idx, uint32_t in_length, uint32_t* offset)
+{
+    if (in_length == 0)
+        return 0;
+
+    query_cxt_t qcxt;
+    if (!create_query_context(&c, col_idx, in_length, true, &qcxt))
+        return -1;
+
+    // If this isn't a heap index column, then fail.
+    if (!(qcxt.col_details & mdtc_idx_heap))
+        return -1;
+
+    mdstream_t const* heap = get_heap_by_id(qcxt.table->cxt, ExtractHeapType(qcxt.col_details));
+    if (heap == NULL)
+        return -1;
+
+#ifdef DEBUG_COLUMN_SORTING
+    validate_column_not_sorted(qcxt.table, col_idx);
+#endif
+
+    int32_t written = 0;
+    do
+    {
+        uint32_t heap_index = offset[written];
+
+        uint32_t physical_offset = heap_index;
+
+        // In the GUID heap, the offsets are a 1-based index, not a byte offset.
+        if (qcxt.col_details & mdtc_hguid)
+            physical_offset = (heap_index - 1) * sizeof(md_guid_t);
+
+        if (physical_offset >= heap->size)
+            return -1;
+
+        if (!write_column_data(&qcxt, heap_index))
+            return -1;
+        written++;
+    } while (in_length > 1 && next_row(&qcxt));
+
+    return written;
+}
+
 int32_t md_set_column_value_as_utf8(mdcursor_t c, col_index_t col_idx, uint32_t in_length, char const** str)
 {
     if (in_length == 0)
@@ -1517,6 +1603,11 @@ bool md_insert_row_after(mdcursor_t row, mdcursor_t* new_row)
     // If this is not an append scenario,
     // then we need to check if the table is one that has a corresponding indirection table
     // and create it as we are about to shift rows.
+    // If an indirection table exists, then we can't just insert a row into a table.
+    // We must append the row to the end of the table and then update the indirection table.
+    // Tables that have indirection tables must always be sorted in a very particular way
+    // and shifting tokens in these tables is generally expensive, as they may be referred to
+    // by other data streams like IL method bodies.
 
     uint32_t new_row_index = CursorRow(&row) + 1;
 
@@ -1550,6 +1641,24 @@ bool md_insert_row_after(mdcursor_t row, mdcursor_t* new_row)
             {
                 return false;
             }
+
+            // Now that we have created the indirection table, we can insert the row into the table.
+            mdcursor_t new_indirection_row;
+            
+            // Insert a row into the indirection table where a new row was requested, so any list columns that should include this
+            // row will correctly be able to observe the update.
+            if (!insert_row_into_table(table->cxt, indirect_table_maybe, new_row_index, &new_indirection_row))
+                return false;
+            
+            // Create the new row at the end of the original target table.
+            if (!md_append_row(table->cxt, table->table_id, new_row))
+                return false;
+            
+            // Set the indirection table row to point to the new row in the actual target table.
+            if (1 != md_set_column_value_as_cursor(new_indirection_row, index_to_col(0, indirect_table_maybe), 1, &row))
+                return false;
+            
+            return true;
         }
     }
     
@@ -1572,4 +1681,103 @@ bool md_append_row(mdhandle_t handle, mdtable_id_t table_id, mdcursor_t* new_row
     }
 
     return insert_row_into_table(cxt, table->table_id, table->cxt != NULL ? table->row_count : 0, new_row);
+}
+
+static bool col_points_to_list(mdcursor_t* c, col_index_t col_index)
+{
+    assert(c != NULL);
+
+    switch (CursorTable(c)->table_id)
+    {
+        case mdtid_TypeDef:
+            return col_index == mdtTypeDef_FieldList || col_index == mdtTypeDef_MethodList;
+        case mdtid_PropertyMap:
+            return col_index == mdtPropertyMap_PropertyList;
+        case mdtid_EventMap:
+            return col_index == mdtEventMap_EventList;
+        case mdtid_MethodDef:
+            return col_index == mdtMethodDef_ParamList;
+    }
+    return false;
+}
+
+static bool copy_cursor_column(mdcursor_t dest, mdtable_t* dest_table, mdcursor_t src, mdtable_t* table, uint8_t idx)
+{
+    uint32_t column_value;
+    switch (table->column_details[idx] & mdtc_categorymask)
+    {
+        case mdtc_constant:
+            if (1 != md_get_column_value_as_constant(src, index_to_col(idx, table->table_id), 1, &column_value))
+                return false;
+            break;
+        case mdtc_idx_coded:
+        case mdtc_idx_table:
+            if (1 != md_get_column_value_as_token(src, index_to_col(idx, table->table_id), 1, &column_value))
+                return false;
+            break;
+        case mdtc_idx_heap:
+            if (1 != get_column_value_as_heap_offset(src, index_to_col(idx, table->table_id), 1, &column_value))
+                return false;
+            break;
+    }
+    
+    switch (dest_table->column_details[idx] & mdtc_categorymask)
+    {
+        case mdtc_constant:
+            if (1 != md_set_column_value_as_constant(dest, index_to_col(idx, dest_table->table_id), 1, &column_value))
+                return false;
+            break;
+        case mdtc_idx_coded:
+        case mdtc_idx_table:
+            if (1 != md_set_column_value_as_token(dest, index_to_col(idx, dest_table->table_id), 1, &column_value))
+                return false;
+            break;
+        case mdtc_idx_heap:
+            if (1 != set_column_value_as_heap_offset(dest, index_to_col(idx, dest_table->table_id), 1, &column_value))
+                return false;
+            break;
+    }
+    return true;
+}
+
+bool copy_cursor(mdcursor_t dest, mdcursor_t src)
+{
+    mdtable_t* table = CursorTable(&src);
+    mdtable_t* dest_table = CursorTable(&dest);
+    assert(table->column_count == dest_table->column_count);
+
+    md_key_info* key_info;
+    uint8_t num_keys = get_table_keys(table->table_id, &key_info);
+
+    // Copy key columns first to preserve the sort order of the table.
+    // Not all tables have keys in ascending columns (sometimes a secondary key is in a column before the primary key),
+    // so we go through and copy key columns first and then copy the rest of the columns.
+    // We'll create a mask of the key columns so we can skip them when we copy the rest of the columns.
+    uint8_t key_column_mask = 0;
+    for (uint8_t i = 0; i < num_keys; i++)
+    {
+        key_column_mask |= 1 << key_info[i].index;
+
+        if (!copy_cursor_column(dest, dest_table, src, table, key_info[i].index))
+            return false;
+    }
+    
+
+    for (uint8_t i = 0; i < table->column_count; i++)
+    {
+        // We don't want to copy over columns that point to lists in other tables.
+        // These columns have very particular behavior and are handled separately by
+        // direct manipulation in the other operations.
+        if (col_points_to_list(&src, i))
+            continue;
+
+        // If the column is a key column, then we've already copied it. Skip it here.
+        if (key_column_mask & (1 << i))
+            continue;
+
+        if (!copy_cursor_column(dest, dest_table, src, table, i))
+            return false;
+    }
+
+    return true;
 }
