@@ -37,11 +37,8 @@ static mdcxt_t* allocate_full_context(mdcxt_t* cxt)
     size_t cxt_mem = align_to(sizeof(mdcxt_t), sizeof(void*));
     size_t tables_mem = MDTABLE_MAX_COUNT * align_to(sizeof(mdtable_t), sizeof(void*));
     size_t col_mem = align_to(total_col_size, sizeof(void*));
-    
-    size_t editor_mem = align_to(sizeof(mdeditor_t), sizeof(void*));
-    size_t table_editor_mem = MDTABLE_MAX_COUNT * align_to(sizeof(mdtable_editor_t), sizeof(void*));
 
-    size_t total_mem = cxt_mem + tables_mem + col_mem + editor_mem + table_editor_mem;
+    size_t total_mem = cxt_mem + tables_mem + col_mem;
     uint8_t* mem = (uint8_t*)malloc(total_mem);
     if (mem == NULL)
         return NULL;
@@ -67,26 +64,6 @@ static mdcxt_t* allocate_full_context(mdcxt_t* cxt)
         uint32_t size = table_col_sizes[id];
         mem += size;
     }
-
-    // Configure the editor object
-    mdeditor_t* editor = (mdeditor_t*)mem;
-    // Point the read-only view of the heaps at the image heaps.
-    editor->strings_heap.stream = &cxt->strings_heap;
-    editor->guid_heap.stream = &cxt->guid_heap;
-    editor->blob_heap.stream = &cxt->blob_heap;
-    editor->user_string_heap.stream = &cxt->user_string_heap;
-
-    mem += editor_mem;
-    editor->tables = (mdtable_editor_t*)mem;
-    mem += tables_mem;
-
-    // Update each table editor to point to its table view.
-    for (mdtable_id_t id = mdtid_First; id < mdtid_End; ++id)
-    {
-        editor->tables[id].table = &cxt->tables[id];
-    }
-
-    editor->cxt = cxt;
 
     assert(mem <= (uint8_t*)(pcxt + total_mem));
     return pcxt;
@@ -292,6 +269,13 @@ bool md_apply_delta(mdhandle_t handle, void const* data, size_t data_len)
     md_destroy_handle(h);
     return result;
 }
+
+typedef struct mdmem_t
+{
+    struct mdmem_t* next;
+    size_t size;
+    uint8_t data[];
+} mdmem_t;
 
 void md_destroy_handle(mdhandle_t handle)
 {

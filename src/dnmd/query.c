@@ -1336,7 +1336,7 @@ int32_t md_set_column_value_as_utf8(mdcursor_t c, col_index_t col_idx, uint32_t 
         }
         else
         {
-            heap_offset = add_to_string_heap(CursorTable(&c)->cxt->editor, str[written]);
+            heap_offset = add_to_string_heap(CursorTable(&c)->cxt, str[written]);
             if (heap_offset == 0)
                 return -1;
         }
@@ -1369,7 +1369,7 @@ int32_t md_set_column_value_as_blob(mdcursor_t c, col_index_t col_idx, uint32_t 
     int32_t written = 0;
     do
     {
-        uint32_t heap_offset = add_to_blob_heap(CursorTable(&c)->cxt->editor, blob[written], blob_len[written]);
+        uint32_t heap_offset = add_to_blob_heap(CursorTable(&c)->cxt, blob[written], blob_len[written]);
 
         if (heap_offset == 0)
             return -1;
@@ -1402,7 +1402,7 @@ int32_t md_set_column_value_as_guid(mdcursor_t c, col_index_t col_idx, uint32_t 
     int32_t written = 0;
     do
     {
-        uint32_t index = add_to_guid_heap(CursorTable(&c)->cxt->editor, guid[written]);
+        uint32_t index = add_to_guid_heap(CursorTable(&c)->cxt, guid[written]);
 
         if (index == 0)
             return -1;
@@ -1435,7 +1435,7 @@ int32_t md_set_column_value_as_userstring(mdcursor_t c, col_index_t col_idx, uin
     int32_t written = 0;
     do
     {
-        uint32_t index = add_to_user_string_heap(CursorTable(&c)->cxt->editor, userstring[written]);
+        uint32_t index = add_to_user_string_heap(CursorTable(&c)->cxt, userstring[written]);
 
         if (index == 0)
             return -1;
@@ -1546,14 +1546,14 @@ bool md_insert_row_after(mdcursor_t row, mdcursor_t* new_row)
         }
         if (indirect_table_maybe != mdtid_Unused)
         {
-            if (!create_and_fill_indirect_table(table->cxt->editor, table->table_id, indirect_table_maybe))
+            if (!create_and_fill_indirect_table(table->cxt, table->table_id, indirect_table_maybe))
             {
                 return false;
             }
         }
     }
     
-    return insert_row_into_table(table->cxt->editor, table->table_id, new_row_index, new_row);
+    return insert_row_into_table(table->cxt, table->table_id, new_row_index, new_row);
 }
 
 bool md_append_row(mdhandle_t handle, mdtable_id_t table_id, mdcursor_t* new_row)
@@ -1567,17 +1567,9 @@ bool md_append_row(mdhandle_t handle, mdtable_id_t table_id, mdcursor_t* new_row
 
     if (table->cxt == NULL)
     {
-        initialize_new_table_details(table_id, table);
-        table->cxt = cxt;
-        // Allocate some memory for the table.
-        // The number of rows in this allocation is arbitrary.
-        // It may be interesting to change the default depending on the target table.
-        size_t initial_allocation_size = table->row_size_bytes * 20;
-        // The initial table has a size 0 as it has no rows.
-        table->data.size = 0;
-        table->data.ptr = cxt->editor->tables[table_id].data.ptr = malloc(initial_allocation_size);
-        cxt->editor->tables[table_id].data.size = initial_allocation_size;
+        if (!allocate_new_table(cxt, table_id))
+            return false;
     }
 
-    return insert_row_into_table(handle, table->table_id, table->cxt != NULL ? table->row_count : 0, new_row);
+    return insert_row_into_table(cxt, table->table_id, table->cxt != NULL ? table->row_count : 0, new_row);
 }

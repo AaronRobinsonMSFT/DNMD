@@ -75,6 +75,16 @@ static mdtable_id_t const HasCustomDebugInformation[] =
 };
 #endif // DNMD_PORTABLE_PDB
 
+typedef struct
+{
+    // Coded index lookup
+    mdtable_id_t const* lookup;
+    // Coded index lookup length
+    uint8_t const lookup_len;
+    // Number of bits needed to encode lookup index
+    uint8_t const bit_encoding_size;
+} coded_index_entry;
+
 static coded_index_entry const coded_index_map[] =
 {
     { TypeDefOrRef, ARRAY_SIZE(TypeDefOrRef), 2},

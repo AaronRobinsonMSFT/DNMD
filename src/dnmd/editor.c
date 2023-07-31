@@ -1,9 +1,79 @@
 #include "dnmd.h"
 #include "internal.h"
 
-bool create_and_fill_indirect_table(mdeditor_t* editor, mdtable_id_t original_table, mdtable_id_t indirect_table)
+typedef struct _mdtable_editor_t
 {
-    editor->cxt->context_flags |= mdc_edited;
+    mddata_t data; // If non-null, points to allocated data for the table.
+    mdtable_t* table; // The read-only table that corresponds to this editor.
+} mdtable_editor_t;
+
+typedef struct _md_heap_editor_t
+{
+    mddata_t heap; // If non-null, points to allocated data for the heap.
+    mdstream_t* stream; // The read-only stream that corresponds to this editor.
+} md_heap_editor_t;
+
+typedef struct mdeditor_t
+{
+    mdcxt_t* cxt; // Non-null is indication of complete initialization
+
+    // Metadata heaps - II.24.2.2
+    md_heap_editor_t strings_heap;
+    md_heap_editor_t guid_heap;
+    md_heap_editor_t blob_heap;
+    md_heap_editor_t user_string_heap;
+
+    // Metadata tables - II.22
+    mdtable_editor_t* tables;
+} mdeditor_t;
+
+static mdeditor_t* get_editor(mdcxt_t* cxt)
+{
+    if (cxt->editor != NULL)
+        return cxt->editor;
+    
+    assert(cxt->editor == NULL);
+    // If we haven't edited yet, initialize the table editor.
+    size_t editor_mem = align_to(sizeof(mdeditor_t), sizeof(void*));
+    size_t table_editor_mem = MDTABLE_MAX_COUNT * align_to(sizeof(mdtable_editor_t), sizeof(void*));
+
+    size_t total_mem = editor_mem + table_editor_mem;
+    uint8_t* mem = (uint8_t*)alloc_mdmem(cxt, total_mem);
+    if (mem == NULL)
+        return NULL;
+
+    // Zero out the memory
+    memset(mem, 0, total_mem);
+
+    // Configure the editor object
+    mdeditor_t* editor = (mdeditor_t*)mem;
+    // Point the read-only view of the heaps at the image heaps.
+    editor->strings_heap.stream = &cxt->strings_heap;
+    editor->guid_heap.stream = &cxt->guid_heap;
+    editor->blob_heap.stream = &cxt->blob_heap;
+    editor->user_string_heap.stream = &cxt->user_string_heap;
+
+    mem += editor_mem;
+    editor->tables = (mdtable_editor_t*)mem;
+
+    // Update each table editor to point to its table view.
+    for (mdtable_id_t id = mdtid_First; id < mdtid_End; ++id)
+    {
+        editor->tables[id].table = &cxt->tables[id];
+    }
+
+    // Connect the editor and context.
+    editor->cxt = cxt;
+    cxt->editor = editor;
+    return editor;
+}
+
+bool create_and_fill_indirect_table(mdcxt_t* cxt, mdtable_id_t original_table, mdtable_id_t indirect_table)
+{
+    mdeditor_t* editor = get_editor(cxt);
+    if (editor == NULL)
+        return false;
+
     // Assert that this image does not have the indirect table yet.
     mdtable_t* target_table = editor->tables[indirect_table].table;
     assert(target_table->cxt == NULL);
@@ -41,11 +111,14 @@ bool create_and_fill_indirect_table(mdeditor_t* editor, mdtable_id_t original_ta
 
 uint8_t* get_writable_table_data(mdtable_t* table, bool make_writable)
 {
-    mddata_t* table_data = &table->cxt->editor->tables[table->table_id].data;
+    mdeditor_t* editor = get_editor(table->cxt);
+    if (editor == NULL)
+        return NULL;
+
+    mddata_t* table_data = &editor->tables[table->table_id].data;
 
     if (table_data->ptr == NULL && make_writable)
     {
-        table->cxt->context_flags |= mdc_edited;
         // If we're trying to get writable data for a table that has not been edited,
         // then we need to allocate space for it and copy the contents for editing.
         // TODO: Should we allocate more space than the table currently uses to ensure
@@ -119,8 +192,6 @@ static bool set_column_size_for_max_row_count(mdeditor_t* editor, mdtable_t* tab
     // We are either only expanding or reducing, so we can't end up at the same size with changed column sizes.
     if (new_row_size == table->row_size_bytes)
         return true;
-
-    table->cxt->context_flags |= mdc_edited;
 
     size_t new_allocation_size = max_original_rows_in_size * new_row_size;
 
@@ -207,7 +278,6 @@ bool update_table_references_for_shifted_rows(mdeditor_t* editor, mdtable_id_t u
 
 static bool allocate_more_editable_space(mdcxt_t* cxt, mddata_t* editable_data, mdcdata_t* data)
 {
-    cxt->context_flags |= mdc_edited;
     size_t new_size = data->size * 2;
     void* new_ptr;
     if (editable_data->ptr != NULL)
@@ -237,9 +307,35 @@ static bool allocate_more_editable_space(mdcxt_t* cxt, mddata_t* editable_data, 
     return true;
 }
 
-bool insert_row_into_table(mdeditor_t* editor, mdtable_id_t table_id, uint32_t row_index, mdcursor_t* new_row)
+bool allocate_new_table(mdcxt_t* cxt, mdtable_id_t table_id)
 {
-    editor->cxt->context_flags |= mdc_edited;
+    mdeditor_t* editor = get_editor(cxt);
+    if (editor == NULL)
+        return false;
+
+    mdtable_t* table = &cxt->tables[table_id];
+    // We should not be allocating for a newly-initialized table.
+    assert(table->cxt == NULL);
+
+    initialize_new_table_details(table_id, table);
+    table->cxt = cxt;
+    // Allocate some memory for the table.
+    // The number of rows in this allocation is arbitrary.
+    // It may be interesting to change the default depending on the target table.
+    size_t initial_allocation_size = table->row_size_bytes * 20;
+    // The initial table has a size 0 as it has no rows.
+    table->data.size = 0;
+    table->data.ptr = cxt->editor->tables[table_id].data.ptr = malloc(initial_allocation_size);
+    cxt->editor->tables[table_id].data.size = initial_allocation_size;
+    return true;
+}
+
+bool insert_row_into_table(mdcxt_t* cxt, mdtable_id_t table_id, uint32_t row_index, mdcursor_t* new_row)
+{
+    mdeditor_t* editor = get_editor(cxt);    
+    if (editor == NULL)
+        return false;
+
     mdtable_editor_t* target_table_editor = &editor->tables[table_id];
     assert(target_table_editor->table->cxt != NULL); // The table should exist in the image before a row is added to it.
 
@@ -328,8 +424,6 @@ static mdstream_t* get_heap_by_id(mdcxt_t* cxt, mdtcol_t heap_id)
 
 static bool reserve_heap_space(mdeditor_t* editor, uint32_t space_size, mdtcol_t heap_id, bool preserve_offsets, uint32_t* heap_offset)
 {
-    editor->cxt->context_flags |= mdc_edited;
-
     md_heap_editor_t* heap_editor = get_heap_editor_by_id(editor, heap_id);
     if (heap_editor == NULL)
         return false;
@@ -393,8 +487,12 @@ static bool reserve_heap_space(mdeditor_t* editor, uint32_t space_size, mdtcol_t
     return true;
 }
 
-uint32_t add_to_string_heap(mdeditor_t* editor, char const* str)
+uint32_t add_to_string_heap(mdcxt_t* cxt, char const* str)
 {
+    mdeditor_t* editor = get_editor(cxt);
+    if (editor == NULL)
+        return 0;
+    
     // TODO: Deduplicate heap
     uint32_t str_len = (uint32_t)strlen(str);
     uint32_t heap_offset;
@@ -407,8 +505,11 @@ uint32_t add_to_string_heap(mdeditor_t* editor, char const* str)
     return heap_offset;
 }
 
-uint32_t add_to_blob_heap(mdeditor_t* editor, uint8_t const* data, uint32_t length)
+uint32_t add_to_blob_heap(mdcxt_t* cxt, uint8_t const* data, uint32_t length)
 {
+    mdeditor_t* editor = get_editor(cxt);
+    if (editor == NULL)
+        return 0;
     // TODO: Deduplicate heap
     uint8_t compressed_length[4];
     size_t compressed_length_size = 0;
@@ -428,8 +529,11 @@ uint32_t add_to_blob_heap(mdeditor_t* editor, uint8_t const* data, uint32_t leng
     return heap_offset;
 }
 
-uint32_t add_to_user_string_heap(mdeditor_t* editor, char16_t const* str)
+uint32_t add_to_user_string_heap(mdcxt_t* cxt, char16_t const* str)
 {
+    mdeditor_t* editor = get_editor(cxt);
+    if (editor == NULL)
+        return 0;
     // TODO: Deduplicate heap
     uint32_t str_len;
     uint8_t has_special_char = 0;
@@ -490,8 +594,11 @@ uint32_t add_to_user_string_heap(mdeditor_t* editor, char16_t const* str)
     return heap_offset;
 }
 
-uint32_t add_to_guid_heap(mdeditor_t* editor, md_guid_t guid)
+uint32_t add_to_guid_heap(mdcxt_t* cxt, md_guid_t guid)
 {
+    mdeditor_t* editor = get_editor(cxt);
+    if (editor == NULL)
+        return 0;
     // TODO: Deduplicate heap
 
     uint32_t heap_offset;
@@ -549,5 +656,5 @@ mduserstringcursor_t md_add_userstring_to_heap(mdhandle_t handle, char16_t const
     if (cxt == NULL)
         return 0;
     
-    return add_to_user_string_heap(cxt->editor, userstring);
+    return add_to_user_string_heap(cxt, userstring);
 }

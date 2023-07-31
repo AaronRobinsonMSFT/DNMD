@@ -90,7 +90,6 @@ typedef enum
     mdc_extra_data        = 0x0040,
     mdc_image_flags       = 0xffff,
     mdc_minimal_delta     = 0x00010000,
-    mdc_edited            = 0x00020000, // This flag is set if any edits have been made to the image.
 } mdcxt_flag_t;
 
 // Macros used to insert/extract the column offset.
@@ -126,44 +125,15 @@ typedef struct _mdtable_t
 
 typedef mdcdata_t mdstream_t;
 
-typedef struct _mdmem_t
-{
-    struct _mdmem_t* next;
-    size_t size;
-    uint8_t data[];
-} mdmem_t;
+struct mdmem_t;
 
-typedef struct _mdtable_editor_t
-{
-    mddata_t data; // If non-null, points to allocated data for the table.
-    mdtable_t* table; // The read-only table that corresponds to this editor.
-} mdtable_editor_t;
-
-typedef struct _md_heap_editor_t
-{
-    mddata_t heap; // If non-null, points to allocated data for the heap.
-    mdstream_t* stream; // The read-only stream that corresponds to this editor.
-} md_heap_editor_t;
-
-typedef struct _mdeditor_t
-{
-    struct _mdcxt_t* cxt; // Non-null is indication of complete initialization
-
-    // Metadata heaps - II.24.2.2
-    md_heap_editor_t strings_heap;
-    md_heap_editor_t guid_heap;
-    md_heap_editor_t blob_heap;
-    md_heap_editor_t user_string_heap;
-
-    // Metadata tables - II.22
-    mdtable_editor_t* tables;
-} mdeditor_t;
+struct mdeditor_t;
 
 typedef struct _mdcxt_t
 {
     uint32_t magic; // mdlib magic
     mdcdata_t raw_metadata; // metadata raw bytes
-    mdeditor_t* editor; // metadata editor
+    struct mdeditor_t* editor; // metadata editor
     mdcxt_flag_t context_flags;
 
     // Metadata root details - II.24.2.1
@@ -186,7 +156,7 @@ typedef struct _mdcxt_t
     mdtable_t* tables;
 
     // Additional memory used for dynamic operations
-    mdmem_t* mem;
+    struct mdmem_t* mem;
 } mdcxt_t;
 
 // Extract a context from the mdhandle_t.
@@ -206,22 +176,22 @@ bool merge_in_delta(mdcxt_t* cxt, mdcxt_t* delta);
 // Strings heap, #Strings - II.24.2.3
 bool try_get_string(mdcxt_t* cxt, size_t offset, char const** str);
 bool validate_strings_heap(mdcxt_t* cxt);
-uint32_t add_to_string_heap(mdeditor_t* editor, char const* str);
+uint32_t add_to_string_heap(mdcxt_t* cxt, char const* str);
 
 // User strings heap, #US - II.24.2.4
 bool try_get_user_string(mdcxt_t* cxt, size_t offset, mduserstring_t* str, size_t* next_offset);
 bool validate_user_string_heap(mdcxt_t* cxt);
-uint32_t add_to_user_string_heap(mdeditor_t* editor, char16_t const* str);
+uint32_t add_to_user_string_heap(mdcxt_t* cxt, char16_t const* str);
 
 // Blob heap, #Blob - II.24.2.4
 bool try_get_blob(mdcxt_t* cxt, size_t offset, uint8_t const** blob, uint32_t* blob_len);
 bool validate_blob_heap(mdcxt_t* cxt);
-uint32_t add_to_blob_heap(mdeditor_t* editor, uint8_t const* data, uint32_t length);
+uint32_t add_to_blob_heap(mdcxt_t* cxt, uint8_t const* data, uint32_t length);
 
 // GUID heap, #GUID - II.24.2.5
 bool try_get_guid(mdcxt_t* cxt, size_t idx, md_guid_t* guid);
 bool validate_guid_heap(mdcxt_t* cxt);
-uint32_t add_to_guid_heap(mdeditor_t* editor, md_guid_t guid);
+uint32_t add_to_guid_heap(mdcxt_t* cxt, md_guid_t guid);
 
 // Table heap, #~ - II.24.2.6
 // Note: This can only be done after all streams have been read in.
@@ -266,16 +236,6 @@ typedef enum
 #endif // DNMD_PORTABLE_PDB
     mdci_Count
 } md_coded_idx_t;
-
-typedef struct _coded_index_entry
-{
-    // Coded index lookup
-    mdtable_id_t const* lookup;
-    // Coded index lookup length
-    uint8_t const lookup_len;
-    // Number of bits needed to encode lookup index
-    uint8_t const bit_encoding_size;
-} coded_index_entry;
 
 // Manipulators for coded indices - II.24.2.6
 bool compose_coded_index(mdToken tk, mdtcol_t col_details, uint32_t* coded_index);
@@ -348,18 +308,17 @@ bool write_i64(uint8_t const** data, size_t* data_len, int64_t o);
 // II.23.2
 bool decompress_u32(uint8_t const** data, size_t* data_len, uint32_t* o);
 bool decompress_i32(uint8_t const** data, size_t* data_len, int32_t* o);
-// II.23.2
 // compressed_len is an in/out parameter. If compress_u32 returns true, then
 // compressed_len is set to the number of bytes written to compressed.
 bool compress_u32(uint32_t data, uint8_t* compressed, size_t* compressed_len);
 
-
 // Editing
-bool create_and_fill_indirect_table(mdeditor_t* editor, mdtable_id_t original_table, mdtable_id_t indirect_table);
+bool create_and_fill_indirect_table(mdcxt_t* cxt, mdtable_id_t original_table, mdtable_id_t indirect_table);
+bool allocate_new_table(mdcxt_t* cxt, mdtable_id_t table_id);
 uint8_t* get_writable_table_data(mdtable_t* table, bool make_writable);
 bool initialize_new_table_details(mdtable_id_t id, mdtable_t* table);
 int32_t update_shifted_row_references(mdcursor_t* c, uint32_t count, uint8_t col_index, mdtable_id_t updated_table, uint32_t original_starting_table_index, uint32_t new_starting_table_index);
-bool insert_row_into_table(mdeditor_t* editor, mdtable_id_t table_id, uint32_t row_index, mdcursor_t* new_row);
+bool insert_row_into_table(mdcxt_t* cxt, mdtable_id_t table_id, uint32_t row_index, mdcursor_t* new_row);
 bool append_heap(mdcxt_t* cxt, mdcxt_t* delta, mdtcol_t heap_id);
 
 #endif // _SRC_DNMD_INTERNAL_H_
