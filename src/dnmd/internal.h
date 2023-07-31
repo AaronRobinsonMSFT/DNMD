@@ -1,7 +1,6 @@
 #ifndef _SRC_DNMD_INTERNAL_H_
 #define _SRC_DNMD_INTERNAL_H_
 
-
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdbool.h>

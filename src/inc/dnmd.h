@@ -30,28 +30,11 @@ typedef struct md_guid_t {
 
 typedef void* mdhandle_t;
 
-// Reused .NET data type
-typedef uint32_t mdToken;
-
-// Reused Win32 data types
-typedef uint16_t WCHAR;
-
-#ifndef GUID_DEFINED
-#define GUID_DEFINED
-typedef struct _GUID
-{
-    uint32_t Data1;
-    uint16_t Data2;
-    uint16_t Data3;
-    uint8_t  Data4[8];
-} GUID;
-#endif
-
 // Create a metadata handle that can be used to parse and modify the supplied metadata.
 //
 // The supplied data is expected to be unmoved and available until all
 // handles created with the data have been destroyed.
-// If modifications are made, the data will not be updatd in place.
+// If modifications are made, the data will not be updated in place.
 bool md_create_handle(void const* data, size_t data_len, mdhandle_t* handle);
 
 // Apply delta data to the current metadata.
@@ -439,8 +422,8 @@ typedef enum
 } col_index_t;
 
 // Query row's column values
-int32_t md_get_column_value_as_token(mdcursor_t c, col_index_t col_idx, uint32_t out_length, mdToken* tk);
 // The returned number represents the number of valid cursor(s) for indexing.
+int32_t md_get_column_value_as_token(mdcursor_t c, col_index_t col_idx, uint32_t out_length, mdToken* tk);
 int32_t md_get_column_value_as_cursor(mdcursor_t c, col_index_t col_idx, uint32_t out_length, mdcursor_t* cursor);
 // Resolve the column to a cursor and a range based on the run/list pattern in tables.
 // The run continues to the smaller of:
@@ -491,7 +474,8 @@ bool md_create_methoddefsig_from_methodrefsig(uint8_t const* ref_sig, size_t ref
 // Returns true if the cursor was not an indirect cursor or if the indirection was resolved, or false if the cursor pointed to an invalid indirection table entry.
 bool md_resolve_indirect_cursor(mdcursor_t c, mdcursor_t* target);
 
-
+// Set row's column values
+// The returned number represents the number of rows updated.
 int32_t md_set_column_value_as_token(mdcursor_t c, col_index_t col, uint32_t in_length, mdToken* tk);
 int32_t md_set_column_value_as_cursor(mdcursor_t c, col_index_t col, uint32_t in_length, mdcursor_t* cursor);
 int32_t md_set_column_value_as_constant(mdcursor_t c, col_index_t col_idx, uint32_t in_length, uint32_t* constant);

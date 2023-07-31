@@ -685,7 +685,7 @@ bool initialize_table_details(
         break;
 
 #ifdef DNMD_PORTABLE_PDB
-        // https://github.com/dotnet/runtime/blob/main/docs/design/specs/PortablePdb-Metadata.md
+    // https://github.com/dotnet/runtime/blob/main/docs/design/specs/PortablePdb-Metadata.md
     case mdtid_Document:
         table->column_details[mdtDocument_Name] = blob_index;
         table->column_details[mdtDocument_HashAlgorithm] = guid_index;
