@@ -76,7 +76,7 @@ bool create_and_fill_indirect_table(mdcxt_t* cxt, mdtable_id_t original_table, m
 
     // If the indirection table already exists, then we're done.
     mdtable_t* target_table = editor->tables[indirect_table].table;
-    if (target_table->cxt == NULL)
+    if (target_table->cxt != NULL)
         return true;
 
     initialize_new_table_details(indirect_table, target_table);
@@ -184,22 +184,37 @@ static bool set_column_size_for_max_row_count(mdeditor_t* editor, mdtable_t* tab
     assert((mdtid_First <= updated_table && updated_table <= mdtid_End) || (updated_table == mdtid_Unused && (ExtractHeapType(updated_heap) != 0)));
     mdtcol_t new_column_details[MDTABLE_MAX_COLUMN_COUNT];
 
-    uint32_t initial_row_count = editor->cxt->tables[updated_table].row_count;
+    uint32_t initial_row_count;
+    if (updated_table != mdtid_Unused)
+    {
+        initial_row_count = editor->tables[updated_table].table->row_count;
+    }
+    else if (updated_heap == mdtc_hguid)
+    {
+        mdstream_t* stream = get_heap_by_id(table->cxt, updated_heap);
+        initial_row_count = (uint32_t)(stream->size / sizeof(md_guid_t));
+    }
+    else
+    {
+        initial_row_count = (uint32_t)get_heap_by_id(table->cxt, updated_heap)->size;
+    }
 
     for (uint8_t col_index = 0; col_index < table->column_count; col_index++)
     {
         mdtcol_t col_details = table->column_details[col_index];
+        new_column_details[col_index] = col_details;
+
         uint32_t initial_max_column_value, new_max_column_value;
         if ((col_details & mdtc_idx_table) == mdtc_idx_table && ExtractTable(col_details) == updated_table)
         {
             initial_max_column_value = initial_row_count;
             new_max_column_value = new_max_row_count;
         }
-        else if ((col_details & mdtc_idx_coded) == mdtc_idx_coded && is_coded_index_target(col_details, updated_table))
+        else if ((col_details & mdtc_idx_coded) == mdtc_idx_coded && updated_table != mdtid_Unused && is_coded_index_target(col_details, updated_table))
         {
-            bool composed = compose_coded_index(TokenFromRid(initial_row_count, updated_table), col_details, &initial_max_column_value);
+            bool composed = compose_coded_index(TokenFromRid(initial_row_count, CreateTokenType(updated_table)), col_details, &initial_max_column_value);
             assert(composed);
-            composed = compose_coded_index(TokenFromRid(new_max_row_count, updated_table), col_details, &new_max_column_value);
+            composed = compose_coded_index(TokenFromRid(new_max_row_count, CreateTokenType(updated_table)), col_details, &new_max_column_value);
             assert(composed);
         }
         else if ((col_details & (mdtc_idx_heap)) == mdtc_idx_heap && ExtractHeapType(col_details) == updated_heap)
@@ -209,14 +224,13 @@ static bool set_column_size_for_max_row_count(mdeditor_t* editor, mdtable_t* tab
         }
         else
         {
-            new_column_details[col_index] = table->column_details[col_index];
             continue;
         }
 
-        if ((table->column_details[col_index] & mdtc_b2) && new_max_column_value <= UINT16_MAX)
-            new_column_details[col_index] = (table->column_details[col_index] & ~mdtc_b2) | mdtc_b4;
-        else if ((table->column_details[col_index] & mdtc_b2) && new_max_column_value > UINT16_MAX)
-            new_column_details[col_index] = (table->column_details[col_index] & ~mdtc_b4) | mdtc_b2;
+        if ((col_details & mdtc_b2) && new_max_column_value > UINT16_MAX)
+            new_column_details[col_index] = (col_details & ~mdtc_b2) | mdtc_b4;
+        else if ((col_details & mdtc_b4) && new_max_column_value <= UINT16_MAX)
+            new_column_details[col_index] = (col_details & ~mdtc_b4) | mdtc_b2;
     }
 
     // We want to make sure that we can store as many rows as the current table can in our new allocation.
@@ -365,11 +379,11 @@ bool insert_row_into_table(mdcxt_t* cxt, mdtable_id_t table_id, uint32_t row_ind
     mdtable_editor_t* target_table_editor = &editor->tables[table_id];
     assert(target_table_editor->table->cxt != NULL); // The table should exist in the image before a row is added to it.
 
-    if (target_table_editor->table->row_count + 1 < row_index)
+    if (target_table_editor->table->row_count < row_index)
         return false;
     
     // If we are out of space in our table, then we need to allocate a new table buffer.
-    if (target_table_editor->data.ptr == NULL || target_table_editor->data.size < target_table_editor->table->row_size_bytes * row_index)
+    if (target_table_editor->data.ptr == NULL || target_table_editor->data.size < target_table_editor->table->row_size_bytes * (target_table_editor->table->row_count + 1))
     {
         if (!allocate_more_editable_space(editor->cxt, &target_table_editor->data, &target_table_editor->table->data, (target_table_editor->table->row_count + 1) * target_table_editor->table->row_size_bytes))
             return false;
@@ -410,7 +424,7 @@ bool insert_row_into_table(mdcxt_t* cxt, mdtable_id_t table_id, uint32_t row_ind
     target_table_editor->table->data.size += target_table_editor->table->row_size_bytes;
     target_table_editor->table->row_count++;
 
-    *new_row = create_cursor(target_table_editor->table, row_index);
+    *new_row = create_cursor(target_table_editor->table, row_index + 1);
     return true;
 }
 
@@ -477,7 +491,6 @@ static bool reserve_heap_space(mdeditor_t* editor, uint32_t space_size, mdtcol_t
         if (!allocate_more_editable_space(editor->cxt, &heap_editor->heap, heap_editor->stream, new_heap_size))
             return false;
     }
-    heap_editor->stream->size += space_size;
 
     // Update heap references in case the additional used space crosses the boundary for index sizes.
     uint32_t index_scale = (heap_id == mdtc_hguid ? sizeof(md_guid_t) : 1);
@@ -490,8 +503,11 @@ static bool reserve_heap_space(mdeditor_t* editor, uint32_t space_size, mdtcol_t
 
         // Update all columns in the table that can refer to the updated heap
         // to be the correct width for the updated heap's new size.
-        set_column_size_for_max_row_count(editor, table, mdtid_Unused, heap_id, (uint32_t)(heap_editor->stream->size / index_scale));
+        set_column_size_for_max_row_count(editor, table, mdtid_Unused, heap_id, new_heap_size / index_scale);
     }
+
+    // Now that the new heap size can be referenced, let's update the heap size.
+    heap_editor->stream->size += space_size;
 
     return true;
 }

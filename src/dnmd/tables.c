@@ -761,7 +761,12 @@ bool initialize_new_table_details(
 )
 {
     // Use fake sizes that will ensure we create a table that will not need to be resized later.
-    uint32_t fake_table_row_counts[MDTABLE_MAX_COUNT] = { UINT32_MAX };
+    uint32_t fake_table_row_counts[MDTABLE_MAX_COUNT];
+    for (size_t i = 0; i < MDTABLE_MAX_COUNT; i++)
+    {
+        fake_table_row_counts[i] = UINT32_MAX;
+    }
+    
     uint8_t fake_heap_sizes = mdc_large_string_heap | mdc_large_guid_heap | mdc_large_blob_heap;
     if (!initialize_table_details(
         fake_table_row_counts,

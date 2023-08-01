@@ -151,7 +151,8 @@ static bool process_log(mdcxt_t* cxt, mdcxt_t* delta)
     mdtable_t* map = &delta->tables[mdtid_ENCMap];
     mdcursor_t log_cur = create_cursor(log, 1);
     mdToken new_parent = mdTokenNil;
-    col_index_t parent_col;
+    col_index_t parent_col = -1; // Initialize to an invalid column
+    mdtable_id_t new_child_table = mdtid_Unused;
 
     // The EncMap table is grouped by token type and sorted by the order of the rows in the tables in the delta.
     enc_token_map_t token_map;
@@ -174,30 +175,35 @@ static bool process_log(mdcxt_t* cxt, mdcxt_t* delta)
                 return false;
             new_parent = tk;
             parent_col = mdtTypeDef_MethodList;
+            new_child_table = mdtid_MethodDef;
             break;
         case dops_FieldCreate:
             if (ExtractTokenType(tk) != mdtid_TypeDef)
                 return false;
             new_parent = tk;
             parent_col = mdtTypeDef_FieldList;
+            new_child_table = mdtid_Field;
             break;
         case dops_ParamCreate:
             if (ExtractTokenType(tk) != mdtid_MethodDef)
                 return false;
             new_parent = tk;
             parent_col = mdtMethodDef_ParamList;
+            new_child_table = mdtid_Param;
             break;
         case dops_PropertyCreate:
             if (ExtractTokenType(tk) != mdtid_PropertyMap)
                 return false;
             new_parent = tk;
             parent_col = mdtPropertyMap_PropertyList;
+            new_child_table = mdtid_Property;
             break;
         case dops_EventCreate:
             if (ExtractTokenType(tk) != mdtid_EventMap)
                 return false;
             new_parent = tk;
             parent_col = mdtEventMap_EventList;
+            new_child_table = mdtid_Event;
             break;
         case dops_Default:
             mdtable_id_t table_id = ExtractTokenType(tk);
@@ -228,24 +234,49 @@ static bool process_log(mdcxt_t* cxt, mdcxt_t* delta)
 
             if (new_parent != mdTokenNil)
             {
+                assert(parent_col != -1);
                 mdcursor_t parent;
                 if (!md_token_to_cursor(cxt, new_parent, &parent))
                     return false;
 
                 mdcursor_t existingList;
                 uint32_t count;
-                if (!md_get_column_value_as_range(parent, mdtTypeDef_MethodList, &existingList, &count))
+                if (!md_get_column_value_as_range(parent, parent_col, &existingList, &count))
                     return false;
 
-                if (!md_cursor_move(&existingList, count - 1))
+                // Move the cursor just past the end of the range. We'll insert a row at the end of the range.
+                if (!md_cursor_move(&existingList, count))
                     return false;
 
-                if (!md_insert_row_after(existingList, &record_to_edit))
-                    return false;
-                
+                if (cxt->tables[new_child_table].cxt == NULL)
+                {
+                    // If we don't have a table to add the row to, create one.
+                    if (!md_append_row(cxt, new_child_table, &record_to_edit))
+                        return false;
+                }
+                else
+                {
+                    // Otherwise, insert the row at the correct offset.
+                    if (!md_insert_row_before(existingList, &record_to_edit))
+                        return false;
+                    
+                    // If we had to insert a row and the this is the first member for the parent,
+                    // then we need to update the list column on the parent.
+                    // Otherwise this entry will be associated with the previous entry in the parent table.
+                    // TODO: Indirection tables
+                    if (count == 0)
+                    {
+                        if (1 != md_set_column_value_as_cursor(parent, parent_col, 1, &record_to_edit))
+                            return false;
+                    }
+                }
+
                 // Reset the new_parent token as we've now completed that part of the two-part operation.
                 new_parent = mdTokenNil;
-                edit_record = false;
+                parent_col = -1;
+
+                // We've already created the row, so treat the rest of the operation as an edit.
+                edit_record = true;
             }
             else
             {
@@ -266,7 +297,7 @@ static bool process_log(mdcxt_t* cxt, mdcxt_t* delta)
                 if (table->row_count != (rid - 1))
                     return false;
                 
-                if (!md_append_row(table, table_id, &record_to_edit))
+                if (!md_append_row(cxt, table_id, &record_to_edit))
                     return false;
                 
                 // When copying a row, we skip copying over the list columns.
@@ -281,22 +312,22 @@ static bool process_log(mdcxt_t* cxt, mdcxt_t* delta)
                         endOfTableToken = TokenFromRid(cxt->tables[mdtid_Field].row_count + 1, CreateTokenType(mdtid_Field));
                         if (!md_set_column_value_as_token(record_to_edit, mdtTypeDef_FieldList, 1, &endOfTableToken))
                             return false;
-                        endOfTableToken = TokenFromRid(cxt->tables[mdtid_Field].row_count + 1, CreateTokenType(mdtid_MethodDef));
+                        endOfTableToken = TokenFromRid(cxt->tables[mdtid_MethodDef].row_count + 1, CreateTokenType(mdtid_MethodDef));
                         if (!md_set_column_value_as_token(record_to_edit, mdtTypeDef_MethodList, 1, &endOfTableToken))
                             return false;
                         break;
                     case mdtid_MethodDef:
-                        endOfTableToken = TokenFromRid(cxt->tables[mdtid_Field].row_count + 1, CreateTokenType(mdtid_Param));
+                        endOfTableToken = TokenFromRid(cxt->tables[mdtid_Param].row_count + 1, CreateTokenType(mdtid_Param));
                         if (!md_set_column_value_as_token(record_to_edit, mdtMethodDef_ParamList, 1, &endOfTableToken))
                             return false;
                         break;
                     case mdtid_PropertyMap:
-                        endOfTableToken = TokenFromRid(cxt->tables[mdtid_Field].row_count + 1, CreateTokenType(mdtid_Property));
+                        endOfTableToken = TokenFromRid(cxt->tables[mdtid_Property].row_count + 1, CreateTokenType(mdtid_Property));
                         if (!md_set_column_value_as_token(record_to_edit, mdtPropertyMap_PropertyList, 1, &endOfTableToken))
                             return false;
                         break;
                     case mdtid_EventMap:
-                        endOfTableToken = TokenFromRid(cxt->tables[mdtid_Field].row_count + 1, CreateTokenType(mdtid_Event));
+                        endOfTableToken = TokenFromRid(cxt->tables[mdtid_Event].row_count + 1, CreateTokenType(mdtid_Event));
                         if (!md_set_column_value_as_token(record_to_edit, mdtEventMap_EventList, 1, &endOfTableToken))
                             return false;
                         break;

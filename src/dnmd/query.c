@@ -206,7 +206,6 @@ static bool create_query_context(mdcursor_t* cursor, col_index_t col_idx, uint32
 
     // Compute the offset into the first row.
     uint32_t offset = ExtractOffset(qcxt->col_details);
-    qcxt->start = qcxt->data = table->data.ptr + (row * table->row_size_bytes) + offset;
 
     if (make_writable)
     {
@@ -215,6 +214,8 @@ static bool create_query_context(mdcursor_t* cursor, col_index_t col_idx, uint32
     }
     else
         qcxt->writable_data = NULL;
+    
+    qcxt->start = qcxt->data = table->data.ptr + (row * table->row_size_bytes) + offset;
 
     // Compute the beginning of the row after the last valid row.
     uint32_t last_row = row + row_count;
@@ -1596,10 +1597,8 @@ int32_t update_shifted_row_references(mdcursor_t* c, uint32_t count, uint8_t col
     return written;
 }
 
-bool md_insert_row_after(mdcursor_t row, mdcursor_t* new_row)
+static bool insert_row_cursor_relative(mdcursor_t row, int32_t offset, mdcursor_t* new_row)
 {
-    mdtable_t* table = CursorTable(&row);
-
     // If this is not an append scenario,
     // then we need to check if the table is one that has a corresponding indirection table
     // and create it as we are about to shift rows.
@@ -1609,9 +1608,19 @@ bool md_insert_row_after(mdcursor_t row, mdcursor_t* new_row)
     // and shifting tokens in these tables is generally expensive, as they may be referred to
     // by other data streams like IL method bodies.
 
-    uint32_t new_row_index = CursorRow(&row) + 1;
+    mdtable_t* table = CursorTable(&row);
+    if (table->cxt == NULL) // We can't turn an insert into a "create table" operation.
+        return false;
 
-    if (new_row_index <= table->row_count)
+    // We can't insert a row before the first row of a table.
+    assert(offset + (int64_t)CursorRow(&row) >= 0);
+
+    uint32_t new_row_index = CursorRow(&row) + offset;
+
+    if (new_row_index > table->row_count)
+        return false;
+
+    if (new_row_index < table->row_count)
     {
         mdtable_id_t indirect_table_maybe;
         switch (table->table_id)
@@ -1663,6 +1672,16 @@ bool md_insert_row_after(mdcursor_t row, mdcursor_t* new_row)
     }
     
     return insert_row_into_table(table->cxt, table->table_id, new_row_index, new_row);
+}
+
+bool md_insert_row_before(mdcursor_t row, mdcursor_t* new_row)
+{
+    return insert_row_cursor_relative(row, -1, new_row);
+}
+
+bool md_insert_row_after(mdcursor_t row, mdcursor_t* new_row)
+{
+    return insert_row_cursor_relative(row, 1, new_row);
 }
 
 bool md_append_row(mdhandle_t handle, mdtable_id_t table_id, mdcursor_t* new_row)
