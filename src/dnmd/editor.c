@@ -181,7 +181,7 @@ static bool copy_row(uint8_t** dest, size_t* dest_len, mdtcol_t const* dest_cols
 static bool set_column_size_for_max_row_count(mdeditor_t* editor, mdtable_t* table, mdtable_id_t updated_table, mdtcol_t updated_heap, uint32_t new_max_row_count)
 {
     assert(table->column_count <= MDTABLE_MAX_COLUMN_COUNT);
-    assert(mdtid_First <= updated_table && updated_table <= mdtid_End);
+    assert((mdtid_First <= updated_table && updated_table <= mdtid_End) || (updated_table == mdtid_Unused && (ExtractHeapType(updated_heap) != 0)));
     mdtcol_t new_column_details[MDTABLE_MAX_COLUMN_COUNT];
 
     uint32_t initial_row_count = editor->cxt->tables[updated_table].row_count;
@@ -302,9 +302,9 @@ bool update_table_references_for_shifted_rows(mdeditor_t* editor, mdtable_id_t u
     return true;
 }
 
-static bool allocate_more_editable_space(mdcxt_t* cxt, mddata_t* editable_data, mdcdata_t* data)
+static bool allocate_more_editable_space(mdcxt_t* cxt, mddata_t* editable_data, mdcdata_t* data, size_t minimum_size)
 {
-    size_t new_size = data->size * 2;
+    size_t new_size = minimum_size > data->size * 2 ? minimum_size : data->size * 2;
     void* new_ptr;
     if (editable_data->ptr != NULL)
     {
@@ -371,7 +371,7 @@ bool insert_row_into_table(mdcxt_t* cxt, mdtable_id_t table_id, uint32_t row_ind
     // If we are out of space in our table, then we need to allocate a new table buffer.
     if (target_table_editor->data.ptr == NULL || target_table_editor->data.size < target_table_editor->table->row_size_bytes * row_index)
     {
-        if (!allocate_more_editable_space(editor->cxt, &target_table_editor->data, &target_table_editor->table->data))
+        if (!allocate_more_editable_space(editor->cxt, &target_table_editor->data, &target_table_editor->table->data, (target_table_editor->table->row_count + 1) * target_table_editor->table->row_size_bytes))
             return false;
     }
 
@@ -474,7 +474,7 @@ static bool reserve_heap_space(mdeditor_t* editor, uint32_t space_size, mdtcol_t
     uint32_t new_heap_size = *heap_offset + space_size;
     if (new_heap_size > heap_editor->heap.size)
     {
-        if (!allocate_more_editable_space(editor->cxt, &heap_editor->heap, heap_editor->stream))
+        if (!allocate_more_editable_space(editor->cxt, &heap_editor->heap, heap_editor->stream, new_heap_size))
             return false;
     }
     heap_editor->stream->size += space_size;
@@ -623,7 +623,11 @@ uint32_t add_to_guid_heap(mdcxt_t* cxt, md_guid_t guid)
 bool append_heap(mdcxt_t* cxt, mdcxt_t* delta, mdtcol_t heap_id)
 {
     bool is_minimal_delta = (delta->context_flags & mdc_minimal_delta) == mdc_minimal_delta;
-    md_heap_editor_t* heap_editor = get_heap_editor_by_id(cxt->editor, heap_id);
+    mdeditor_t* editor = get_editor(cxt);
+    if (editor == NULL)
+        return false;
+
+    md_heap_editor_t* heap_editor = get_heap_editor_by_id(editor, heap_id);
     mdstream_t* delta_heap = get_heap_by_id(delta, heap_id);
     if (delta_heap->size == 0)
         return true;
@@ -649,7 +653,7 @@ bool append_heap(mdcxt_t* cxt, mdcxt_t* delta, mdtcol_t heap_id)
     }
 
     uint32_t heap_offset;
-    if (!reserve_heap_space(cxt->editor, (uint32_t)delta_size, heap_id, true, &heap_offset))
+    if (!reserve_heap_space(editor, (uint32_t)delta_size, heap_id, true, &heap_offset))
     {
         return false;
     }

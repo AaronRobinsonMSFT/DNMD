@@ -67,10 +67,16 @@ static bool initialize_token_map(mdtable_t* map, enc_token_map_t* token_map)
         }
         
         mdtable_id_t table_id = ExtractTokenType(tk);
+        
+        // This token points to a record that may not be a physical token in the image.
+        // Strip off this bit.
+        if (table_id & 0x80)
+            table_id = table_id & 0x7F;
 
         if (token_map->map_cur_by_table[table_id].count == (uint32_t)(-1))
         {
             token_map->map_cur_by_table[table_id].start = map_cur;
+            token_map->map_cur_by_table[table_id].count = 1;
         }
         else if (previous_table_id != table_id)
         {
@@ -91,7 +97,7 @@ static bool initialize_token_map(mdtable_t* map, enc_token_map_t* token_map)
 
 static bool resolve_token(enc_token_map_t* token_map, mdToken referenced_token, mdcxt_t* delta_image, mdcursor_t* row_in_delta)
 {
-    uint32_t type = ExtractTokenType(referenced_token);
+    mdtable_id_t type = ExtractTokenType(referenced_token);
     // This token points to a record that may not be a physical token in the image.
     // Strip off this bit.
     if (type & 0x80)
@@ -121,10 +127,10 @@ static bool resolve_token(enc_token_map_t* token_map, mdToken referenced_token, 
             if (1 != md_get_column_value_as_constant(map_record, mdtENCMap_Token, 1, &mappedToken))
                 return false;
             
-            assert(ExtractTokenType(mappedToken) == type);
+            assert((mdtable_id_t)(ExtractTokenType(mappedToken) & 0x7f) == type);
             if (RidFromToken(mappedToken) == rid)
             {
-                if (!md_token_to_cursor(delta_image, TokenFromRid(i, CreateTokenType(type)), row_in_delta))
+                if (!md_token_to_cursor(delta_image, TokenFromRid(i + 1, CreateTokenType(type)), row_in_delta))
                     return false;
                 
                 return true;
@@ -135,7 +141,7 @@ static bool resolve_token(enc_token_map_t* token_map, mdToken referenced_token, 
         // we will remap all tokens in the EncLog.
         return false;
     }
-    return true;
+    return false;
 }
 
 static bool process_log(mdcxt_t* cxt, mdcxt_t* delta)

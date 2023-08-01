@@ -106,8 +106,8 @@ typedef enum
 #define ExtractCodedIndex(s) ((s & mdtc_cimask) >> 24)
 
 // Macros used to insert/extract the heap type
-#define InsertHeapType(h) ((h << 28) & mdtc_hmask)
-#define ExtractHeapType(h) ((h & mdtc_hmask) >> 28)
+#define InsertHeapType(h) ((h) & mdtc_hmask)
+#define ExtractHeapType(h) (((h) & mdtc_hmask))
 
 // Forward declare.
 struct _mdcxt_t;

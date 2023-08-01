@@ -154,6 +154,9 @@ bool decompose_coded_index(uint32_t cidx, mdtcol_t col_details, mdtable_id_t* ta
 
 bool is_coded_index_target(mdtcol_t col_details, mdtable_id_t table)
 {
+    if (table == mdtid_Unused)
+        return false;
+
     size_t ci_idx = ExtractCodedIndex(col_details);
     assert(ci_idx < ARRAY_SIZE(coded_index_map));
     coded_index_entry const* ci_entry = &coded_index_map[ci_idx];
