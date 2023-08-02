@@ -685,7 +685,7 @@ bool append_heap(mdcxt_t* cxt, mdcxt_t* delta, mdtcol_t heap_id)
     else
     {
         // Otherwise, we only do a partial copy from the stream starting at the end of the existing heap.
-        copy_offset = heap_editor->heap.size;
+        copy_offset = heap_editor->stream->size;
         delta_size = delta_heap->size - copy_offset;
     }
 

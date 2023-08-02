@@ -283,18 +283,7 @@ int32_t set_column_value_as_heap_offset(mdcursor_t c, col_index_t col_idx, uint3
     int32_t written = 0;
     do
     {
-        uint32_t heap_index = offset[written];
-
-        uint32_t physical_offset = heap_index;
-
-        // In the GUID heap, the offsets are a 1-based index, not a byte offset.
-        if (acxt.col_details & mdtc_hguid)
-            physical_offset = (heap_index - 1) * sizeof(md_guid_t);
-
-        if (physical_offset >= heap->size)
-            return -1;
-
-        if (!write_column_data(&acxt, heap_index))
+        if (!write_column_data(&acxt, offset[written]))
             return -1;
         written++;
     } while (in_length > 1 && next_row(&acxt));
