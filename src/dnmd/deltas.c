@@ -206,6 +206,7 @@ static bool process_log(mdcxt_t* cxt, mdcxt_t* delta)
             new_child_table = mdtid_Event;
             break;
         case dops_Default:
+        {
             mdtable_id_t table_id = ExtractTokenType(tk);
             // This token points to a record that may not be a physical token in the image.
             // Strip off this bit.
@@ -331,12 +332,15 @@ static bool process_log(mdcxt_t* cxt, mdcxt_t* delta)
                         if (!md_set_column_value_as_token(record_to_edit, mdtEventMap_EventList, 1, &endOfTableToken))
                             return false;
                         break;
+                    default:
+                        break;
                 }
             }
 
             if (!copy_cursor(record_to_edit, delta_record))
                 return false;
             break;
+        }
         default:
             assert(!"Unknown delta operation");
             return false;

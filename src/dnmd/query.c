@@ -737,14 +737,6 @@ static void const* cursor_to_row_bytes(mdcursor_t* c)
     return &CursorTable(c)->data.ptr[(CursorRow(c) - 1) * CursorTable(c)->row_size_bytes];
 }
 
-static void* cursor_to_writable_row_bytes(mdcursor_t* c)
-{
-    assert(c != NULL && (CursorRow(c) > 0));
-    // Indices into tables begin at 1 - see II.22.
-    uint8_t* writable_data = get_writable_table_data(CursorTable(c), true);
-    return &writable_data[(CursorRow(c) - 1) * CursorTable(c)->row_size_bytes];
-}
-
 static bool find_row_from_cursor(mdcursor_t begin, col_index_t idx, uint32_t* value, mdcursor_t* cursor)
 {
     mdtable_t* table = CursorTable(&begin);
@@ -1341,6 +1333,8 @@ int32_t md_set_column_value_as_constant(mdcursor_t c, col_index_t col_idx, uint3
     return written;
 }
 
+
+#ifdef DEBUG_COLUMN_SORTING
 static void validate_column_not_sorted(mdtable_t const* table, col_index_t col_idx)
 {
     md_key_info const* keys = NULL;
@@ -1351,6 +1345,7 @@ static void validate_column_not_sorted(mdtable_t const* table, col_index_t col_i
             assert(!"Sorted columns cannot be heap references");
     }
 }
+#endif
 
 // Set a column value as an existing offset into a heap.
 int32_t set_column_value_as_heap_offset(mdcursor_t c, col_index_t col_idx, uint32_t in_length, uint32_t* offset)
@@ -1765,7 +1760,7 @@ bool copy_cursor(mdcursor_t dest, mdcursor_t src)
     mdtable_t* dest_table = CursorTable(&dest);
     assert(table->column_count == dest_table->column_count);
 
-    md_key_info* key_info;
+    md_key_info const* key_info;
     uint8_t num_keys = get_table_keys(table->table_id, &key_info);
 
     // Copy key columns first to preserve the sort order of the table.

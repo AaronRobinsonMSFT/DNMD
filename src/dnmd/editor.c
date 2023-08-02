@@ -305,7 +305,7 @@ bool update_table_references_for_shifted_rows(mdeditor_t* editor, mdtable_id_t u
         {
             mdtcol_t col_details = table->column_details[i];
             if (((col_details & mdtc_idx_table) == mdtc_idx_table && ExtractTable(col_details) == updated_table)
-                || (col_details & mdtc_idx_coded) == mdtc_idx_coded && is_coded_index_target(col_details, updated_table))
+                || ((col_details & mdtc_idx_coded) == mdtc_idx_coded && is_coded_index_target(col_details, updated_table)))
             {
                 // We've found a column that will need updating.
                 mdcursor_t c = create_cursor(table, 1);
@@ -365,7 +365,13 @@ bool allocate_new_table(mdcxt_t* cxt, mdtable_id_t table_id)
     size_t initial_allocation_size = table->row_size_bytes * 20;
     // The initial table has a size 0 as it has no rows.
     table->data.size = 0;
-    table->data.ptr = cxt->editor->tables[table_id].data.ptr = malloc(initial_allocation_size);
+    uint8_t* table_data = alloc_mdmem(cxt, initial_allocation_size);
+    if (table_data == NULL)
+    {
+        table->cxt = NULL;
+        return false;
+    }
+    table->data.ptr = cxt->editor->tables[table_id].data.ptr = table_data;
     cxt->editor->tables[table_id].data.size = initial_allocation_size;
     return true;
 }

@@ -154,42 +154,42 @@ bool read_i64(uint8_t const** data, size_t* data_len, int64_t* o)
     return read_le(data, data_len, o, sizeof(*o));
 }
 
-bool write_u8(uint8_t const** data, size_t* data_len, uint8_t o)
+bool write_u8(uint8_t** data, size_t* data_len, uint8_t o)
 {
     return write_le(data, data_len, o, sizeof(o));
 }
 
-bool write_i8(uint8_t const** data, size_t* data_len, int8_t o)
+bool write_i8(uint8_t** data, size_t* data_len, int8_t o)
 {
     return write_le(data, data_len, o, sizeof(o));
 }
 
-bool write_u16(uint8_t const** data, size_t* data_len, uint16_t o)
+bool write_u16(uint8_t** data, size_t* data_len, uint16_t o)
 {
     return write_le(data, data_len, o, sizeof(o));
 }
 
-bool write_i16(uint8_t const** data, size_t* data_len, int16_t o)
+bool write_i16(uint8_t** data, size_t* data_len, int16_t o)
 {
     return write_le(data, data_len, o, sizeof(o));
 }
 
-bool write_u32(uint8_t const** data, size_t* data_len, uint32_t o)
+bool write_u32(uint8_t** data, size_t* data_len, uint32_t o)
 {
     return write_le(data, data_len, o, sizeof(o));
 }
 
-bool write_i32(uint8_t const** data, size_t* data_len, int32_t o)
+bool write_i32(uint8_t** data, size_t* data_len, int32_t o)
 {
     return write_le(data, data_len, o, sizeof(o));
 }
 
-bool write_u64(uint8_t const** data, size_t* data_len, uint64_t o)
+bool write_u64(uint8_t** data, size_t* data_len, uint64_t o)
 {
     return write_le(data, data_len, o, sizeof(o));
 }
 
-bool write_i64(uint8_t const** data, size_t* data_len, int64_t o)
+bool write_i64(uint8_t** data, size_t* data_len, int64_t o)
 {
     return write_le(data, data_len, o, sizeof(o));
 }
