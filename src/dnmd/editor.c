@@ -397,6 +397,7 @@ bool allocate_new_table(mdcxt_t* cxt, mdtable_id_t table_id)
 
 bool insert_row_into_table(mdcxt_t* cxt, mdtable_id_t table_id, uint32_t row_index, mdcursor_t* new_row)
 {
+    assert(row_index != 0); // Row indexes are 1-based.
     mdeditor_t* editor = get_editor(cxt);    
     if (editor == NULL)
         return false;
@@ -408,25 +409,25 @@ bool insert_row_into_table(mdcxt_t* cxt, mdtable_id_t table_id, uint32_t row_ind
         return false;
     
     // If we are out of space in our table, then we need to allocate a new table buffer.
-    if (target_table_editor->data.ptr == NULL || target_table_editor->data.size < target_table_editor->table->row_size_bytes * (target_table_editor->table->row_count + 1))
+    if (target_table_editor->data.ptr == NULL || target_table_editor->data.size < target_table_editor->table->row_size_bytes * (size_t)(target_table_editor->table->row_count + 1))
     {
         if (!allocate_more_editable_space(editor->cxt, &target_table_editor->data, &target_table_editor->table->data, (target_table_editor->table->row_count + 1) * target_table_editor->table->row_size_bytes))
             return false;
     }
 
-    size_t next_row_start_offset = target_table_editor->table->row_size_bytes * (row_index - 1);
-    size_t last_row_end_offset = target_table_editor->table->row_size_bytes * target_table_editor->table->row_count;
+    size_t next_row_start_offset = target_table_editor->table->row_size_bytes * (size_t)(row_index - 1);
+    size_t last_row_end_offset = target_table_editor->table->row_size_bytes * (size_t)target_table_editor->table->row_count;
 
     if (next_row_start_offset < last_row_end_offset)
     {
         // If we're inserting a row in the middle of the table, then we need to move the rows after it down.
         memmove(
-            (uint8_t*)target_table_editor->data.ptr + next_row_start_offset + target_table_editor->table->row_size_bytes,
-            (uint8_t*)target_table_editor->data.ptr + next_row_start_offset,
+            target_table_editor->data.ptr + next_row_start_offset + target_table_editor->table->row_size_bytes,
+            target_table_editor->data.ptr + next_row_start_offset,
             last_row_end_offset - next_row_start_offset);
 
         // Clear the new row.
-        memset((uint8_t*)target_table_editor->data.ptr + next_row_start_offset, 0, target_table_editor->table->row_size_bytes);
+        memset(target_table_editor->data.ptr + next_row_start_offset, 0, target_table_editor->table->row_size_bytes);
 
         // Update table references
         update_table_references_for_shifted_rows(editor, table_id, row_index, 1);
