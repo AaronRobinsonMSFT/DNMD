@@ -227,11 +227,15 @@ HRESULT MetadataEmit::DefineMethod(
     if (!md_get_column_value_as_range(type, mdtTypeDef_MethodList, &existingMethod, &count))
         return CLDB_E_FILE_CORRUPT;
 
-    md_cursor_move(&existingMethod, count - 1);
+    md_cursor_move(&existingMethod, count);
 
+    mdcursor_t newMethodListTarget;
     mdcursor_t newMethod;
-    if (!md_insert_row_after(existingMethod, &newMethod))
+    if (!md_insert_row_after(existingMethod, &newMethodListTarget, &newMethod))
         return E_FAIL;
+
+    // TODO: Add newMethodListTarget to the parent type's method list
+    // Do we want to share code with the delta applier here?
 
     pal::StringConvert<WCHAR, char> cvt(szName);
 

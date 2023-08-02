@@ -485,9 +485,16 @@ int32_t md_set_column_value_as_guid(mdcursor_t c, col_index_t col_idx, uint32_t 
 int32_t md_set_column_value_as_userstring(mdcursor_t c, col_index_t col_idx, uint32_t in_length, char16_t const** userstring);
 
 // Create a new row before the row specified by the cursor.
-bool md_insert_row_before(mdcursor_t row, mdcursor_t* new_row);
+// @param row The cursor to the row before which the new row will be inserted.
+// @param new_list_target If the row is inserted into a list, this will be the cursor that should be set on the parent's list pointer
+// @param new_row The cursor that should be used to set new data on the newly created row.
+bool md_insert_row_before(mdcursor_t row, mdcursor_t* new_list_target, mdcursor_t* new_row);
+
 // Create a new row after the row specified by the cursor.
-bool md_insert_row_after(mdcursor_t row, mdcursor_t* new_row);
+// @param row The cursor to the row after which the new row will be inserted.
+// @param new_list_target If the row is inserted into a list, this will be the cursor that should be set on the parent's list pointer
+// @param new_row The cursor that should be used to set new data on the newly created row.
+bool md_insert_row_after(mdcursor_t row, mdcursor_t* new_list_target, mdcursor_t* new_row);
 
 // Create a new row at the end of the specified table.
 bool md_append_row(mdhandle_t handle, mdtable_id_t table_id, mdcursor_t* new_row);

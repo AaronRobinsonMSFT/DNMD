@@ -284,10 +284,6 @@ static bool process_log(mdcxt_t* cxt, mdcxt_t* delta)
                 if (!md_get_column_value_as_range(parent, parent_col, &existingList, &count))
                     return false;
 
-                // Move the cursor just past the end of the range. We'll insert a row at the end of the range.
-                if (!md_cursor_move(&existingList, count))
-                    return false;
-
                 if (cxt->tables[new_child_table].cxt == NULL)
                 {
                     // If we don't have a table to add the row to, create one.
@@ -296,20 +292,22 @@ static bool process_log(mdcxt_t* cxt, mdcxt_t* delta)
                 }
                 else
                 {
+                    // Move the cursor just past the end of the range. We'll insert a row at the end of the range.
+                    if (!md_cursor_move(&existingList, count))
+                        return false;
+
+                    mdcursor_t new_list_item;
                     // Otherwise, insert the row at the correct offset.
                     // This will create an indirection table if necessary.
-                    // TODO: If an indirection table already exists, this will only add an indirection table row,
-                    // it won't add a row in the target table. It should probably handle this transparently.
-                    if (!md_insert_row_before(existingList, &record_to_edit))
+                    if (!md_insert_row_before(existingList, &new_list_item, &record_to_edit))
                         return false;
                     
                     // If we had to insert a row and the this is the first member for the parent,
                     // then we need to update the list column on the parent.
                     // Otherwise this entry will be associated with the previous entry in the parent table.
-                    // TODO: Indirection tables
                     if (count == 0)
                     {
-                        if (1 != md_set_column_value_as_cursor(parent, parent_col, 1, &record_to_edit))
+                        if (1 != md_set_column_value_as_cursor(parent, parent_col, 1, &new_list_item))
                             return false;
                     }
                 }

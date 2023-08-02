@@ -1547,64 +1547,35 @@ int32_t update_shifted_row_references(mdcursor_t* c, uint32_t count, uint8_t col
     assert(c != NULL);
     col_index_t col = index_to_col(col_index, CursorTable(c)->table_id);
 
-    query_cxt_t qcxt;
-    if (!create_query_context(c, col, count, true, &qcxt))
-        return -1;
-
-    // If this isn't an index column, then fail.
-    if (!(qcxt.col_details & (mdtc_idx_table | mdtc_idx_coded)))
+    // If this isn't an table or coded index column, then fail.
+    if (!(CursorTable(c)->column_details[col_index] & (mdtc_idx_table | mdtc_idx_coded)))
         return -1;
 
     int32_t diff = (int32_t)(new_starting_table_index - original_starting_table_index);
 
-    int32_t written = 0;
-    do
+    for (uint32_t i = 0; i < count; i++, md_cursor_next(c))
     {
-        uint32_t raw;
-        mdtable_id_t table_id;
-        uint32_t table_row;
-        if (!read_column_data(&qcxt, &raw))
+        mdToken tk;
+        if (1 != md_get_column_value_as_token(*c, col, 1, &tk))
             return -1;
-
-        if (qcxt.col_details & mdtc_idx_table)
+        
+        if ((mdtable_id_t)ExtractTokenType(tk) == updated_table)
         {
-            // The raw value is the row index into the table that
-            // is embedded in the column details.
-            table_row = RidFromToken(raw);
-            table_id = ExtractTable(qcxt.col_details);
+            uint32_t rid = RidFromToken(tk);
+            if (rid >= original_starting_table_index)
+            {
+                rid += diff;
+                tk = TokenFromRid(rid, CreateTokenType(updated_table));
+                if (1 != md_set_column_value_as_token(*c, col, 1, &tk))
+                    return -1;
+            }
         }
-        else
-        {
-            assert(qcxt.col_details & mdtc_idx_coded);
-            if (!decompose_coded_index(raw, qcxt.col_details, &table_id, &table_row))
-                return -1;
-        }
+    }
 
-        if (table_id != updated_table || table_row < original_starting_table_index)
-            continue;
-
-        table_row += diff;
-
-        if (qcxt.col_details & mdtc_idx_table)
-        {
-            // The raw value is the row index into the table that
-            // is embedded in the column details.
-            raw = table_row;
-        }
-        else
-        {
-            assert(qcxt.col_details & mdtc_idx_coded);
-            if (!compose_coded_index(raw, qcxt.col_details, &raw))
-                return -1;
-        }
-        write_column_data(&qcxt, raw);
-        written++;
-    } while (next_row(&qcxt));
-    
-    return written;
+    return count;
 }
 
-static bool insert_row_cursor_relative(mdcursor_t row, int32_t offset, mdcursor_t* new_row)
+static bool insert_row_cursor_relative(mdcursor_t row, int32_t offset, mdcursor_t* new_list_target, mdcursor_t* new_row)
 {
     // If this is not an append scenario,
     // then we need to check if the table is one that has a corresponding indirection table
@@ -1627,89 +1598,111 @@ static bool insert_row_cursor_relative(mdcursor_t row, int32_t offset, mdcursor_
     if (new_row_index > table->row_count)
         return false;
 
-    if (new_row_index < table->row_count)
+    // If we're inserting a row in the middle of a table, we need to check if the row
+    // is in a table that can be a target of a list column, as we may need to handle indirection tables.
+    if (table_is_indirect_table(table->table_id) || new_row_index < table->row_count)
     {
+        // If we are inserting a row into a table that has an indirection table,
+        // then we need to actually insert the row at the end and update the indirection table
+        // at the requested index.
+        // If we are inserting a row into the indirection table, then we need to also add a row
+        // at the end of the table that the indirection table points to and pass that row back
+        // to the caller.
+        // We'll always pass the indirection table row back as new_list_target, and the target
+        // table's new row as new_row.
         mdtable_id_t indirect_table_maybe;
         mdtable_id_t parent_table;
         col_index_t col_to_update;
+        mdtable_id_t target_table;
         switch (table->table_id)
         {
+        case mdtid_FieldPtr:
         case mdtid_Field:
             indirect_table_maybe = mdtid_FieldPtr;
             parent_table = mdtid_TypeDef;
             col_to_update = mdtTypeDef_FieldList;
+            target_table = mdtid_Field;
             break;
+        case mdtid_MethodPtr:
         case mdtid_MethodDef:
             indirect_table_maybe = mdtid_MethodPtr;
             parent_table = mdtid_TypeDef;
             col_to_update = mdtTypeDef_MethodList;
+            target_table = mdtid_MethodDef;
             break;
+        case mdtid_ParamPtr:
         case mdtid_Param:
             indirect_table_maybe = mdtid_ParamPtr;
             parent_table = mdtid_MethodDef;
             col_to_update = mdtMethodDef_ParamList;
+            target_table = mdtid_Param;
             break;
+        case mdtid_EventPtr:
         case mdtid_Event:
             indirect_table_maybe = mdtid_EventPtr;
             parent_table = mdtid_EventMap;
             col_to_update = mdtEventMap_EventList;
+            target_table = mdtid_Event;
             break;
+        case mdtid_PropertyPtr:
         case mdtid_Property:
             indirect_table_maybe = mdtid_PropertyPtr;
             parent_table = mdtid_PropertyMap;
             col_to_update = mdtPropertyMap_PropertyList;
+            target_table = mdtid_Property;
             break;
         default:
             indirect_table_maybe = mdtid_Unused;
             parent_table = mdtid_Unused;
+            target_table = mdtid_Unused;
             col_to_update = -1;
             break;
         }
         if (indirect_table_maybe != mdtid_Unused)
         {
+            mdcxt_t* cxt = table->cxt;
             assert(col_to_update != -1 && parent_table != mdtid_Unused);
-            mdtcol_t* parent_col = &table->cxt->tables[parent_table].column_details[col_to_update];
+            mdtcol_t* parent_col = &cxt->tables[parent_table].column_details[col_to_update];
             if (ExtractTable(*parent_col) != indirect_table_maybe)
             {
-                if (!create_and_fill_indirect_table(table->cxt, table->table_id, indirect_table_maybe))
+                if (!create_and_fill_indirect_table(cxt, target_table, indirect_table_maybe))
                     return false;
                 
                 // Clear the target column of the table index, so that we can set it to the new indirection table.
                 *parent_col &= ~mdtc_timask;
                 *parent_col |= InsertTable(indirect_table_maybe);
             }
-
-            // Now that we have created the indirection table, we can insert the row into the table.
-            mdcursor_t new_indirection_row;
-            
+          
             // Insert a row into the indirection table where a new row was requested, so any list columns that should include this
             // row will correctly be able to observe the update.
-            if (!insert_row_into_table(table->cxt, indirect_table_maybe, new_row_index, &new_indirection_row))
+            if (!insert_row_into_table(cxt, indirect_table_maybe, new_row_index, new_list_target))
                 return false;
             
             // Create the new row at the end of the original target table.
-            if (!md_append_row(table->cxt, table->table_id, new_row))
+            if (!md_append_row(cxt, target_table, new_row))
                 return false;
             
             // Set the indirection table row to point to the new row in the actual target table.
-            if (1 != md_set_column_value_as_cursor(new_indirection_row, index_to_col(0, indirect_table_maybe), 1, &row))
+            if (1 != md_set_column_value_as_cursor(*new_list_target, index_to_col(0, indirect_table_maybe), 1, new_row))
                 return false;
-            
+
             return true;
         }
     }
     
-    return insert_row_into_table(table->cxt, table->table_id, new_row_index, new_row);
+    bool success = insert_row_into_table(table->cxt, table->table_id, new_row_index, new_row);
+    *new_list_target = *new_row;
+    return success;
 }
 
-bool md_insert_row_before(mdcursor_t row, mdcursor_t* new_row)
+bool md_insert_row_before(mdcursor_t row, mdcursor_t* new_list_target, mdcursor_t* new_row)
 {
-    return insert_row_cursor_relative(row, -1, new_row);
+    return insert_row_cursor_relative(row, -1, new_list_target, new_row);
 }
 
-bool md_insert_row_after(mdcursor_t row, mdcursor_t* new_row)
+bool md_insert_row_after(mdcursor_t row, mdcursor_t* new_list_target, mdcursor_t* new_row)
 {
-    return insert_row_cursor_relative(row, 1, new_row);
+    return insert_row_cursor_relative(row, 1, new_list_target, new_row);
 }
 
 bool md_append_row(mdhandle_t handle, mdtable_id_t table_id, mdcursor_t* new_row)

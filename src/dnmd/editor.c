@@ -410,7 +410,7 @@ bool insert_row_into_table(mdcxt_t* cxt, mdtable_id_t table_id, uint32_t row_ind
         memset((uint8_t*)target_table_editor->data.ptr + next_row_start_offset, 0, target_table_editor->table->row_size_bytes);
 
         // Update table references
-        update_table_references_for_shifted_rows(editor, table_id, target_table_editor->table->row_count, 1);
+        update_table_references_for_shifted_rows(editor, table_id, row_index + 1, 1);
     }
     else
     {
