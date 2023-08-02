@@ -143,49 +143,39 @@ static bool resolve_token(enc_token_map_t* token_map, mdToken referenced_token, 
     return false;
 }
 
-static bool initialize_list_columns(mdcxt_t* cxt, mdcursor_t c, mdtable_id_t table_id)
+static bool set_column_as_end_of_table_cursor(mdcursor_t c, col_index_t col_idx)
+{
+    mdtable_t* table = CursorTable(&c);
+    mdtable_id_t target_table = ExtractTable(table->column_details[col_to_index(col_idx, table)]);
+    mdcursor_t end_of_table = create_cursor(&table->cxt->tables[target_table], table->cxt->tables[target_table].row_count + 1);
+
+    return md_set_column_value_as_cursor(c, col_idx, 1, &end_of_table);
+}
+
+static bool initialize_list_columns(mdcursor_t c)
 {
     // Initialize list columns to one-past the end of the target table.
-    // This also works if we have indirection tables as an indirection table
-    // will always have the same number of rows as the table it points to.
-    mdToken endOfTableToken;
-    switch (table_id)
+    mdtable_t* table = CursorTable(&c);
+    switch (table->table_id)
     {
     case mdtid_TypeDef:
-        endOfTableToken = TokenFromRid(cxt->tables[mdtid_Field].row_count + 1, CreateTokenType(mdtid_Field));
-        if (!md_set_column_value_as_token(c, mdtTypeDef_FieldList, 1, &endOfTableToken))
-            return false;
-        endOfTableToken = TokenFromRid(cxt->tables[mdtid_MethodDef].row_count + 1, CreateTokenType(mdtid_MethodDef));
-        if (!md_set_column_value_as_token(c, mdtTypeDef_MethodList, 1, &endOfTableToken))
-            return false;
+        return set_column_as_end_of_table_cursor(c, mdtTypeDef_FieldList)
+            && set_column_as_end_of_table_cursor(c, mdtTypeDef_MethodList);
         break;
     case mdtid_MethodDef:
-        endOfTableToken = TokenFromRid(cxt->tables[mdtid_Param].row_count + 1, CreateTokenType(mdtid_Param));
-        if (!md_set_column_value_as_token(c, mdtMethodDef_ParamList, 1, &endOfTableToken))
-            return false;
-        break;
+        return set_column_as_end_of_table_cursor(c, mdtMethodDef_ParamList);
     case mdtid_PropertyMap:
-        endOfTableToken = TokenFromRid(cxt->tables[mdtid_Property].row_count + 1, CreateTokenType(mdtid_Property));
-        if (!md_set_column_value_as_token(c, mdtPropertyMap_PropertyList, 1, &endOfTableToken))
-            return false;
-        break;
+        return set_column_as_end_of_table_cursor(c, mdtPropertyMap_PropertyList);
     case mdtid_EventMap:
-        endOfTableToken = TokenFromRid(cxt->tables[mdtid_Event].row_count + 1, CreateTokenType(mdtid_Event));
-        if (!md_set_column_value_as_token(c, mdtEventMap_EventList, 1, &endOfTableToken))
-            return false;
-        break;
+        return set_column_as_end_of_table_cursor(c, mdtEventMap_EventList);
     default:
         break;
     }
     return true;
 }
 
-static bool add_list_target_row(mdcxt_t* cxt, mdToken parent_tok, col_index_t list_col, mdtable_id_t new_child_table)
+static bool add_list_target_row(mdcursor_t parent, col_index_t list_col)
 {
-    mdcursor_t parent;
-    if (!md_token_to_cursor(cxt, parent_tok, &parent))
-        return false;
-
     // Get the range of rows already in the parent's child list.
     // If we have an indirection table already, we will get back a range in the indirection table here.
     mdcursor_t existing_range;
@@ -193,8 +183,19 @@ static bool add_list_target_row(mdcxt_t* cxt, mdToken parent_tok, col_index_t li
     if (!md_get_column_value_as_range(parent, list_col, &existing_range, &count))
         return false;
 
+    mdtable_t* parent_table = CursorTable(&parent);
+    mdcxt_t* cxt = parent_table->cxt;
+
+    mdtable_id_t new_child_table = ExtractTable(parent_table->column_details[col_to_index(list_col, parent_table)]);
+    if (table_is_indirect_table(new_child_table))
+    {
+       // If the target table is an indirection table, we need to get the table it points to, as that's where the real content goes.
+        assert(cxt->tables[new_child_table].column_count == 1 && (cxt->tables[new_child_table].column_details[0] & mdtc_idx_table) == mdtc_idx_table);
+        new_child_table = ExtractTable(cxt->tables[new_child_table].column_details[0]);
+    }
+
     mdcursor_t new_child_record;
-    if (cxt->tables[new_child_table].cxt == NULL)
+    if (CursorTable(&parent)->cxt->tables[new_child_table].cxt == NULL)
     {
         // If we don't have a table to add the row to, create one.
         if (!md_append_row(cxt, new_child_table, &new_child_record))
@@ -224,7 +225,7 @@ static bool add_list_target_row(mdcxt_t* cxt, mdToken parent_tok, col_index_t li
 
     // When copying a row, we skip copying over the list columns.
     // If we're adding a new row, we need to initialize the list columns.
-    if (!initialize_list_columns(cxt, new_child_record, new_child_table))
+    if (!initialize_list_columns(new_child_record))
         return false;
 
     return true;
@@ -257,40 +258,77 @@ static bool process_log(mdcxt_t* cxt, mdcxt_t* delta)
         switch ((delta_ops_t)op)
         {
         case dops_MethodCreate:
+        {
             if (ExtractTokenType(tk) != mdtid_TypeDef)
                 return false;
 
-            if (!add_list_target_row(cxt, tk, mdtTypeDef_MethodList, mdtid_MethodDef))
+            // By the time we're adding a member to a list, the parent should already be in the image.
+            mdcursor_t parent;
+            if (!md_token_to_cursor(cxt, tk, &parent))
+                return false;
+
+            if (!add_list_target_row(parent, mdtTypeDef_MethodList))
                 return false;
             break;
+        }
         case dops_FieldCreate:
+        {
             if (ExtractTokenType(tk) != mdtid_TypeDef)
                 return false;
 
-            if (!add_list_target_row(cxt, tk, mdtTypeDef_FieldList, mdtid_Field))
+            // By the time we're adding a member to a list, the parent should already be in the image.
+            mdcursor_t parent;
+            if (!md_token_to_cursor(cxt, tk, &parent))
+                return false;
+
+            if (!add_list_target_row(parent, mdtTypeDef_FieldList))
                 return false;
             break;
+        }
         case dops_ParamCreate:
+        {
             if (ExtractTokenType(tk) != mdtid_MethodDef)
                 return false;
 
-            if (!add_list_target_row(cxt, tk, mdtMethodDef_ParamList, mdtid_Param))
+
+            // By the time we're adding a member to a list, the parent should already be in the image.
+            mdcursor_t parent;
+            if (!md_token_to_cursor(cxt, tk, &parent))
+                return false;
+
+            if (!add_list_target_row(parent, mdtMethodDef_ParamList))
                 return false;
             break;
+        }
         case dops_PropertyCreate:
+        {
             if (ExtractTokenType(tk) != mdtid_PropertyMap)
                 return false;
 
-            if (!add_list_target_row(cxt, tk, mdtPropertyMap_PropertyList, mdtid_Property))
+            // By the time we're adding a member to a list, the parent should already be in the image.
+            mdcursor_t parent;
+            if (!md_token_to_cursor(cxt, tk, &parent))
+                return false;
+
+            if (!add_list_target_row(parent, mdtPropertyMap_PropertyList))
                 return false;
             break;
+        }
         case dops_EventCreate:
+        {
             if (ExtractTokenType(tk) != mdtid_EventMap)
                 return false;
 
-            if (!add_list_target_row(cxt, tk, mdtEventMap_EventList, mdtid_Event))
+
+            // By the time we're adding a member to a list, the parent should already be in the image.
+            mdcursor_t parent;
+            if (!md_token_to_cursor(cxt, tk, &parent))
+                return false;
+
+            if (!add_list_target_row(parent, mdtEventMap_EventList))
                 return false;
             break;
+        }
         case dops_Default:
         {
             mdtable_id_t table_id = ExtractTokenType(tk);
@@ -332,7 +370,7 @@ static bool process_log(mdcxt_t* cxt, mdcxt_t* delta)
                 
                 // When copying a row, we skip copying over the list columns.
                 // If we're adding a new row, we need to initialize the list columns.
-                if (!initialize_list_columns(cxt, record_to_edit, table->table_id))
+                if (!initialize_list_columns(record_to_edit))
                     return false;
             }
 

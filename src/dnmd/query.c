@@ -95,7 +95,9 @@ bool md_cursor_to_token(mdcursor_t c, mdToken* tk)
 
     mdToken row = RidFromToken(CursorRow(&c));
     *tk = CreateTokenType(table->table_id) | row;
-    return (row <= table->row_count);
+    // We'll allow getting a token for a cursor just passed the end of the table.
+    // These tokens are used in some scenarios to represent an empty list.
+    return (row <= table->row_count + 1);
 }
 
 mdhandle_t md_extract_handle_from_cursor(mdcursor_t c)
@@ -315,6 +317,7 @@ int32_t get_column_value_as_heap_offset(mdcursor_t c, col_index_t col_idx, uint3
     {
         if (!read_column_data(&acxt, &offset[read_in]))
             return -1;
+
         read_in++;
     } while (out_length > 1 && next_row(&acxt));
 
