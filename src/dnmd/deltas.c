@@ -66,7 +66,10 @@ static bool initialize_token_map(mdtable_t* map, enc_token_map_t* token_map)
             return false;
         }
         
-        mdtable_id_t table_id = ExtractTokenType(tk);
+        // Tokens in the EncMap table may have the high bit set to indicate that they aren't true token references.
+        // Deltas produced by CoreCLR, CLR, and ILASM will have this bit set. Roslyn does not utilize this bit.
+        // Strip this high bit if it is set. We don't need it.
+        mdtable_id_t table_id = ExtractTokenType(tk) & 0x7F;
         
         // This token points to a record that may not be a physical token in the image.
         // Strip off this bit.
@@ -98,10 +101,6 @@ static bool initialize_token_map(mdtable_t* map, enc_token_map_t* token_map)
 static bool resolve_token(enc_token_map_t* token_map, mdToken referenced_token, mdcxt_t* delta_image, mdcursor_t* row_in_delta)
 {
     mdtable_id_t type = ExtractTokenType(referenced_token);
-    // This token points to a record that may not be a physical token in the image.
-    // Strip off this bit.
-    if (type & 0x80)
-        type = type & 0x7F;
 
     if (type >= mdtid_End)
         return false;
@@ -250,6 +249,11 @@ static bool process_log(mdcxt_t* cxt, mdcxt_t* delta)
             return false;
         }
 
+        // Tokens in the EncLog table may have the high bit set to indicate that they aren't true token references.
+        // Deltas produced by CoreCLR, CLR, and ILASM will have this bit set. Roslyn does not utilize this bit.
+        // Strip this high bit if it is set. We don't need it.
+        tk &= 0x7fffffff;
+
         switch ((delta_ops_t)op)
         {
         case dops_MethodCreate:
@@ -290,10 +294,6 @@ static bool process_log(mdcxt_t* cxt, mdcxt_t* delta)
         case dops_Default:
         {
             mdtable_id_t table_id = ExtractTokenType(tk);
-            // This token points to a record that may not be a physical token in the image.
-            // Strip off this bit.
-            if (table_id & 0x80)
-                table_id = table_id & 0x7F;
 
             if (table_id < mdtid_First || table_id >= mdtid_End)
                 return false;
