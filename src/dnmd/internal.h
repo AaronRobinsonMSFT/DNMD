@@ -274,9 +274,89 @@ bool consume_table_rows(mdtable_t* table, uint8_t const** data, size_t* data_len
 // Get whether or not the column in the table points into an indirect table
 bool table_is_indirect_table(mdtable_id_t table_id);
 
+
+// Cursor manipulation
+
+
 // Internal function used to create a cursor.
 // Limited validation is done for the arguments.
 mdcursor_t create_cursor(mdtable_t* table, uint32_t row);
+
+static mdtable_t* CursorTable(mdcursor_t* c)
+{
+    assert(c != NULL);
+    return (mdtable_t*)c->_reserved1;
+}
+
+static uint32_t CursorRow(mdcursor_t* c)
+{
+    assert(c != NULL);
+    return RidFromToken(c->_reserved2);
+}
+
+static bool CursorNull(mdcursor_t* c)
+{
+    return CursorRow(c) == 0;
+}
+
+static bool CursorEnd(mdcursor_t* c)
+{
+    return (CursorTable(c)->row_count + 1) == CursorRow(c);
+}
+
+static uint8_t col_to_index(col_index_t col_idx, mdtable_t const* table)
+{
+    assert(table != NULL);
+    uint32_t idx = (uint32_t)col_idx;
+#ifdef DEBUG_TABLE_COLUMN_LOOKUP
+    mdtable_id_t tgt_table_id = col_idx >> 8;
+    if (tgt_table_id != table->table_id)
+    {
+        assert(!"Unexpected table/column indexing");
+        return false;
+    }
+    idx = (col_idx & 0xff);
+#else
+    (void)table;
+#endif
+    return (uint8_t)idx;
+}
+
+static col_index_t index_to_col(uint8_t idx, mdtable_id_t table_id)
+{
+#ifdef DEBUG_TABLE_COLUMN_LOOKUP
+    return (col_index_t)((table_id << 8) | idx);
+#else
+    (void)table_id;
+    return (col_index_t)idx;
+#endif
+}
+
+
+// Copy data from a cursor to one row to a cursor to another row.
+bool copy_cursor(mdcursor_t dest, mdcursor_t src);
+
+// Raw table data access
+
+typedef struct
+{
+    mdtable_t* table;
+    mdtcol_t col_details;
+    uint8_t const* start;
+    uint8_t const* data;
+    uint8_t* writable_data;
+    uint8_t const* end;
+    size_t data_len;
+    uint32_t data_len_col;
+    uint32_t next_row_stride;
+} access_cxt_t;
+
+bool create_access_context(mdcursor_t* cursor, col_index_t col_idx, uint32_t row_count, bool make_writable, access_cxt_t* acxt);
+void change_query_context_target_col(access_cxt_t* acxt, col_index_t col_idx);
+bool read_column_data(access_cxt_t* acxt, uint32_t* data);
+bool write_column_data(access_cxt_t* acxt, uint32_t data);
+bool prev_row(access_cxt_t* acxt);
+bool next_row(access_cxt_t* acxt);
 
 // Internal functions used to read/write columns with minimal validation.
 int32_t get_column_value_as_heap_offset(mdcursor_t c, col_index_t col_idx, uint32_t out_length, uint32_t* offset);
@@ -330,8 +410,5 @@ bool insert_row_into_table(mdcxt_t* cxt, mdtable_id_t table_id, uint32_t row_ind
 
 // Add the heap with the specified id from the delta image to the cxt image.
 bool append_heap(mdcxt_t* cxt, mdcxt_t* delta, mdtcol_t heap_id);
-
-// Copy data from a cursor to one row to a cursor to another row.
-bool copy_cursor(mdcursor_t dest, mdcursor_t src);
 
 #endif // _SRC_DNMD_INTERNAL_H_
