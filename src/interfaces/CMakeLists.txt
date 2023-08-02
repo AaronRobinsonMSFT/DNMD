@@ -1,7 +1,6 @@
 set(SOURCES
   dispenser.cpp
   metadataimport.cpp
-  metadataemit.cpp
   hcorenum.cpp
   pal.cpp
 )
@@ -9,7 +8,6 @@ set(SOURCES
 set(HEADERS
   ../inc/dnmd_interfaces.hpp
   ./metadataimportro.hpp
-  ./metadataemit.hpp
   ./hcorenum.hpp
   ./controllingiunknown.hpp
   ./tearoffbase.hpp

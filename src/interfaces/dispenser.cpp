@@ -10,7 +10,6 @@
 #include "dnmd_interfaces.hpp"
 #include "controllingiunknown.hpp"
 #include "metadataimportro.hpp"
-#include "metadataemit.hpp"
 
 #include <cstring>
 
@@ -55,6 +54,10 @@ namespace
             if (ppIUnk == nullptr)
                 return E_INVALIDARG;
 
+            // Only support the read-only state
+            if (!(dwOpenFlags & ofReadOnly))
+                return E_INVALIDARG;
+
             dncp::cotaskmem_ptr<void> nowOwned;
             if (dwOpenFlags & ofTakeOwnership)
                 nowOwned.reset((void*)pData);
@@ -83,11 +86,6 @@ namespace
             try
             {
                 obj->CreateAndAddTearOff<MetadataImportRO>(std::move(md_ptr), std::move(copiedMem), std::move(nowOwned));
-
-                if (!(dwOpenFlags & ofReadOnly))
-                {
-                    obj->CreateAndAddTearOff<MetadataEmit>(mdhandle);
-                }
             }
             catch(std::bad_alloc const&)
             {
