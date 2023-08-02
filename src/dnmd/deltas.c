@@ -181,20 +181,65 @@ static bool initialize_list_columns(mdcxt_t* cxt, mdcursor_t c, mdtable_id_t tab
     return true;
 }
 
+static bool add_list_target_row(mdcxt_t* cxt, mdToken parent_tok, col_index_t list_col, mdtable_id_t new_child_table)
+{
+    mdcursor_t parent;
+    if (!md_token_to_cursor(cxt, parent_tok, &parent))
+        return false;
+
+    // Get the range of rows already in the parent's child list.
+    // If we have an indirection table already, we will get back a range in the indirection table here.
+    mdcursor_t existing_range;
+    uint32_t count;
+    if (!md_get_column_value_as_range(parent, list_col, &existing_range, &count))
+        return false;
+
+    mdcursor_t new_child_record;
+    if (cxt->tables[new_child_table].cxt == NULL)
+    {
+        // If we don't have a table to add the row to, create one.
+        if (!md_append_row(cxt, new_child_table, &new_child_record))
+            return false;
+    }
+    else
+    {
+        // Move the cursor just past the end of the range. We'll insert a row at the end of the range.
+        if (!md_cursor_move(&existing_range, count))
+            return false;
+
+        mdcursor_t new_list_item;
+        // Otherwise, insert the row at the correct offset.
+        // This will create an indirection table if necessary.
+        if (!md_insert_row_before(existing_range, &new_list_item, &new_child_record))
+            return false;
+
+        // If we had to insert a row and the this is the first member for the parent,
+        // then we need to update the list column on the parent.
+        // Otherwise this entry will be associated with the previous entry in the parent table.
+        if (count == 0)
+        {
+            if (1 != md_set_column_value_as_cursor(parent, list_col, 1, &new_list_item))
+                return false;
+        }
+    }
+
+    // When copying a row, we skip copying over the list columns.
+    // If we're adding a new row, we need to initialize the list columns.
+    if (!initialize_list_columns(cxt, new_child_record, new_child_table))
+        return false;
+
+    return true;
+}
+
 static bool process_log(mdcxt_t* cxt, mdcxt_t* delta)
 {
-    (void)cxt;
-    mdtable_t* log = &delta->tables[mdtid_ENCLog];
-    mdtable_t* map = &delta->tables[mdtid_ENCMap];
-    mdcursor_t log_cur = create_cursor(log, 1);
-    mdToken new_parent = mdTokenNil;
-    col_index_t parent_col = -1; // Initialize to an invalid column
-    mdtable_id_t new_child_table = mdtid_Unused;
-
     // The EncMap table is grouped by token type and sorted by the order of the rows in the tables in the delta.
+    mdtable_t* map = &delta->tables[mdtid_ENCMap];
     enc_token_map_t token_map;
     initialize_token_map(map, &token_map);
 
+    mdtable_t* log = &delta->tables[mdtid_ENCLog];
+    mdcursor_t log_cur = create_cursor(log, 1);
     for (uint32_t i = 0; i < log->row_count; (void)md_cursor_next(&log_cur), ++i)
     {
         mdToken tk;
@@ -210,37 +255,37 @@ static bool process_log(mdcxt_t* cxt, mdcxt_t* delta)
         case dops_MethodCreate:
             if (ExtractTokenType(tk) != mdtid_TypeDef)
                 return false;
-            new_parent = tk;
-            parent_col = mdtTypeDef_MethodList;
-            new_child_table = mdtid_MethodDef;
+
+            if (!add_list_target_row(cxt, tk, mdtTypeDef_MethodList, mdtid_MethodDef))
+                return false;
             break;
         case dops_FieldCreate:
             if (ExtractTokenType(tk) != mdtid_TypeDef)
                 return false;
-            new_parent = tk;
-            parent_col = mdtTypeDef_FieldList;
-            new_child_table = mdtid_Field;
+
+            if (!add_list_target_row(cxt, tk, mdtTypeDef_FieldList, mdtid_Field))
+                return false;
             break;
         case dops_ParamCreate:
             if (ExtractTokenType(tk) != mdtid_MethodDef)
                 return false;
-            new_parent = tk;
-            parent_col = mdtMethodDef_ParamList;
-            new_child_table = mdtid_Param;
+
+            if (!add_list_target_row(cxt, tk, mdtMethodDef_ParamList, mdtid_Param))
+                return false;
             break;
         case dops_PropertyCreate:
             if (ExtractTokenType(tk) != mdtid_PropertyMap)
                 return false;
-            new_parent = tk;
-            parent_col = mdtPropertyMap_PropertyList;
-            new_child_table = mdtid_Property;
+
+            if (!add_list_target_row(cxt, tk, mdtPropertyMap_PropertyList, mdtid_Property))
+                return false;
             break;
         case dops_EventCreate:
             if (ExtractTokenType(tk) != mdtid_EventMap)
                 return false;
-            new_parent = tk;
-            parent_col = mdtEventMap_EventList;
-            new_child_table = mdtid_Event;
+
+            if (!add_list_target_row(cxt, tk, mdtEventMap_EventList, mdtid_Event))
+                return false;
             break;
         case dops_Default:
         {
@@ -250,7 +295,7 @@ static bool process_log(mdcxt_t* cxt, mdcxt_t* delta)
             if (table_id & 0x80)
                 table_id = table_id & 0x7F;
 
-            if (table_id >= mdtid_End)
+            if (table_id < mdtid_First || table_id >= mdtid_End)
                 return false;
 
             uint32_t rid = RidFromToken(tk);
@@ -262,72 +307,11 @@ static bool process_log(mdcxt_t* cxt, mdcxt_t* delta)
             resolve_token(&token_map, tk, delta, &delta_record);
             
             // Try resolving the original token to determine what row we're editing.
-            // If this operation is the second part of a two-part operation, we'll
-            // first create the new row such that it is connected to its parent.
-            // Otherwise, we'll try to look up the row in the base image.
+            // We'll try to look up the row in the base image.
             // If we fail to resolve the original token, then we aren't editing an existing row,
             // but instead creating a new row.
             mdcursor_t record_to_edit;
-            bool edit_record;
-
-            if (new_parent != mdTokenNil)
-            {
-                assert(parent_col != -1);
-                mdcursor_t parent;
-                if (!md_token_to_cursor(cxt, new_parent, &parent))
-                    return false;
-
-                // Get the range of rows already in the parent's child list.
-                // If we have an indirection table already, we will get back a range in the indirection table here.
-                mdcursor_t existingList;
-                uint32_t count;
-                if (!md_get_column_value_as_range(parent, parent_col, &existingList, &count))
-                    return false;
-
-                if (cxt->tables[new_child_table].cxt == NULL)
-                {
-                    // If we don't have a table to add the row to, create one.
-                    if (!md_append_row(cxt, new_child_table, &record_to_edit))
-                        return false;
-                }
-                else
-                {
-                    // Move the cursor just past the end of the range. We'll insert a row at the end of the range.
-                    if (!md_cursor_move(&existingList, count))
-                        return false;
-
-                    mdcursor_t new_list_item;
-                    // Otherwise, insert the row at the correct offset.
-                    // This will create an indirection table if necessary.
-                    if (!md_insert_row_before(existingList, &new_list_item, &record_to_edit))
-                        return false;
-                    
-                    // If we had to insert a row and the this is the first member for the parent,
-                    // then we need to update the list column on the parent.
-                    // Otherwise this entry will be associated with the previous entry in the parent table.
-                    if (count == 0)
-                    {
-                        if (1 != md_set_column_value_as_cursor(parent, parent_col, 1, &new_list_item))
-                            return false;
-                    }
-                }
-
-                // When copying a row, we skip copying over the list columns.
-                // If we're adding a new row, we need to initialize the list columns.
-                if (!initialize_list_columns(cxt, record_to_edit, new_child_table))
-                    return false;
-
-                // Reset the new_parent token as we've now completed that part of the two-part operation.
-                new_parent = mdTokenNil;
-                parent_col = -1;
-
-                // We've already created the row, so treat the rest of the operation as an edit.
-                edit_record = true;
-            }
-            else
-            {
-                edit_record = md_token_to_cursor(cxt, tk, &record_to_edit);
-            }
+            bool edit_record = md_token_to_cursor(cxt, tk, &record_to_edit);
 
             mdtable_t* table = &cxt->tables[table_id];
     
@@ -336,8 +320,8 @@ static bool process_log(mdcxt_t* cxt, mdcxt_t* delta)
             // and try to insert a row in the middle of a table to preserve sorting.
             // For some tables that aren't referred to by other tables, such as CustomAttribute,
             // we could get much better performance by preserving the sorted behavior.
-            // If the runtime doesn't have any dependency on tokens being stable, this optimization may reduce
-            // the need for maintaining a manual sorting above the metadata layer.
+            // If the runtime doesn't have any dependency on tokens being stable for these tables,
+            // this optimization may reduce the need for maintaining a manual sorting above the metadata layer.
             if (!edit_record)
             {
                 if (table->row_count != (rid - 1))
@@ -380,6 +364,37 @@ bool merge_in_delta(mdcxt_t* cxt, mdcxt_t* delta)
     }
 
     // TODO: Validate EnC Generations
+    mdcursor_t base_module = create_cursor(&cxt->tables[mdtid_Module], 1);
+    mdcursor_t delta_module = create_cursor(&delta->tables[mdtid_Module], 1);
+
+    md_guid_t base_mvid;
+    if (1 != md_get_column_value_as_guid(base_module, mdtModule_Mvid, 1, &base_mvid))
+    {
+        return false;
+    }
+
+    md_guid_t delta_mvid;
+    if (1 != md_get_column_value_as_guid(delta_module, mdtModule_Mvid, 1, &delta_mvid))
+    {
+        return false;
+    }
+
+    // MVIDs must match between base and delta images.
+    if (memcmp(&base_mvid, &delta_mvid, sizeof(md_guid_t)) != 0)
+    {
+        return false;
+    }
+
+    // The EncBaseId of the delta must equal the EncId of the base image.
+    // This ensures that we are applying deltas in order.
+    md_guid_t enc_id;
+    md_guid_t delta_enc_base_id;
+    if (1 != md_get_column_value_as_guid(base_module, mdtModule_EncId, 1, &enc_id)
+        || 1 != md_get_column_value_as_guid(delta_module, mdtModule_EncBaseId, 1, &delta_enc_base_id)
+        || memcmp(&enc_id, &delta_enc_base_id, sizeof(md_guid_t)) != 0)
+    {
+        return false;
+    }
 
     // Merge heaps
     if (!append_heaps_from_delta(cxt, delta))
@@ -389,6 +404,20 @@ bool merge_in_delta(mdcxt_t* cxt, mdcxt_t* delta)
 
     // Process delta log
     if (!process_log(cxt, delta))
+    {
+        return false;
+    }
+
+    // Now that we've applied the delta,
+    // update our Enc Id to match the delta's Id in preparation for the next delta.
+    // We don't want to manipulate the heap sizes, so we'll pull the heap offset directly from the delta and use that
+    // in the base image.
+    uint32_t new_enc_base_id_offset;
+    if (1 != get_column_value_as_heap_offset(delta_module, mdtModule_EncId, 1, &new_enc_base_id_offset))
+    {
+        return false;
+    }
+    if (1 != set_column_value_as_heap_offset(base_module, mdtModule_EncId, 1, &new_enc_base_id_offset))
     {
         return false;
     }

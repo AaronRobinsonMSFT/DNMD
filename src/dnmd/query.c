@@ -1486,7 +1486,7 @@ int32_t md_set_column_value_as_guid(mdcursor_t c, col_index_t col_idx, uint32_t 
         return -1;
 
     // If this isn't an constant column, then fail.
-    if (!(qcxt.col_details & mdtc_hblob))
+    if (!(qcxt.col_details & mdtc_hguid))
         return -1;
 
 #ifdef DEBUG_COLUMN_SORTING
