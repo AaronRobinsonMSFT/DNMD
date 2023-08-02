@@ -1595,12 +1595,12 @@ static bool insert_row_cursor_relative(mdcursor_t row, int32_t offset, mdcursor_
 
     uint32_t new_row_index = CursorRow(&row) + offset;
 
-    if (new_row_index > table->row_count)
+    if (new_row_index > table->row_count + 1)
         return false;
 
     // If we're inserting a row in the middle of a table, we need to check if the row
     // is in a table that can be a target of a list column, as we may need to handle indirection tables.
-    if (table_is_indirect_table(table->table_id) || new_row_index < table->row_count)
+    if (table_is_indirect_table(table->table_id) || new_row_index <= table->row_count)
     {
         // If we are inserting a row into a table that has an indirection table,
         // then we need to actually insert the row at the end and update the indirection table
@@ -1697,7 +1697,9 @@ static bool insert_row_cursor_relative(mdcursor_t row, int32_t offset, mdcursor_
 
 bool md_insert_row_before(mdcursor_t row, mdcursor_t* new_list_target, mdcursor_t* new_row)
 {
-    return insert_row_cursor_relative(row, -1, new_list_target, new_row);
+    // Inserting a row before a given cursor means that the new row will point to the same
+    // target as the given cursor.
+    return insert_row_cursor_relative(row, 0, new_list_target, new_row);
 }
 
 bool md_insert_row_after(mdcursor_t row, mdcursor_t* new_list_target, mdcursor_t* new_row)
@@ -1720,7 +1722,7 @@ bool md_append_row(mdhandle_t handle, mdtable_id_t table_id, mdcursor_t* new_row
             return false;
     }
 
-    return insert_row_into_table(cxt, table->table_id, table->cxt != NULL ? table->row_count : 0, new_row);
+    return insert_row_into_table(cxt, table->table_id, table->cxt != NULL ? table->row_count + 1 : 1, new_row);
 }
 
 static bool col_points_to_list(mdcursor_t* c, col_index_t col_index)

@@ -97,14 +97,20 @@ bool create_and_fill_indirect_table(mdcxt_t* cxt, mdtable_id_t original_table, m
 
     editor->tables[indirect_table].data.size = allocation_space;
     target_table->data.ptr = editor->tables[indirect_table].data.ptr;
-    target_table->data.size = editor->tables[indirect_table].data.size;
+    target_table->data.size = target_table->row_size_bytes * editor->tables[original_table].table->row_count;
 
     // The indirection table will initially have each row pointing to the matching row in the original table.
     uint8_t* table_data = editor->tables[indirect_table].data.ptr;
     size_t table_len = editor->tables[indirect_table].data.size;
     for (uint32_t i = 0; i < editor->tables[original_table].table->row_count; i++)
     {
-        write_u32(&table_data, &table_len, i + 1);
+        if (target_table->column_details[0] & mdtc_b2)
+        {
+            assert(i + 1 <= UINT16_MAX);
+            write_u16(&table_data, &table_len, (uint16_t)i + 1);
+        }
+        else
+            write_u32(&table_data, &table_len, i + 1);
     }
 
     target_table->row_count = editor->tables[original_table].table->row_count;
@@ -303,7 +309,7 @@ static bool set_column_size_for_max_row_count(mdeditor_t* editor, mdtable_t* tab
 bool update_table_references_for_shifted_rows(mdeditor_t* editor, mdtable_id_t updated_table, uint32_t changed_row_start, int64_t shift)
 {
     // Make sure we aren't shifting into negative row ids or shifting above the max row id. That isn't legal.
-    assert(changed_row_start - shift > 0 && changed_row_start + shift < 0x00ffffff);
+    assert(changed_row_start + shift > 0 && changed_row_start + shift < 0x00ffffff);
     for (mdtable_id_t table_id = mdtid_First; table_id < mdtid_End; table_id++)
     {
         mdtable_t* table = &editor->cxt->tables[table_id];
@@ -398,7 +404,7 @@ bool insert_row_into_table(mdcxt_t* cxt, mdtable_id_t table_id, uint32_t row_ind
     mdtable_editor_t* target_table_editor = &editor->tables[table_id];
     assert(target_table_editor->table->cxt != NULL); // The table should exist in the image before a row is added to it.
 
-    if (target_table_editor->table->row_count < row_index)
+    if (target_table_editor->table->row_count < (row_index - 1))
         return false;
     
     // If we are out of space in our table, then we need to allocate a new table buffer.
@@ -408,7 +414,7 @@ bool insert_row_into_table(mdcxt_t* cxt, mdtable_id_t table_id, uint32_t row_ind
             return false;
     }
 
-    size_t next_row_start_offset = target_table_editor->table->row_size_bytes * row_index;
+    size_t next_row_start_offset = target_table_editor->table->row_size_bytes * (row_index - 1);
     size_t last_row_end_offset = target_table_editor->table->row_size_bytes * target_table_editor->table->row_count;
 
     if (next_row_start_offset < last_row_end_offset)
@@ -423,7 +429,7 @@ bool insert_row_into_table(mdcxt_t* cxt, mdtable_id_t table_id, uint32_t row_ind
         memset((uint8_t*)target_table_editor->data.ptr + next_row_start_offset, 0, target_table_editor->table->row_size_bytes);
 
         // Update table references
-        update_table_references_for_shifted_rows(editor, table_id, row_index + 1, 1);
+        update_table_references_for_shifted_rows(editor, table_id, row_index, 1);
     }
     else
     {
@@ -443,7 +449,7 @@ bool insert_row_into_table(mdcxt_t* cxt, mdtable_id_t table_id, uint32_t row_ind
     target_table_editor->table->data.size += target_table_editor->table->row_size_bytes;
     target_table_editor->table->row_count++;
 
-    *new_row = create_cursor(target_table_editor->table, row_index + 1);
+    *new_row = create_cursor(target_table_editor->table, row_index);
     return true;
 }
 
