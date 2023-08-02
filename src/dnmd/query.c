@@ -1630,32 +1630,53 @@ static bool insert_row_cursor_relative(mdcursor_t row, int32_t offset, mdcursor_
     if (new_row_index < table->row_count)
     {
         mdtable_id_t indirect_table_maybe;
+        mdtable_id_t parent_table;
+        col_index_t col_to_update;
         switch (table->table_id)
         {
         case mdtid_Field:
             indirect_table_maybe = mdtid_FieldPtr;
+            parent_table = mdtid_TypeDef;
+            col_to_update = mdtTypeDef_FieldList;
             break;
         case mdtid_MethodDef:
             indirect_table_maybe = mdtid_MethodPtr;
+            parent_table = mdtid_TypeDef;
+            col_to_update = mdtTypeDef_MethodList;
             break;
         case mdtid_Param:
             indirect_table_maybe = mdtid_ParamPtr;
+            parent_table = mdtid_MethodDef;
+            col_to_update = mdtMethodDef_ParamList;
             break;
         case mdtid_Event:
             indirect_table_maybe = mdtid_EventPtr;
+            parent_table = mdtid_EventMap;
+            col_to_update = mdtEventMap_EventList;
             break;
         case mdtid_Property:
             indirect_table_maybe = mdtid_PropertyPtr;
+            parent_table = mdtid_PropertyMap;
+            col_to_update = mdtPropertyMap_PropertyList;
             break;
         default:
             indirect_table_maybe = mdtid_Unused;
+            parent_table = mdtid_Unused;
+            col_to_update = -1;
             break;
         }
         if (indirect_table_maybe != mdtid_Unused)
         {
-            if (!create_and_fill_indirect_table(table->cxt, table->table_id, indirect_table_maybe))
+            assert(col_to_update != -1 && parent_table != mdtid_Unused);
+            mdtcol_t* parent_col = &table->cxt->tables[parent_table].column_details[col_to_update];
+            if (ExtractTable(*parent_col) != indirect_table_maybe)
             {
-                return false;
+                if (!create_and_fill_indirect_table(table->cxt, table->table_id, indirect_table_maybe))
+                    return false;
+                
+                // Clear the target column of the table index, so that we can set it to the new indirection table.
+                *parent_col &= ~mdtc_timask;
+                *parent_col |= InsertTable(indirect_table_maybe);
             }
 
             // Now that we have created the indirection table, we can insert the row into the table.

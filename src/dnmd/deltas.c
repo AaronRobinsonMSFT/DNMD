@@ -277,6 +277,8 @@ static bool process_log(mdcxt_t* cxt, mdcxt_t* delta)
                 if (!md_token_to_cursor(cxt, new_parent, &parent))
                     return false;
 
+                // Get the range of rows already in the parent's child list.
+                // If we have an indirection table already, we will get back a range in the indirection table here.
                 mdcursor_t existingList;
                 uint32_t count;
                 if (!md_get_column_value_as_range(parent, parent_col, &existingList, &count))
@@ -295,6 +297,9 @@ static bool process_log(mdcxt_t* cxt, mdcxt_t* delta)
                 else
                 {
                     // Otherwise, insert the row at the correct offset.
+                    // This will create an indirection table if necessary.
+                    // TODO: If an indirection table already exists, this will only add an indirection table row,
+                    // it won't add a row in the target table. It should probably handle this transparently.
                     if (!md_insert_row_before(existingList, &record_to_edit))
                         return false;
                     

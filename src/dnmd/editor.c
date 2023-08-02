@@ -103,7 +103,7 @@ bool create_and_fill_indirect_table(mdcxt_t* cxt, mdtable_id_t original_table, m
     size_t table_len = editor->tables[indirect_table].data.size;
     for (uint32_t i = 0; i < editor->tables[original_table].table->row_count; i++)
     {
-        write_u32(&table_data, &table_len, i);
+        write_u32(&table_data, &table_len, i + 1);
     }
 
     target_table->row_count = editor->tables[original_table].table->row_count;
