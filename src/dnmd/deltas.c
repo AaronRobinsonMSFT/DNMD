@@ -354,6 +354,8 @@ static bool process_log(mdcxt_t* cxt, mdcxt_t* delta)
 
             if (!copy_cursor(record_to_edit, delta_record))
                 return false;
+            
+            // TODO: Write to the ENC Log in cxt to record the change.
             break;
         }
         default:
