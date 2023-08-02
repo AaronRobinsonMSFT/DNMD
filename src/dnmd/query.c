@@ -1241,8 +1241,14 @@ static int32_t set_column_value_as_token_or_cursor(mdcursor_t c, uint32_t col_id
     if (key_idx != UINT8_MAX)
     {
         assert(keys != NULL);
-        bool is_sorted = is_column_sorted_with_next_column(&qcxt, keys, key_idx);
-        qcxt.table->is_sorted = is_sorted;
+        query_cxt_t sort_validation_qcxt;
+        bool is_sorted;
+        if (!create_query_context(&c, col_idx, in_length, false, &sort_validation_qcxt))
+            is_sorted = false;
+        else
+            is_sorted = is_column_sorted_with_next_column(&sort_validation_qcxt, keys, key_idx);
+
+        sort_validation_qcxt.table->is_sorted = is_sorted;
     }
 
     return written;
@@ -1326,8 +1332,14 @@ int32_t md_set_column_value_as_constant(mdcursor_t c, col_index_t col_idx, uint3
     if (key_idx != UINT8_MAX)
     {
         assert(keys != NULL);
-        bool is_sorted = is_column_sorted_with_next_column(&qcxt, keys, key_idx);
-        qcxt.table->is_sorted = is_sorted;
+        query_cxt_t sort_validation_qcxt;
+        bool is_sorted;
+        if (!create_query_context(&c, col_idx, in_length, false, &sort_validation_qcxt))
+            is_sorted = false;
+        else
+            is_sorted = is_column_sorted_with_next_column(&sort_validation_qcxt, keys, key_idx);
+
+        sort_validation_qcxt.table->is_sorted = is_sorted;
     }
 
     return written;

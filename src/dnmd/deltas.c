@@ -144,6 +144,43 @@ static bool resolve_token(enc_token_map_t* token_map, mdToken referenced_token, 
     return false;
 }
 
+static bool initialize_list_columns(mdcxt_t* cxt, mdcursor_t c, mdtable_id_t table_id)
+{
+    // Initialize list columns to one-past the end of the target table.
+    // This also works if we have indirection tables as an indirection table
+    // will always have the same number of rows as the table it points to.
+    mdToken endOfTableToken;
+    switch (table_id)
+    {
+    case mdtid_TypeDef:
+        endOfTableToken = TokenFromRid(cxt->tables[mdtid_Field].row_count + 1, CreateTokenType(mdtid_Field));
+        if (!md_set_column_value_as_token(c, mdtTypeDef_FieldList, 1, &endOfTableToken))
+            return false;
+        endOfTableToken = TokenFromRid(cxt->tables[mdtid_MethodDef].row_count + 1, CreateTokenType(mdtid_MethodDef));
+        if (!md_set_column_value_as_token(c, mdtTypeDef_MethodList, 1, &endOfTableToken))
+            return false;
+        break;
+    case mdtid_MethodDef:
+        endOfTableToken = TokenFromRid(cxt->tables[mdtid_Param].row_count + 1, CreateTokenType(mdtid_Param));
+        if (!md_set_column_value_as_token(c, mdtMethodDef_ParamList, 1, &endOfTableToken))
+            return false;
+        break;
+    case mdtid_PropertyMap:
+        endOfTableToken = TokenFromRid(cxt->tables[mdtid_Property].row_count + 1, CreateTokenType(mdtid_Property));
+        if (!md_set_column_value_as_token(c, mdtPropertyMap_PropertyList, 1, &endOfTableToken))
+            return false;
+        break;
+    case mdtid_EventMap:
+        endOfTableToken = TokenFromRid(cxt->tables[mdtid_Event].row_count + 1, CreateTokenType(mdtid_Event));
+        if (!md_set_column_value_as_token(c, mdtEventMap_EventList, 1, &endOfTableToken))
+            return false;
+        break;
+    default:
+        break;
+    }
+    return true;
+}
+
 static bool process_log(mdcxt_t* cxt, mdcxt_t* delta)
 {
     (void)cxt;
@@ -272,6 +309,11 @@ static bool process_log(mdcxt_t* cxt, mdcxt_t* delta)
                     }
                 }
 
+                // When copying a row, we skip copying over the list columns.
+                // If we're adding a new row, we need to initialize the list columns.
+                if (!initialize_list_columns(cxt, record_to_edit, new_child_table))
+                    return false;
+
                 // Reset the new_parent token as we've now completed that part of the two-part operation.
                 new_parent = mdTokenNil;
                 parent_col = -1;
@@ -303,38 +345,8 @@ static bool process_log(mdcxt_t* cxt, mdcxt_t* delta)
                 
                 // When copying a row, we skip copying over the list columns.
                 // If we're adding a new row, we need to initialize the list columns.
-                // We'll always initialize them to one-past the end of the target table.
-                // This also works if we have indirection tables as an indirection table
-                // will always have the same number of rows as the table it points to.
-                mdToken endOfTableToken;
-                switch (table_id)
-                {
-                    case mdtid_TypeDef:
-                        endOfTableToken = TokenFromRid(cxt->tables[mdtid_Field].row_count + 1, CreateTokenType(mdtid_Field));
-                        if (!md_set_column_value_as_token(record_to_edit, mdtTypeDef_FieldList, 1, &endOfTableToken))
-                            return false;
-                        endOfTableToken = TokenFromRid(cxt->tables[mdtid_MethodDef].row_count + 1, CreateTokenType(mdtid_MethodDef));
-                        if (!md_set_column_value_as_token(record_to_edit, mdtTypeDef_MethodList, 1, &endOfTableToken))
-                            return false;
-                        break;
-                    case mdtid_MethodDef:
-                        endOfTableToken = TokenFromRid(cxt->tables[mdtid_Param].row_count + 1, CreateTokenType(mdtid_Param));
-                        if (!md_set_column_value_as_token(record_to_edit, mdtMethodDef_ParamList, 1, &endOfTableToken))
-                            return false;
-                        break;
-                    case mdtid_PropertyMap:
-                        endOfTableToken = TokenFromRid(cxt->tables[mdtid_Property].row_count + 1, CreateTokenType(mdtid_Property));
-                        if (!md_set_column_value_as_token(record_to_edit, mdtPropertyMap_PropertyList, 1, &endOfTableToken))
-                            return false;
-                        break;
-                    case mdtid_EventMap:
-                        endOfTableToken = TokenFromRid(cxt->tables[mdtid_Event].row_count + 1, CreateTokenType(mdtid_Event));
-                        if (!md_set_column_value_as_token(record_to_edit, mdtEventMap_EventList, 1, &endOfTableToken))
-                            return false;
-                        break;
-                    default:
-                        break;
-                }
+                if (!initialize_list_columns(cxt, record_to_edit, table->table_id))
+                    return false;
             }
 
             if (!copy_cursor(record_to_edit, delta_record))
