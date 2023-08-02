@@ -345,3 +345,18 @@ mdstream_t* get_heap_by_id(mdcxt_t* cxt, mdtcol_t heap_id)
             return NULL;
     }
 }
+
+mdcxt_flag_t get_large_heap_flag(mdtcol_t heap_id)
+{
+    switch (heap_id)
+    {
+    case mdtc_hblob:
+        return mdc_large_blob_heap;
+    case mdtc_hguid:
+        return mdc_large_guid_heap;
+    case mdtc_hstring:
+        return mdc_large_string_heap;
+    default:
+        return 0;
+    }
+}

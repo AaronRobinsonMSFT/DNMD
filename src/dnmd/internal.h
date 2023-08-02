@@ -175,6 +175,7 @@ bool merge_in_delta(mdcxt_t* cxt, mdcxt_t* delta);
 //
 
 mdstream_t* get_heap_by_id(mdcxt_t* cxt, mdtcol_t heap_id);
+mdcxt_flag_t get_large_heap_flag(mdtcol_t heap_id);
 
 // Strings heap, #Strings - II.24.2.3
 bool try_get_string(mdcxt_t* cxt, size_t offset, char const** str);
@@ -323,7 +324,7 @@ bool compress_u32(uint32_t data, uint8_t* compressed, size_t* compressed_len);
 bool create_and_fill_indirect_table(mdcxt_t* cxt, mdtable_id_t original_table, mdtable_id_t indirect_table);
 bool allocate_new_table(mdcxt_t* cxt, mdtable_id_t table_id);
 uint8_t* get_writable_table_data(mdtable_t* table, bool make_writable);
-bool initialize_new_table_details(mdtable_id_t id, mdtable_t* table);
+bool initialize_new_table_details(mdcxt_t* cxt, mdtable_id_t id, mdtable_t* table);
 int32_t update_shifted_row_references(mdcursor_t* c, uint32_t count, uint8_t col_index, mdtable_id_t updated_table, uint32_t original_starting_table_index, uint32_t new_starting_table_index);
 bool insert_row_into_table(mdcxt_t* cxt, mdtable_id_t table_id, uint32_t row_index, mdcursor_t* new_row);
 bool append_heap(mdcxt_t* cxt, mdcxt_t* delta, mdtcol_t heap_id);

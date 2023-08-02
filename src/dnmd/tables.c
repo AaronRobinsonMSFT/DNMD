@@ -756,21 +756,25 @@ bool initialize_table_details(
 }
 
 bool initialize_new_table_details(
+    mdcxt_t* cxt,
     mdtable_id_t id,
     mdtable_t* table
 )
 {
-    // Use fake sizes that will ensure we create a table that will not need to be resized later.
-    uint32_t fake_table_row_counts[MDTABLE_MAX_COUNT];
+    // Use the real table row counts to ensure that when saving, we can
+    // directly write out table memory without any required post-processing.
+    uint32_t table_row_counts[MDTABLE_MAX_COUNT];
     for (size_t i = 0; i < MDTABLE_MAX_COUNT; i++)
     {
-        fake_table_row_counts[i] = UINT32_MAX;
+        table_row_counts[i] = cxt->tables[i].row_count;
     }
-    
-    uint8_t fake_heap_sizes = mdc_large_string_heap | mdc_large_guid_heap | mdc_large_blob_heap;
+
+    // Set the new table's row count temporarily to 1 to ensure that we initialize the table.
+    table_row_counts[id] = 1;
+
     if (!initialize_table_details(
-        fake_table_row_counts,
-        fake_heap_sizes,
+        table_row_counts,
+        cxt->context_flags,
         id,
         false,
         table))
