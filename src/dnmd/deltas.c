@@ -143,37 +143,6 @@ static bool resolve_token(enc_token_map_t* token_map, mdToken referenced_token, 
     return false;
 }
 
-static bool set_column_as_end_of_table_cursor(mdcursor_t c, col_index_t col_idx)
-{
-    mdtable_t* table = CursorTable(&c);
-    mdtable_id_t target_table = ExtractTable(table->column_details[col_to_index(col_idx, table)]);
-    mdcursor_t end_of_table = create_cursor(&table->cxt->tables[target_table], table->cxt->tables[target_table].row_count + 1);
-
-    return md_set_column_value_as_cursor(c, col_idx, 1, &end_of_table);
-}
-
-static bool initialize_list_columns(mdcursor_t c)
-{
-    // Initialize list columns to one-past the end of the target table.
-    mdtable_t* table = CursorTable(&c);
-    switch (table->table_id)
-    {
-    case mdtid_TypeDef:
-        return set_column_as_end_of_table_cursor(c, mdtTypeDef_FieldList)
-            && set_column_as_end_of_table_cursor(c, mdtTypeDef_MethodList);
-        break;
-    case mdtid_MethodDef:
-        return set_column_as_end_of_table_cursor(c, mdtMethodDef_ParamList);
-    case mdtid_PropertyMap:
-        return set_column_as_end_of_table_cursor(c, mdtPropertyMap_PropertyList);
-    case mdtid_EventMap:
-        return set_column_as_end_of_table_cursor(c, mdtEventMap_EventList);
-    default:
-        break;
-    }
-    return true;
-}
-
 static bool add_list_target_row(mdcursor_t parent, col_index_t list_col)
 {
     // Get the range of rows already in the parent's child list.
@@ -223,11 +192,8 @@ static bool add_list_target_row(mdcursor_t parent, col_index_t list_col)
         }
     }
 
-    // When copying a row, we skip copying over the list columns.
-    // If we're adding a new row, we need to initialize the list columns.
-    if (!initialize_list_columns(new_child_record))
-        return false;
-
+    // We've added enough information to the new record to make it valid for sorting purposes.
+    // Commit the row add. We'll fill in the rest of the data in the next record in the EncLog.
     md_commit_row_add(new_child_record);
 
     return true;
@@ -368,11 +334,6 @@ static bool process_log(mdcxt_t* cxt, mdcxt_t* delta)
                     return false;
                 
                 if (!md_append_row(cxt, table_id, &record_to_edit))
-                    return false;
-                
-                // When copying a row, we skip copying over the list columns.
-                // If we're adding a new row, we need to initialize the list columns.
-                if (!initialize_list_columns(record_to_edit))
                     return false;
             }
 

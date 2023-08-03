@@ -473,6 +473,97 @@ int32_t update_shifted_row_references(mdcursor_t* c, uint32_t count, uint8_t col
     return count;
 }
 
+static bool col_points_to_list(mdcursor_t* c, col_index_t col_index)
+{
+    assert(c != NULL);
+
+    switch (CursorTable(c)->table_id)
+    {
+    case mdtid_TypeDef:
+        return col_index == mdtTypeDef_FieldList || col_index == mdtTypeDef_MethodList;
+    case mdtid_PropertyMap:
+        return col_index == mdtPropertyMap_PropertyList;
+    case mdtid_EventMap:
+        return col_index == mdtEventMap_EventList;
+    case mdtid_MethodDef:
+        return col_index == mdtMethodDef_ParamList;
+    }
+    return false;
+}
+
+static bool copy_cursor_column(mdcursor_t dest, mdcursor_t src, col_index_t idx)
+{
+    uint32_t column_value;
+    mdtable_t* table = CursorTable(&src);
+    mdtable_t* dest_table = CursorTable(&dest);
+    switch (table->column_details[idx] & mdtc_categorymask)
+    {
+    case mdtc_constant:
+        if (1 != md_get_column_value_as_constant(src, idx, 1, &column_value))
+            return false;
+        break;
+    case mdtc_idx_coded:
+    case mdtc_idx_table:
+        if (1 != md_get_column_value_as_token(src, idx, 1, &column_value))
+            return false;
+        break;
+    case mdtc_idx_heap:
+        if (1 != get_column_value_as_heap_offset(src, idx, 1, &column_value))
+            return false;
+        break;
+    }
+
+    switch (dest_table->column_details[idx] & mdtc_categorymask)
+    {
+    case mdtc_constant:
+        if (1 != md_set_column_value_as_constant(dest, idx, 1, &column_value))
+            return false;
+        break;
+    case mdtc_idx_coded:
+    case mdtc_idx_table:
+        if (1 != md_set_column_value_as_token(dest, idx, 1, &column_value))
+            return false;
+        break;
+    case mdtc_idx_heap:
+        if (1 != set_column_value_as_heap_offset(dest, idx, 1, &column_value))
+            return false;
+        break;
+    }
+    return true;
+}
+
+static bool set_column_as_end_of_table_cursor(mdcursor_t c, col_index_t col_idx)
+{
+    mdtable_t* table = CursorTable(&c);
+    assert((table->column_details[col_to_index(col_idx, table)] & mdtc_categorymask) == mdtc_idx_table);
+    mdtable_id_t target_table = ExtractTable(table->column_details[col_to_index(col_idx, table)]);
+    mdcursor_t end_of_table = create_cursor(&table->cxt->tables[target_table], table->cxt->tables[target_table].row_count + 1);
+
+    return md_set_column_value_as_cursor(c, col_idx, 1, &end_of_table);
+}
+
+static bool initialize_list_columns(mdcursor_t c)
+{
+    // Initialize list columns to one-past the end of the target table.
+    mdtable_t* table = CursorTable(&c);
+    switch (table->table_id)
+    {
+    case mdtid_TypeDef:
+        return set_column_as_end_of_table_cursor(c, mdtTypeDef_FieldList)
+            && set_column_as_end_of_table_cursor(c, mdtTypeDef_MethodList);
+        break;
+    case mdtid_MethodDef:
+        return set_column_as_end_of_table_cursor(c, mdtMethodDef_ParamList);
+    case mdtid_PropertyMap:
+        return set_column_as_end_of_table_cursor(c, mdtPropertyMap_PropertyList);
+    case mdtid_EventMap:
+        return set_column_as_end_of_table_cursor(c, mdtEventMap_EventList);
+    default:
+        break;
+    }
+    return true;
+}
+
 static bool insert_row_cursor_relative(mdcursor_t row, int32_t offset, mdcursor_t* new_list_target, mdcursor_t* new_row)
 {
     // If this is not an append scenario,
@@ -567,8 +658,7 @@ static bool insert_row_cursor_relative(mdcursor_t row, int32_t offset, mdcursor_
                     return false;
                 
                 // Clear the target column of the table index, so that we can set it to the new indirection table.
-                *parent_col &= ~mdtc_timask;
-                *parent_col |= InsertTable(indirect_table_maybe);
+                *parent_col = (*parent_col & ~mdtc_timask) | InsertTable(indirect_table_maybe);
             }
           
             // Insert a row into the indirection table where a new row was requested, so any list columns that should include this
@@ -590,9 +680,32 @@ static bool insert_row_cursor_relative(mdcursor_t row, int32_t offset, mdcursor_
         }
     }
     
-    bool success = insert_row_into_table(table->cxt, table->table_id, new_row_index, new_row);
+    if (!insert_row_into_table(table->cxt, table->table_id, new_row_index, new_row))
+        return false;
+
     *new_list_target = *new_row;
-    return success;
+
+    // Now that we have this row, we need to initialize the list columns to the correct values that represent a zero-length list.
+    // If we've inserted a row at the end of the table, we'll initalize the columns to the end-of-table cursor.
+    // If we've inserted a row in the middle of the table, we'll copy the next row's list column values.
+    mdcursor_t next_row = *new_row;
+    if (!md_cursor_next(&next_row) || CursorEnd(&next_row))
+    {
+        return initialize_list_columns(*new_row);
+    }
+
+    for (uint8_t i = 0; i < table->column_count; i++)
+    {
+        col_index_t col = index_to_col(i, table->table_id);
+        if (col_points_to_list(&next_row, col))
+        {
+            if (!copy_cursor_column(*new_row, next_row, col))
+                return false;
+        }
+    }
+
+    *new_list_target = *new_row;
+    return true;
 }
 
 bool md_insert_row_before(mdcursor_t row, mdcursor_t* new_list_target, mdcursor_t* new_row)
@@ -622,63 +735,13 @@ bool md_append_row(mdhandle_t handle, mdtable_id_t table_id, mdcursor_t* new_row
             return false;
     }
 
-    return insert_row_into_table(cxt, table->table_id, table->cxt != NULL ? table->row_count + 1 : 1, new_row);
-}
+    if (!insert_row_into_table(cxt, table->table_id, table->cxt != NULL ? table->row_count + 1 : 1, new_row))
+        return false;
 
-static bool col_points_to_list(mdcursor_t* c, col_index_t col_index)
-{
-    assert(c != NULL);
+    // Initialize the list columns for the new row at the end of the table.
+    if (!initialize_list_columns(*new_row))
+       return false;
 
-    switch (CursorTable(c)->table_id)
-    {
-        case mdtid_TypeDef:
-            return col_index == mdtTypeDef_FieldList || col_index == mdtTypeDef_MethodList;
-        case mdtid_PropertyMap:
-            return col_index == mdtPropertyMap_PropertyList;
-        case mdtid_EventMap:
-            return col_index == mdtEventMap_EventList;
-        case mdtid_MethodDef:
-            return col_index == mdtMethodDef_ParamList;
-    }
-    return false;
-}
-
-static bool copy_cursor_column(mdcursor_t dest, mdtable_t* dest_table, mdcursor_t src, mdtable_t* table, uint8_t idx)
-{
-    uint32_t column_value;
-    switch (table->column_details[idx] & mdtc_categorymask)
-    {
-        case mdtc_constant:
-            if (1 != md_get_column_value_as_constant(src, index_to_col(idx, table->table_id), 1, &column_value))
-                return false;
-            break;
-        case mdtc_idx_coded:
-        case mdtc_idx_table:
-            if (1 != md_get_column_value_as_token(src, index_to_col(idx, table->table_id), 1, &column_value))
-                return false;
-            break;
-        case mdtc_idx_heap:
-            if (1 != get_column_value_as_heap_offset(src, index_to_col(idx, table->table_id), 1, &column_value))
-                return false;
-            break;
-    }
-    
-    switch (dest_table->column_details[idx] & mdtc_categorymask)
-    {
-        case mdtc_constant:
-            if (1 != md_set_column_value_as_constant(dest, index_to_col(idx, dest_table->table_id), 1, &column_value))
-                return false;
-            break;
-        case mdtc_idx_coded:
-        case mdtc_idx_table:
-            if (1 != md_set_column_value_as_token(dest, index_to_col(idx, dest_table->table_id), 1, &column_value))
-                return false;
-            break;
-        case mdtc_idx_heap:
-            if (1 != set_column_value_as_heap_offset(dest, index_to_col(idx, dest_table->table_id), 1, &column_value))
-                return false;
-            break;
-    }
     return true;
 }
 
@@ -700,24 +763,25 @@ bool copy_cursor(mdcursor_t dest, mdcursor_t src)
     {
         key_column_mask |= 1 << key_info[i].index;
 
-        if (!copy_cursor_column(dest, dest_table, src, table, key_info[i].index))
+        if (!copy_cursor_column(dest, src, key_info[i].index))
             return false;
     }
     
 
     for (uint8_t i = 0; i < table->column_count; i++)
     {
+        col_index_t col = index_to_col(i, table->table_id);
         // We don't want to copy over columns that point to lists in other tables.
         // These columns have very particular behavior and are handled separately by
         // direct manipulation in the other operations.
-        if (col_points_to_list(&src, i))
+        if (col_points_to_list(&src, col))
             continue;
 
         // If the column is a key column, then we've already copied it. Skip it here.
         if (key_column_mask & (1 << i))
             continue;
 
-        if (!copy_cursor_column(dest, dest_table, src, table, i))
+        if (!copy_cursor_column(dest, src, col))
             return false;
     }
 
