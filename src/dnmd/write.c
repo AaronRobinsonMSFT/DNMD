@@ -53,7 +53,9 @@ static int32_t set_column_value_as_token_or_cursor(mdcursor_t c, uint32_t col_id
     uint8_t key_count = 0;
     uint8_t key_idx = UINT8_MAX;
     md_key_info const* keys = NULL;
-    if (acxt.table->is_sorted)
+    // If we're editing already-existing rows, then we need to validate that we stay sorted.
+    // If we're in the middle of a row-add operation, we'll wait until the add is complete to validate.
+    if (acxt.table->is_sorted && !acxt.table->is_adding_new_row)
     {
         // If the table is sorted, then we need to validate that we stay sorted.
         // We will not check here if a table goes from unsorted to sorted as that would require
@@ -184,7 +186,9 @@ int32_t md_set_column_value_as_constant(mdcursor_t c, col_index_t col_idx, uint3
     uint8_t key_count = 0;
     uint8_t key_idx = UINT8_MAX;
     md_key_info const* keys = NULL;
-    if (acxt.table->is_sorted)
+    // If we're editing already-existing rows, then we need to validate that we stay sorted.
+    // If we're in the middle of a row-add operation, we'll wait until the add is complete to validate.
+    if (acxt.table->is_sorted && !acxt.table->is_adding_new_row)
     {
         // If the table is sorted, then we need to validate that we stay sorted.
         // We will not check here if a table goes from unsorted to sorted as that would require
@@ -751,23 +755,6 @@ bool copy_cursor(mdcursor_t dest, mdcursor_t src)
     mdtable_t* dest_table = CursorTable(&dest);
     assert(table->column_count == dest_table->column_count);
 
-    md_key_info const* key_info;
-    uint8_t num_keys = get_table_keys(table->table_id, &key_info);
-
-    // Copy key columns first to preserve the sort order of the table.
-    // Not all tables have keys in ascending columns (sometimes a secondary key is in a column before the primary key),
-    // so we go through and copy key columns first and then copy the rest of the columns.
-    // We'll create a mask of the key columns so we can skip them when we copy the rest of the columns.
-    uint8_t key_column_mask = 0;
-    for (uint8_t i = 0; i < num_keys; i++)
-    {
-        key_column_mask |= 1 << key_info[i].index;
-
-        if (!copy_cursor_column(dest, src, key_info[i].index))
-            return false;
-    }
-    
-
     for (uint8_t i = 0; i < table->column_count; i++)
     {
         col_index_t col = index_to_col(i, table->table_id);
@@ -775,10 +762,6 @@ bool copy_cursor(mdcursor_t dest, mdcursor_t src)
         // These columns have very particular behavior and are handled separately by
         // direct manipulation in the other operations.
         if (col_points_to_list(&src, col))
-            continue;
-
-        // If the column is a key column, then we've already copied it. Skip it here.
-        if (key_column_mask & (1 << i))
             continue;
 
         if (!copy_cursor_column(dest, src, col))
