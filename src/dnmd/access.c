@@ -48,26 +48,6 @@ bool create_access_context(mdcursor_t* cursor, col_index_t col_idx, uint32_t row
     return true;
 }
 
-void change_query_context_target_col(access_cxt_t* acxt, col_index_t col_idx)
-{
-    assert(acxt != NULL);
-    uint8_t idx = col_to_index(col_idx, acxt->table);
-    assert(idx < acxt->table->column_count);
-
-
-    int32_t offset_diff = ExtractOffset(acxt->table->column_details[idx]) - ExtractOffset(acxt->col_details);
-
-    acxt->col_details = acxt->table->column_details[idx];
-    acxt->data_len_col = (acxt->col_details & mdtc_b2) ? 2 : 4;
-    acxt->data += offset_diff;
-
-    if (acxt->writable_data != NULL)
-        acxt->writable_data += offset_diff;
-
-    acxt->data_len = acxt->data_len_col;
-    acxt->next_row_stride = acxt->table->row_size_bytes - acxt->data_len_col;
-}
-
 bool read_column_data(access_cxt_t* acxt, uint32_t* data)
 {
     assert(acxt != NULL && data != NULL);
@@ -90,25 +70,6 @@ bool write_column_data(access_cxt_t* acxt, uint32_t data)
     return (acxt->col_details & mdtc_b2)
         ? write_u16(&acxt->writable_data, &acxt->data_len, (uint16_t)data)
         : write_u32(&acxt->writable_data, &acxt->data_len, data);
-}
-
-
-bool prev_row(access_cxt_t* acxt)
-{
-    assert(acxt != NULL);
-    // We will only traverse correctly if we've already read the column in this row.
-    assert(acxt->data_len == 0);
-    // Go back the stride + the length of the column data to get to the end
-    // of the column, and then go back the length of the column data to get
-    // to the start of the column data.
-    uint32_t movement = acxt->next_row_stride + acxt->data_len_col * 2;
-    acxt->data -= movement;
-    if (acxt->writable_data != NULL)
-        acxt->writable_data -= movement;
-
-    // Restore the data length of the column data.
-    acxt->data_len = acxt->data_len_col;
-    return acxt->data > acxt->start;
 }
 
 bool next_row(access_cxt_t* acxt)

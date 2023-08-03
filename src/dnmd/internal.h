@@ -118,7 +118,8 @@ typedef struct _mdtable_t
     uint32_t row_count;
     uint8_t row_size_bytes;
     uint8_t column_count;
-    bool is_sorted;
+    bool is_sorted : 1;
+    bool is_adding_new_row : 1;
     uint8_t table_id;
     struct _mdcxt_t* cxt; // Non-null is indication of complete initialization
     mdtcol_t* column_details;
@@ -352,10 +353,8 @@ typedef struct
 } access_cxt_t;
 
 bool create_access_context(mdcursor_t* cursor, col_index_t col_idx, uint32_t row_count, bool make_writable, access_cxt_t* acxt);
-void change_query_context_target_col(access_cxt_t* acxt, col_index_t col_idx);
 bool read_column_data(access_cxt_t* acxt, uint32_t* data);
 bool write_column_data(access_cxt_t* acxt, uint32_t data);
-bool prev_row(access_cxt_t* acxt);
 bool next_row(access_cxt_t* acxt);
 
 // Internal functions used to read/write columns with minimal validation.

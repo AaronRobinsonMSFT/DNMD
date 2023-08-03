@@ -593,7 +593,7 @@ static bool find_row_from_cursor(mdcursor_t begin, col_index_t idx, uint32_t* va
     void const* starting_row = cursor_to_row_bytes(&begin);
     md_bcompare_t cmp_func = fcxt.data_len == 2 ? col_compare_2bytes : col_compare_4bytes;
     // Add +1 for inclusive count - use binary search if sorted, otherwise linear.
-    void const* row_maybe = (table->is_sorted)
+    void const* row_maybe = (table->is_sorted && !table->is_adding_new_row)
         ? md_bsearch(value, starting_row, (table->row_count - first_row) + 1, table->row_size_bytes, cmp_func, &fcxt)
         : md_lsearch(value, starting_row, (table->row_count - first_row) + 1, table->row_size_bytes, cmp_func, &fcxt);
     if (row_maybe == NULL)
@@ -620,7 +620,7 @@ md_range_result_t md_find_range_from_cursor(mdcursor_t begin, col_index_t idx, u
     // If the table isn't sorted, then a range isn't possible.
     mdtable_t* table = CursorTable(&begin);
 
-    if (!table->is_sorted)
+    if (!table->is_sorted || table->is_adding_new_row)
         return MD_RANGE_NOT_SUPPORTED;
         
     md_key_info const* keys;

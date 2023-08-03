@@ -1,49 +1,37 @@
 #include "internal.h"
 
-static bool is_column_sorted_with_next_column(access_cxt_t* acxt, md_key_info const* keys, uint8_t col_key_index)
+static bool is_row_sorted_with_next_row(md_key_info const* keys, uint8_t count_keys, mdtable_id_t table_id, mdcursor_t row, mdcursor_t next_row)
 {
-    // Copy the original context so we can use it to avoid rewinding to the prior row
-    // for each parent key in the worst case (that the new row has a differing primary key)
-    access_cxt_t original_acxt = *acxt;
-    uint32_t raw;
-    bool success = read_column_data(acxt, &raw);
-    assert(success);
-    (void)success;
-
-    // If there's no next row, then we're sorted.
-    if (!next_row(acxt))
-        return true;
-        
-    uint32_t raw_next;
-    success = read_column_data(acxt, &raw_next);
-    assert(success);
-    (void)success;
-
-    bool column_sorted = keys[col_key_index].descending ? (raw >= raw_next) : (raw <= raw_next);
-    if (!column_sorted)
+    // We have a previous row, let's validate that it's sorted.
+    for (uint8_t i = 0; i < count_keys; i++)
     {
-        // If the column isn't sorted, then check if this column isn't the primary key.
-        // If it isn't then check the sorting of the parent keys.
-        // If the parent keys are sorted, then the table is still sorted.
-        for (int16_t parent_key_idx = col_key_index - 1; parent_key_idx >= 0; --parent_key_idx)
-        {
-            access_cxt_t parent_acxt = original_acxt;
-            change_query_context_target_col(&parent_acxt, index_to_col(keys[parent_key_idx].index, parent_acxt.table->table_id));
+        col_index_t key_col = index_to_col(keys[i].index, table_id);
 
-            uint32_t raw_prev_parent_key;
-            if (!read_column_data(&parent_acxt, &raw_prev_parent_key))
-                return -1;
+        access_cxt_t row_acxt;
+        if (!create_access_context(&row, key_col, 1, false, &row_acxt))
+            return false;
 
-            (void)next_row(&parent_acxt); // We know that we will be able to read the next row as we've already read the row previously.
+        // Key columns can only be constant, index into a table, or a coded token index.
+        // Heap offset columns cannot be keys.
+        assert(row_acxt.col_details & (mdtc_constant | mdtc_idx_table | mdtc_idx_coded));
 
-            uint32_t raw_parent_key;
-            if (!read_column_data(&parent_acxt, &raw_parent_key))
-                return -1;
+        access_cxt_t next_acxt;
+        if (!create_access_context(&next_row, key_col, 1, false, &next_acxt))
+            return false;
 
-            column_sorted = keys[parent_key_idx].descending ? (raw_prev_parent_key >= raw_parent_key) : (raw_prev_parent_key <= raw_parent_key);
-        }
+        uint32_t row_value;
+        if (!read_column_data(&row_acxt, &row_value))
+            return false;
+
+        uint32_t next_value;
+        if (!read_column_data(&next_acxt, &next_value))
+            return false;
+
+        bool column_sorted = keys[i].descending ? (row_value >= next_value) : (row_value <= next_value);
+        if (!column_sorted)
+            return false;
     }
-    return column_sorted;
+    return true;
 }
 
 static int32_t set_column_value_as_token_or_cursor(mdcursor_t c, uint32_t col_idx, mdToken* tk, mdcursor_t* cursor, uint32_t in_length)
@@ -62,6 +50,7 @@ static int32_t set_column_value_as_token_or_cursor(mdcursor_t c, uint32_t col_id
     if (!(acxt.col_details & (mdtc_idx_table | mdtc_idx_coded)))
         return -1;
 
+    uint8_t key_count = 0;
     uint8_t key_idx = UINT8_MAX;
     md_key_info const* keys = NULL;
     if (acxt.table->is_sorted)
@@ -69,7 +58,7 @@ static int32_t set_column_value_as_token_or_cursor(mdcursor_t c, uint32_t col_id
         // If the table is sorted, then we need to validate that we stay sorted.
         // We will not check here if a table goes from unsorted to sorted as that would require
         // significantly more work to validate and is not a correctness issue.
-        uint8_t key_count = get_table_keys(acxt.table->table_id, &keys);
+        key_count = get_table_keys(acxt.table->table_id, &keys);
         for (uint8_t i = 0; i < key_count; i++)
         {
             if (keys[i].index == col_to_index(col_idx, acxt.table))
@@ -119,18 +108,21 @@ static int32_t set_column_value_as_token_or_cursor(mdcursor_t c, uint32_t col_id
         // We'll validate against the previous row here and then validate against the next row after we've written all of the columns that we will write.
         if (key_idx != UINT8_MAX)
         {
-            assert(keys != NULL);
-            // If we have a previous row, make sure that we're sorted with respect to the previous row.
-            access_cxt_t prev_row_acxt = acxt;
-            if (prev_row(&prev_row_acxt))
+            assert(keys != NULL && key_idx < key_count);
+            mdcursor_t current_row = c;
+            bool success = md_cursor_move(&current_row, written);
+            assert(success);
+            mdcursor_t prior_row = current_row;
+            if (md_cursor_move(&prior_row, -1) && !CursorNull(&prior_row))
             {
-                bool is_sorted = is_column_sorted_with_next_column(&prev_row_acxt, keys, key_idx);
-                acxt.table->is_sorted = is_sorted;
-
-                // If we're not sorted, then invalidate key_idx to avoid checking if we're sorted for future row writes.
-                // We won't go from unsorted to sorted.
-                if (!is_sorted)
+                // If we have a prior row, then we need to check if we're sorted with respect to it.
+                if (!is_row_sorted_with_next_row(keys, key_count, acxt.table->table_id, prior_row, current_row))
+                {
+                    // If we're not sorted, then invalidate key_idx to avoid checking if we're sorted for future row writes.
+                    // We won't go from unsorted to sorted.
+                    acxt.table->is_sorted = false;
                     key_idx = UINT8_MAX;
+                }
             }
         }
 
@@ -140,15 +132,22 @@ static int32_t set_column_value_as_token_or_cursor(mdcursor_t c, uint32_t col_id
     // Validate that the last row we wrote is sorted with respect to any following rows.
     if (key_idx != UINT8_MAX)
     {
-        assert(keys != NULL);
-        access_cxt_t sort_validation_acxt;
-        bool is_sorted;
-        if (!create_access_context(&c, col_idx, in_length, false, &sort_validation_acxt))
-            is_sorted = false;
-        else
-            is_sorted = is_column_sorted_with_next_column(&sort_validation_acxt, keys, key_idx);
-
-        sort_validation_acxt.table->is_sorted = is_sorted;
+        assert(keys != NULL && key_idx < key_count);
+        mdcursor_t current_row = c;
+        bool success = md_cursor_move(&current_row, written);
+        assert(success);
+        mdcursor_t next_row = current_row;
+        if (md_cursor_move(&next_row, 1) && !CursorEnd(&next_row))
+        {
+            // If we have a prior row, then we need to check if we're sorted with respect to it.
+            if (!is_row_sorted_with_next_row(keys, key_count, acxt.table->table_id, current_row, next_row))
+            {
+                // If we're not sorted, then invalidate key_idx to avoid checking if we're sorted for future row writes.
+                // We won't go from unsorted to sorted.
+                acxt.table->is_sorted = false;
+                key_idx = UINT8_MAX;
+            }
+        }
     }
 
     return written;
@@ -182,6 +181,7 @@ int32_t md_set_column_value_as_constant(mdcursor_t c, col_index_t col_idx, uint3
     if (!(acxt.col_details & mdtc_constant))
         return -1;
     
+    uint8_t key_count = 0;
     uint8_t key_idx = UINT8_MAX;
     md_key_info const* keys = NULL;
     if (acxt.table->is_sorted)
@@ -189,7 +189,7 @@ int32_t md_set_column_value_as_constant(mdcursor_t c, col_index_t col_idx, uint3
         // If the table is sorted, then we need to validate that we stay sorted.
         // We will not check here if a table goes from unsorted to sorted as that would require
         // significantly more work to validate and is not a correctness issue.
-        uint8_t key_count = get_table_keys(acxt.table->table_id, &keys);
+        key_count = get_table_keys(acxt.table->table_id, &keys);
         for (uint8_t i = 0; i < key_count; i++)
         {
             if (keys[i].index == col_to_index(col_idx, acxt.table))
@@ -210,18 +210,21 @@ int32_t md_set_column_value_as_constant(mdcursor_t c, col_index_t col_idx, uint3
         // We'll validate against the previous row here and then validate against the next row after we've written all of the columns that we will write.
         if (key_idx != UINT8_MAX)
         {
-            assert(keys != NULL);
-            // If we have a previous row, make sure that we're sorted with respect to the previous row.
-            access_cxt_t prev_row_acxt = acxt;
-            if (prev_row(&prev_row_acxt))
+            assert(keys != NULL && key_idx < key_count);
+            mdcursor_t current_row = c;
+            bool success = md_cursor_move(&current_row, written);
+            assert(success);
+            mdcursor_t prior_row = current_row;
+            if (md_cursor_move(&prior_row, -1) && !CursorNull(&prior_row))
             {
-                bool is_sorted = is_column_sorted_with_next_column(&prev_row_acxt, keys, key_idx);
-                acxt.table->is_sorted = is_sorted;
-
-                // If we're not sorted, then invalidate key_idx to avoid checking if we're sorted for future row writes.
-                // We won't go from unsorted to sorted.
-                if (!is_sorted)
+                // If we have a prior row, then we need to check if we're sorted with respect to it.
+                if (!is_row_sorted_with_next_row(keys, key_count, acxt.table->table_id, prior_row, current_row))
+                {
+                    // If we're not sorted, then invalidate key_idx to avoid checking if we're sorted for future row writes.
+                    // We won't go from unsorted to sorted.
+                    acxt.table->is_sorted = false;
                     key_idx = UINT8_MAX;
+                }
             }
         }
 
@@ -231,15 +234,22 @@ int32_t md_set_column_value_as_constant(mdcursor_t c, col_index_t col_idx, uint3
     // Validate that the last row we wrote is sorted with respect to any following rows.
     if (key_idx != UINT8_MAX)
     {
-        assert(keys != NULL);
-        access_cxt_t sort_validation_acxt;
-        bool is_sorted;
-        if (!create_access_context(&c, col_idx, in_length, false, &sort_validation_acxt))
-            is_sorted = false;
-        else
-            is_sorted = is_column_sorted_with_next_column(&sort_validation_acxt, keys, key_idx);
-
-        sort_validation_acxt.table->is_sorted = is_sorted;
+        assert(keys != NULL && key_idx < key_count);
+        mdcursor_t current_row = c;
+        bool success = md_cursor_move(&current_row, written);
+        assert(success);
+        mdcursor_t next_row = current_row;
+        if (md_cursor_move(&next_row, 1) && !CursorEnd(&next_row))
+        {
+            // If we have a prior row, then we need to check if we're sorted with respect to it.
+            if (!is_row_sorted_with_next_row(keys, key_count, acxt.table->table_id, current_row, next_row))
+            {
+                // If we're not sorted, then invalidate key_idx to avoid checking if we're sorted for future row writes.
+                // We won't go from unsorted to sorted.
+                acxt.table->is_sorted = false;
+                key_idx = UINT8_MAX;
+            }
+        }
     }
 
     return written;
@@ -574,6 +584,8 @@ static bool insert_row_cursor_relative(mdcursor_t row, int32_t offset, mdcursor_
             if (1 != md_set_column_value_as_cursor(*new_list_target, index_to_col(0, indirect_table_maybe), 1, new_row))
                 return false;
 
+            md_commit_row_add(*new_list_target);
+
             return true;
         }
     }
@@ -710,4 +722,43 @@ bool copy_cursor(mdcursor_t dest, mdcursor_t src)
     }
 
     return true;
+}
+
+static bool validate_row_sorted_within_table(mdcursor_t row)
+{
+    mdtable_t* table = CursorTable(&row);
+    md_key_info* keys;
+    uint8_t count_keys = get_table_keys(table->table_id, &keys);
+    assert(count_keys != 0); // We should only ever have a sorted table for a table with keys.
+
+    mdcursor_t prior_row = row;
+    if (md_cursor_move(&prior_row, -1) && !CursorNull(&prior_row))
+    {
+        if (!is_row_sorted_with_next_row(keys, count_keys, table->table_id, prior_row, row))
+            return false;
+    }
+    mdcursor_t next_row = row;
+    if (!md_cursor_next(&next_row) && !CursorEnd(&next_row))
+    {
+        if (!is_row_sorted_with_next_row(keys, count_keys, table->table_id, row, next_row))
+            return false;
+    }
+
+    return true;
+}
+
+void md_commit_row_add(mdcursor_t row)
+{
+    mdtable_t* table = CursorTable(&row);
+    assert(table->is_adding_new_row);
+
+    // If the table was previously sorted,
+    // validate that the current row is sorted with respect to the prior and following rows.
+    if (table->is_sorted)
+    {
+        table->is_sorted = validate_row_sorted_within_table(row);
+    }
+
+
+    table->is_adding_new_row = false;
 }

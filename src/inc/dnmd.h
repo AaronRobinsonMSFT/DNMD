@@ -485,19 +485,25 @@ int32_t md_set_column_value_as_guid(mdcursor_t c, col_index_t col_idx, uint32_t 
 int32_t md_set_column_value_as_userstring(mdcursor_t c, col_index_t col_idx, uint32_t in_length, char16_t const** userstring);
 
 // Create a new row before the row specified by the cursor.
+// The table is treated as unsorted until md_commit_row_add is called after all columns have been set on the new row.
 // @param row The cursor to the row before which the new row will be inserted.
 // @param new_list_target If the row is inserted into a list, this will be the cursor that should be set on the parent's list pointer
 // @param new_row The cursor that should be used to set new data on the newly created row.
 bool md_insert_row_before(mdcursor_t row, mdcursor_t* new_list_target, mdcursor_t* new_row);
 
 // Create a new row after the row specified by the cursor.
+// The table is treated as unsorted until md_commit_row_add is called after all columns have been set on the new row.
 // @param row The cursor to the row after which the new row will be inserted.
 // @param new_list_target If the row is inserted into a list, this will be the cursor that should be set on the parent's list pointer
 // @param new_row The cursor that should be used to set new data on the newly created row.
 bool md_insert_row_after(mdcursor_t row, mdcursor_t* new_list_target, mdcursor_t* new_row);
 
 // Create a new row at the end of the specified table.
+// The table is treated as unsorted until md_commit_row_add is called after all columns have been set on the new row.
 bool md_append_row(mdhandle_t handle, mdtable_id_t table_id, mdcursor_t* new_row);
+
+// Finish the process of adding a row to the cursor's table.
+void md_commit_row_add(mdcursor_t row);
 
 // Add a user string to the #US heap.
 mduserstringcursor_t md_add_userstring_to_heap(mdhandle_t handle, char16_t const* userstring);

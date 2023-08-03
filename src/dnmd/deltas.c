@@ -228,6 +228,8 @@ static bool add_list_target_row(mdcursor_t parent, col_index_t list_col)
     if (!initialize_list_columns(new_child_record))
         return false;
 
+    md_commit_row_add(new_child_record);
+
     return true;
 }
 
@@ -377,6 +379,10 @@ static bool process_log(mdcxt_t* cxt, mdcxt_t* delta)
             if (!copy_cursor(record_to_edit, delta_record))
                 return false;
             
+            if (!edit_record)
+            {
+                md_commit_row_add(record_to_edit);
+            }
             // TODO: Write to the ENC Log in cxt to record the change.
             break;
         }
@@ -401,7 +407,6 @@ bool merge_in_delta(mdcxt_t* cxt, mdcxt_t* delta)
         return false;
     }
 
-    // TODO: Validate EnC Generations
     mdcursor_t base_module = create_cursor(&cxt->tables[mdtid_Module], 1);
     mdcursor_t delta_module = create_cursor(&delta->tables[mdtid_Module], 1);
 

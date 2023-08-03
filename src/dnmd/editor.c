@@ -405,6 +405,11 @@ bool insert_row_into_table(mdcxt_t* cxt, mdtable_id_t table_id, uint32_t row_ind
     mdtable_editor_t* target_table_editor = &editor->tables[table_id];
     assert(target_table_editor->table->cxt != NULL); // The table should exist in the image before a row is added to it.
 
+    // We do not support adding multiple rows to a table at once. One row must be fully added before another is added.
+    if (target_table_editor->table->is_adding_new_row)
+        return false;
+
+    // We can either insert a row in the middle of a table or directly after the end of the table.
     if (target_table_editor->table->row_count < (row_index - 1))
         return false;
     
@@ -434,6 +439,9 @@ bool insert_row_into_table(mdcxt_t* cxt, mdtable_id_t table_id, uint32_t row_ind
     }
     else
     {
+        // Clear the new row.
+        memset(target_table_editor->data.ptr + next_row_start_offset, 0, target_table_editor->table->row_size_bytes);
+
         // If we're appending to the end of a table, we only need to adjust referencing tables to ensure they can reference this row.
         for (mdtable_id_t i = mdtid_First; i < mdtid_End; i++)
         {
@@ -449,6 +457,7 @@ bool insert_row_into_table(mdcxt_t* cxt, mdtable_id_t table_id, uint32_t row_ind
 
     target_table_editor->table->data.size += target_table_editor->table->row_size_bytes;
     target_table_editor->table->row_count++;
+    target_table_editor->table->is_adding_new_row = true;
 
     *new_row = create_cursor(target_table_editor->table, row_index);
     return true;
