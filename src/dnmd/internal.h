@@ -274,7 +274,8 @@ bool consume_table_rows(mdtable_t* table, uint8_t const** data, size_t* data_len
 
 // Get whether or not the column in the table points into an indirect table
 bool table_is_indirect_table(mdtable_id_t table_id);
-
+// Get the indirection table for a given table
+mdtable_id_t get_corresponding_indirection_table(mdtable_id_t table_id);
 
 // Cursor manipulation
 

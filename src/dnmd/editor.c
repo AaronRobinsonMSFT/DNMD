@@ -74,10 +74,9 @@ bool create_and_fill_indirect_table(mdcxt_t* cxt, mdtable_id_t original_table, m
     if (editor == NULL)
         return false;
 
-    // If the indirection table already exists, then we're done.
+    // We should only call into here if we don't already have an indirection table.
     mdtable_t* target_table = editor->tables[indirect_table].table;
-    if (target_table->cxt != NULL)
-        return true;
+    assert(target_table->cxt == NULL);
 
     initialize_new_table_details(cxt, indirect_table, target_table);
     target_table->cxt = editor->cxt;

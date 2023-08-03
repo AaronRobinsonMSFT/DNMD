@@ -70,11 +70,9 @@ static bool initialize_token_map(mdtable_t* map, enc_token_map_t* token_map)
         // Deltas produced by CoreCLR, CLR, and ILASM will have this bit set. Roslyn does not utilize this bit.
         // Strip this high bit if it is set. We don't need it.
         mdtable_id_t table_id = ExtractTokenType(tk) & 0x7F;
-        
-        // This token points to a record that may not be a physical token in the image.
-        // Strip off this bit.
-        if (table_id & 0x80)
-            table_id = table_id & 0x7F;
+
+        if (table_id < mdtid_First || table_id >= mdtid_End)
+            return false;
 
         if (token_map->map_cur_by_table[table_id].count == (uint32_t)(-1))
         {
@@ -98,11 +96,11 @@ static bool initialize_token_map(mdtable_t* map, enc_token_map_t* token_map)
     return true;
 }
 
-static bool resolve_token(enc_token_map_t* token_map, mdToken referenced_token, mdcxt_t* delta_image, mdcursor_t* row_in_delta)
+static bool resolve_token(enc_token_map_t* token_map, mdToken referenced_token, mdhandle_t delta_image, mdcursor_t* row_in_delta)
 {
     mdtable_id_t type = ExtractTokenType(referenced_token);
 
-    if (type >= mdtid_End)
+    if (type < mdtid_First || type >= mdtid_End)
         return false;
 
     uint32_t rid = RidFromToken(referenced_token);
@@ -145,52 +143,9 @@ static bool resolve_token(enc_token_map_t* token_map, mdToken referenced_token, 
 
 static bool add_list_target_row(mdcursor_t parent, col_index_t list_col)
 {
-    // Get the range of rows already in the parent's child list.
-    // If we have an indirection table already, we will get back a range in the indirection table here.
-    mdcursor_t existing_range;
-    uint32_t count;
-    if (!md_get_column_value_as_range(parent, list_col, &existing_range, &count))
-        return false;
-
-    mdtable_t* parent_table = CursorTable(&parent);
-    mdcxt_t* cxt = parent_table->cxt;
-
-    mdtable_id_t new_child_table = ExtractTable(parent_table->column_details[col_to_index(list_col, parent_table)]);
-    if (table_is_indirect_table(new_child_table))
-    {
-       // If the target table is an indirection table, we need to get the table it points to, as that's where the real content goes.
-        assert(cxt->tables[new_child_table].column_count == 1 && (cxt->tables[new_child_table].column_details[0] & mdtc_idx_table) == mdtc_idx_table);
-        new_child_table = ExtractTable(cxt->tables[new_child_table].column_details[0]);
-    }
-
     mdcursor_t new_child_record;
-    if (CursorTable(&parent)->cxt->tables[new_child_table].cxt == NULL)
-    {
-        // If we don't have a table to add the row to, create one.
-        if (!md_append_row(cxt, new_child_table, &new_child_record))
-            return false;
-    }
-    else
-    {
-        // Move the cursor just past the end of the range. We'll insert a row at the end of the range.
-        if (!md_cursor_move(&existing_range, count))
-            return false;
-
-        mdcursor_t new_list_item;
-        // Otherwise, insert the row at the correct offset.
-        // This will create an indirection table if necessary.
-        if (!md_insert_row_before(existing_range, &new_list_item, &new_child_record))
-            return false;
-
-        // If we had to insert a row and the this is the first member for the parent,
-        // then we need to update the list column on the parent.
-        // Otherwise this entry will be associated with the previous entry in the parent table.
-        if (count == 0)
-        {
-            if (1 != md_set_column_value_as_cursor(parent, list_col, 1, &new_list_item))
-                return false;
-        }
-    }
+    if (!md_add_new_row_to_list(parent, list_col, &new_child_record))
+        return false;
 
     // We've added enough information to the new record to make it valid for sorting purposes.
     // Commit the row add. We'll fill in the rest of the data in the next record in the EncLog.

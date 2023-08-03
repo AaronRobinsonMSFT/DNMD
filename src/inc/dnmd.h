@@ -484,23 +484,29 @@ int32_t md_set_column_value_as_blob(mdcursor_t c, col_index_t col_idx, uint32_t 
 int32_t md_set_column_value_as_guid(mdcursor_t c, col_index_t col_idx, uint32_t in_length, md_guid_t const* guid);
 int32_t md_set_column_value_as_userstring(mdcursor_t c, col_index_t col_idx, uint32_t in_length, char16_t const** userstring);
 
-// Create a new row before the row specified by the cursor.
+// Create a new row logically before the row specified by the cursor.
+// If the given row is in a table that is a target of a list column, this function will return false.
+// Only md_add_row_to_list can be used to add rows to a table that is a target of a list column.
 // The table is treated as unsorted until md_commit_row_add is called after all columns have been set on the new row.
-// @param row The cursor to the row before which the new row will be inserted.
-// @param new_list_target If the row is inserted into a list, this will be the cursor that should be set on the parent's list pointer
-// @param new_row The cursor that should be used to set new data on the newly created row.
-bool md_insert_row_before(mdcursor_t row, mdcursor_t* new_list_target, mdcursor_t* new_row);
+bool md_insert_row_before(mdcursor_t row, mdcursor_t* new_row);
 
 // Create a new row after the row specified by the cursor.
+// If the given row is in a table that is a target of a list column, this function will return false.
+// Only md_add_row_to_list can be used to add rows to a table that is a target of a list column.
 // The table is treated as unsorted until md_commit_row_add is called after all columns have been set on the new row.
-// @param row The cursor to the row after which the new row will be inserted.
-// @param new_list_target If the row is inserted into a list, this will be the cursor that should be set on the parent's list pointer
-// @param new_row The cursor that should be used to set new data on the newly created row.
-bool md_insert_row_after(mdcursor_t row, mdcursor_t* new_list_target, mdcursor_t* new_row);
+bool md_insert_row_after(mdcursor_t row, mdcursor_t* new_row);
 
 // Create a new row at the end of the specified table.
+// If the given row is in a table that is a target of a list column, this function will return false.
+// Only md_add_row_to_list can be used to add rows to a table that is a target of a list column.
 // The table is treated as unsorted until md_commit_row_add is called after all columns have been set on the new row.
 bool md_append_row(mdhandle_t handle, mdtable_id_t table_id, mdcursor_t* new_row);
+
+// Creates a new row in the list for the given cursor specified by the given column.
+// This method accounts for any indirection tables that may need to be created or maintained to ensure that
+// the structure of the list is maintained without moving tokens.
+// The table that new_child_row points to is treated as unsorted until md_commit_row_add is called after all columns have been set on the new row.
+bool md_add_new_row_to_list(mdcursor_t list_owner, col_index_t list_col, mdcursor_t* new_row);
 
 // Finish the process of adding a row to the cursor's table.
 void md_commit_row_add(mdcursor_t row);

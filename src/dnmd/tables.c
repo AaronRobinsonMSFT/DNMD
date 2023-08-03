@@ -761,6 +761,7 @@ bool initialize_new_table_details(
     mdtable_t* table
 )
 {
+    assert(table->cxt == NULL);
     // Use the real table row counts to ensure that when saving, we can
     // directly write out table memory without any required post-processing.
     uint32_t table_row_counts[MDTABLE_MAX_COUNT];
@@ -813,5 +814,24 @@ bool table_is_indirect_table(mdtable_id_t table_id)
             return true;
         default:
             return false;
+    }
+}
+
+mdtable_id_t get_corresponding_indirection_table(mdtable_id_t table_id)
+{
+    switch (table_id)
+    {
+    case mdtid_Field:
+        return mdtid_FieldPtr;
+    case mdtid_MethodDef:
+        return mdtid_MethodPtr;
+    case mdtid_Param:
+        return mdtid_ParamPtr;
+    case mdtid_Event:
+        return mdtid_EventPtr;
+    case mdtid_Property:
+        return mdtid_PropertyPtr;
+    default:
+        return mdtid_Unused;
     }
 }

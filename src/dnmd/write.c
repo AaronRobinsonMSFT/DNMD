@@ -568,19 +568,16 @@ static bool initialize_list_columns(mdcursor_t c)
     return true;
 }
 
-static bool insert_row_cursor_relative(mdcursor_t row, int32_t offset, mdcursor_t* new_list_target, mdcursor_t* new_row)
+static bool insert_row_cursor_relative(mdcursor_t row, int32_t offset, mdcursor_t* new_row)
 {
-    // If this is not an append scenario,
-    // then we need to check if the table is one that has a corresponding indirection table
-    // and create it as we are about to shift rows.
-    // If an indirection table exists, then we can't just insert a row into a table.
-    // We must append the row to the end of the table and then update the indirection table.
-    // Tables that have indirection tables must always be sorted in a very particular way
-    // and shifting tokens in these tables is generally expensive, as they may be referred to
-    // by other data streams like IL method bodies.
-
     mdtable_t* table = CursorTable(&row);
     if (table->cxt == NULL) // We can't turn an insert into a "create table" operation.
+        return false;
+
+    // We don't allow inserting in the middle of tables that have indirection tables.
+    // Inserting into these tables should use md_add_new_row_to_parent_list instead.
+    mdtable_id_t indirect_table_maybe = get_corresponding_indirection_table(table->table_id);
+    if (indirect_table_maybe != mdtid_Unused)
         return false;
 
     // We can't insert a row before the first row of a table.
@@ -590,104 +587,9 @@ static bool insert_row_cursor_relative(mdcursor_t row, int32_t offset, mdcursor_
 
     if (new_row_index > table->row_count + 1)
         return false;
-
-    // If we're inserting a row in the middle of a table, we need to check if the row
-    // is in a table that can be a target of a list column, as we may need to handle indirection tables.
-    if (table_is_indirect_table(table->table_id) || new_row_index <= table->row_count)
-    {
-        // If we are inserting a row into a table that has an indirection table,
-        // then we need to actually insert the row at the end and update the indirection table
-        // at the requested index.
-        // If we are inserting a row into the indirection table, then we need to also add a row
-        // at the end of the table that the indirection table points to and pass that row back
-        // to the caller.
-        // We'll always pass the indirection table row back as new_list_target, and the target
-        // table's new row as new_row.
-        mdtable_id_t indirect_table_maybe;
-        mdtable_id_t parent_table;
-        col_index_t col_to_update;
-        mdtable_id_t target_table;
-        switch (table->table_id)
-        {
-        case mdtid_FieldPtr:
-        case mdtid_Field:
-            indirect_table_maybe = mdtid_FieldPtr;
-            parent_table = mdtid_TypeDef;
-            col_to_update = mdtTypeDef_FieldList;
-            target_table = mdtid_Field;
-            break;
-        case mdtid_MethodPtr:
-        case mdtid_MethodDef:
-            indirect_table_maybe = mdtid_MethodPtr;
-            parent_table = mdtid_TypeDef;
-            col_to_update = mdtTypeDef_MethodList;
-            target_table = mdtid_MethodDef;
-            break;
-        case mdtid_ParamPtr:
-        case mdtid_Param:
-            indirect_table_maybe = mdtid_ParamPtr;
-            parent_table = mdtid_MethodDef;
-            col_to_update = mdtMethodDef_ParamList;
-            target_table = mdtid_Param;
-            break;
-        case mdtid_EventPtr:
-        case mdtid_Event:
-            indirect_table_maybe = mdtid_EventPtr;
-            parent_table = mdtid_EventMap;
-            col_to_update = mdtEventMap_EventList;
-            target_table = mdtid_Event;
-            break;
-        case mdtid_PropertyPtr:
-        case mdtid_Property:
-            indirect_table_maybe = mdtid_PropertyPtr;
-            parent_table = mdtid_PropertyMap;
-            col_to_update = mdtPropertyMap_PropertyList;
-            target_table = mdtid_Property;
-            break;
-        default:
-            indirect_table_maybe = mdtid_Unused;
-            parent_table = mdtid_Unused;
-            target_table = mdtid_Unused;
-            col_to_update = -1;
-            break;
-        }
-        if (indirect_table_maybe != mdtid_Unused)
-        {
-            mdcxt_t* cxt = table->cxt;
-            assert(col_to_update != -1 && parent_table != mdtid_Unused);
-            mdtcol_t* parent_col = &cxt->tables[parent_table].column_details[col_to_update];
-            if (ExtractTable(*parent_col) != indirect_table_maybe)
-            {
-                if (!create_and_fill_indirect_table(cxt, target_table, indirect_table_maybe))
-                    return false;
-                
-                // Clear the target column of the table index, so that we can set it to the new indirection table.
-                *parent_col = (*parent_col & ~mdtc_timask) | InsertTable(indirect_table_maybe);
-            }
-          
-            // Insert a row into the indirection table where a new row was requested, so any list columns that should include this
-            // row will correctly be able to observe the update.
-            if (!insert_row_into_table(cxt, indirect_table_maybe, new_row_index, new_list_target))
-                return false;
-            
-            // Create the new row at the end of the original target table.
-            if (!md_append_row(cxt, target_table, new_row))
-                return false;
-            
-            // Set the indirection table row to point to the new row in the actual target table.
-            if (1 != md_set_column_value_as_cursor(*new_list_target, index_to_col(0, indirect_table_maybe), 1, new_row))
-                return false;
-
-            md_commit_row_add(*new_list_target);
-
-            return true;
-        }
-    }
     
     if (!insert_row_into_table(table->cxt, table->table_id, new_row_index, new_row))
         return false;
-
-    *new_list_target = *new_row;
 
     // Now that we have this row, we need to initialize the list columns to the correct values that represent a zero-length list.
     // If we've inserted a row at the end of the table, we'll initalize the columns to the end-of-table cursor.
@@ -708,24 +610,41 @@ static bool insert_row_cursor_relative(mdcursor_t row, int32_t offset, mdcursor_
         }
     }
 
-    *new_list_target = *new_row;
     return true;
 }
 
-bool md_insert_row_before(mdcursor_t row, mdcursor_t* new_list_target, mdcursor_t* new_row)
+bool md_insert_row_before(mdcursor_t row, mdcursor_t* new_row)
 {
     // Inserting a row before a given cursor means that the new row will point to the same
     // target as the given cursor.
-    return insert_row_cursor_relative(row, 0, new_list_target, new_row);
+    return insert_row_cursor_relative(row, 0, new_row);
 }
 
-bool md_insert_row_after(mdcursor_t row, mdcursor_t* new_list_target, mdcursor_t* new_row)
+bool md_insert_row_after(mdcursor_t row, mdcursor_t* new_row)
 {
-    return insert_row_cursor_relative(row, 1, new_list_target, new_row);
+    return insert_row_cursor_relative(row, 1, new_row);
+}
+
+// Append to the end of the table.
+// The table must already exist.
+static bool append_row(mdtable_t* table, mdcursor_t* new_row)
+{
+    assert(table->cxt != NULL);
+
+    if (!insert_row_into_table(table->cxt, table->table_id, table->row_count + 1, new_row))
+        return false;
+
+    return initialize_list_columns(*new_row);
 }
 
 bool md_append_row(mdhandle_t handle, mdtable_id_t table_id, mdcursor_t* new_row)
 {
+    // We don't allow directly appending to tables that have indirection tables.
+    // Inserting into these tables should use md_add_new_row_to_parent_list instead.
+    mdtable_id_t indirect_table_maybe = get_corresponding_indirection_table(table_id);
+    if (indirect_table_maybe != mdtid_Unused)
+        return false;
+
     mdcxt_t* cxt = extract_mdcxt(handle);
 
     if (table_id < mdtid_First || table_id > mdtid_End)
@@ -735,18 +654,109 @@ bool md_append_row(mdhandle_t handle, mdtable_id_t table_id, mdcursor_t* new_row
 
     if (table->cxt == NULL)
     {
+        // We should never be allocating a new indirection table through md_append_row.
+        // We should be allocating it in md_add_new_row_to_parent_table when necessary.
+        assert(!table_is_indirect_table(table_id));
         if (!allocate_new_table(cxt, table_id))
             return false;
     }
 
-    if (!insert_row_into_table(cxt, table->table_id, table->cxt != NULL ? table->row_count + 1 : 1, new_row))
-        return false;
+    return append_row(table, new_row);
+}
 
-    // Initialize the list columns for the new row at the end of the table.
-    if (!initialize_list_columns(*new_row))
+bool md_add_new_row_to_list(mdcursor_t list_owner, col_index_t list_col, mdcursor_t* new_row)
+{
+    if (!col_points_to_list(&list_owner, list_col))
        return false;
 
-    return true;
+    // Get the range of rows already in the parent's child list.
+    // If we have an indirection table already, we will get back a range in the indirection table here.
+    mdcursor_t existing_range;
+    uint32_t count;
+    if (!md_get_column_value_as_range(list_owner, list_col, &existing_range, &count))
+        return false;
+
+    if (CursorTable(&existing_range)->cxt == NULL)
+    {
+        // If we don't have a table to add the row to, create one.
+        if (!allocate_new_table(CursorTable(&list_owner)->cxt, CursorTable(&existing_range)->table_id))
+            return false;
+        
+        // Now that we have a table, we recreate the "existing range" cursor as the one-past-the-end cursor
+        // This allows us to use the remaining logic unchanged.
+        existing_range = create_cursor(CursorTable(&existing_range), 1);
+    }
+
+    mdcursor_t row_after_range = existing_range;
+    // Move the cursor just past the end of the range. We'll insert a row at the end of the range.
+    if (!md_cursor_move(&row_after_range, count))
+        return false;
+
+    mdcursor_t target_row;
+    // If the range is in an indirection table, we'll normalize our insert to the actual target table.
+    if (!md_resolve_indirect_cursor(row_after_range, &target_row))
+        return false;
+
+    if (CursorTable(&row_after_range) != CursorTable(&target_row))
+    {
+        // In this case, we resolved the indirect cursor, so we must have an indirection table.
+        // We need to append to the target table and then insert a new row in the requested place into the indirection table.
+        if (!append_row(CursorTable(&target_row), new_row))
+            return false;
+
+        mdcursor_t new_indirection_row;
+        if (!md_insert_row_before(row_after_range, &new_indirection_row))
+            return false;
+
+        if (!md_set_column_value_as_cursor(new_indirection_row, index_to_col(0, CursorTable(&row_after_range)->table_id), 1, new_row))
+            return false;
+
+        if (count == 0)
+        {
+            // If our original count was zero, then this is the first element in the list for this parent.
+            // We need to update the parent's row column to point to the newly inserted row.
+            // Otherwise, this element would be associated with the entry before the parent row.
+            if (!md_set_column_value_as_cursor(list_owner, list_col, 1, &new_indirection_row))
+                return false;
+        }
+
+        md_commit_row_add(new_indirection_row);
+        return true;
+    }
+    else if (CursorEnd(&row_after_range))
+    {
+        // In this case, we don't have an indirection table
+        // and we don't need to create one as we're inserting a row at the end of the table.
+        if (!append_row(CursorTable(&row_after_range), new_row))
+            return false;
+
+        if (count == 0)
+        {
+            // If our original count was zero, then this is the first element in the list for this parent.
+            // We need to update the parent's row column to point to the newly inserted row.
+            // Otherwise, this element would be associated with the entry before the parent row.
+            if (!md_set_column_value_as_cursor(list_owner, list_col, 1, new_row))
+                return false;
+        }
+        return true;
+    }
+
+    // In this case, we don't have an indirection table.
+    // We need to create one since the target column is a list column.
+    mdtable_t* target_table = CursorTable(&target_row);
+    mdtable_id_t indirect_table = get_corresponding_indirection_table(target_table->table_id);
+    assert(indirect_table != mdtid_Unused);
+
+    if (!create_and_fill_indirect_table(target_table->cxt, target_table->table_id, indirect_table))
+        return false;
+
+    mdtcol_t* list_col_details = &CursorTable(&list_owner)->column_details[col_to_index(list_col, CursorTable(&list_owner))];
+    // Clear the target column of the table index, so that we can set it to the new indirection table.
+    *list_col_details = (*list_col_details & ~mdtc_timask) | InsertTable(indirect_table);
+
+    // Now that we have created an indirection table, we can insert the row into it.
+    // We need to re-do all of the work that we've already done, so just call back into ourselves now that we have the indirection table.
+    return md_add_new_row_to_list(list_owner, list_col, new_row);
 }
 
 bool copy_cursor(mdcursor_t dest, mdcursor_t src)

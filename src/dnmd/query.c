@@ -179,6 +179,16 @@ static int32_t get_column_value_as_token_or_cursor(mdcursor_t* c, uint32_t col_i
             // indicate "none" or point 1 past the end.
             if (table_row > table->row_count + 1)
                 return -1;
+            
+            // Sometimes we can get an index into a table is 0 or 1 past the end
+            // of a table that does not exist. In that case, our table object here
+            // will be completely uninitialized. Set the table id so we can do operations
+            // that need a table id, like creating the table or getting a token.
+            if (table->table_id == 0 && table_id != 0)
+            {
+                assert(table_row == 0 || table_row == 1);
+                table->table_id = table_id;
+            }
 
             assert(cursor != NULL);
             cursor[read_in] = create_cursor(table, table_row);
@@ -916,5 +926,16 @@ bool md_resolve_indirect_cursor(mdcursor_t c, mdcursor_t* target)
         return true;
     }
     col_index_t col_idx = index_to_col(0, table->table_id);
+
+    // If the cursor points to the end of the indirection table (just after the last row),
+    // then we'll manually resolve it to the end of the target table.
+    if (CursorEnd(&c))
+    {
+        mdtable_id_t tgt_table_id = ExtractTable(table->column_details[col_idx]);
+        mdtable_t* tgt_table = type_to_table(table->cxt, tgt_table_id);
+        *target = create_cursor(tgt_table, tgt_table->row_count + 1);
+        return true;
+    }
+
     return 1 == md_get_column_value_as_cursor(c, col_idx, 1, target);
 }
