@@ -284,29 +284,29 @@ mdtable_id_t get_corresponding_indirection_table(mdtable_id_t table_id);
 // Limited validation is done for the arguments.
 mdcursor_t create_cursor(mdtable_t* table, uint32_t row);
 
-static mdtable_t* CursorTable(mdcursor_t* c)
+inline mdtable_t* CursorTable(mdcursor_t* c)
 {
     assert(c != NULL);
     return (mdtable_t*)c->_reserved1;
 }
 
-static uint32_t CursorRow(mdcursor_t* c)
+inline uint32_t CursorRow(mdcursor_t* c)
 {
     assert(c != NULL);
     return RidFromToken(c->_reserved2);
 }
 
-static bool CursorNull(mdcursor_t* c)
+inline bool CursorNull(mdcursor_t* c)
 {
     return CursorRow(c) == 0;
 }
 
-static bool CursorEnd(mdcursor_t* c)
+inline bool CursorEnd(mdcursor_t* c)
 {
     return (CursorTable(c)->row_count + 1) == CursorRow(c);
 }
 
-static uint8_t col_to_index(col_index_t col_idx, mdtable_t const* table)
+inline uint8_t col_to_index(col_index_t col_idx, mdtable_t const* table)
 {
     assert(table != NULL);
     uint32_t idx = (uint32_t)col_idx;
@@ -324,7 +324,7 @@ static uint8_t col_to_index(col_index_t col_idx, mdtable_t const* table)
     return (uint8_t)idx;
 }
 
-static col_index_t index_to_col(uint8_t idx, mdtable_id_t table_id)
+inline col_index_t index_to_col(uint8_t idx, mdtable_id_t table_id)
 {
 #ifdef DEBUG_TABLE_COLUMN_LOOKUP
     return (col_index_t)((table_id << 8) | idx);
