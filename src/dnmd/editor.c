@@ -83,17 +83,15 @@ bool create_and_fill_indirect_table(mdcxt_t* cxt, mdtable_id_t original_table, m
     // Assert that the indirection table has exactly one column that points back at the original table.
     // The width can be either a short or wide column.
     assert(target_table->column_count == 1 && (target_table->column_details[0] & ~mdtc_widthmask) == (InsertTable(original_table) | mdtc_idx_table));
+
     // If we're allocating an indirection table, then we're about to add new rows to the original table.
     // Allocate more space than we need for the rows we're copying over to be able to handle adding new rows.
     size_t allocation_space = target_table->row_size_bytes * editor->tables[original_table].table->row_count * 2;
     void* mem = alloc_mdmem(editor->cxt, allocation_space);
     if (mem == NULL)
         return false;
+
     editor->tables[indirect_table].data.ptr = mem;
-
-    if (editor->tables[indirect_table].data.ptr == NULL)
-        return false;
-
     editor->tables[indirect_table].data.size = allocation_space;
     target_table->data.ptr = editor->tables[indirect_table].data.ptr;
     target_table->data.size = target_table->row_size_bytes * editor->tables[original_table].table->row_count;
@@ -430,29 +428,14 @@ bool insert_row_into_table(mdcxt_t* cxt, mdtable_id_t table_id, uint32_t row_ind
             target_table_editor->data.ptr + next_row_start_offset,
             last_row_end_offset - next_row_start_offset);
 
+    }
         // Clear the new row.
         memset(target_table_editor->data.ptr + next_row_start_offset, 0, target_table_editor->table->row_size_bytes);
 
         // Update table references
+    // We may have columns that are pointing to the row just after the end of the table, so we need to do this in all cases,
+    // not just the "in the middle" case.
         update_table_references_for_shifted_rows(editor, table_id, row_index, 1);
-    }
-    else
-    {
-        // Clear the new row.
-        memset(target_table_editor->data.ptr + next_row_start_offset, 0, target_table_editor->table->row_size_bytes);
-
-        // If we're appending to the end of a table, we only need to adjust referencing tables to ensure they can reference this row.
-        for (mdtable_id_t i = mdtid_First; i < mdtid_End; i++)
-        {
-            mdtable_t* table = &editor->cxt->tables[i];
-            if (table->cxt == NULL) // This table is not used in the current image
-                continue;
-
-            // Update all columns in the table that can refer to the updated table
-            // to be the correct width for the updated table's new size.
-            set_column_size_for_max_row_count(editor, table, target_table_editor->table->table_id, mdtc_none, target_table_editor->table->row_count + 1);
-        }
-    }
 
     target_table_editor->table->data.size += target_table_editor->table->row_size_bytes;
     target_table_editor->table->row_count++;

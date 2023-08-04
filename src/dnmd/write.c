@@ -735,8 +735,33 @@ bool md_add_new_row_to_list(mdcursor_t list_owner, col_index_t list_col, mdcurso
             // If our original count was zero, then this is the first element in the list for this parent.
             // We need to update the parent's row column to point to the newly inserted row.
             // Otherwise, this element would be associated with the entry before the parent row.
-            if (!md_set_column_value_as_cursor(list_owner, list_col, 1, new_row))
+            // We also need to traverse all rows before this row that have the current value of this column,
+            // otherwise the list will be inconsistent.
+            mdcursor_t parent_row = list_owner;
+            mdcursor_t current_cursor_value;
+            if (1 != md_get_column_value_as_cursor(list_owner, list_col, 1, &current_cursor_value))
                 return false;
+
+            while (md_cursor_move(&parent_row, -1))
+            {
+                mdcursor_t prev_cursor_value;
+                if (1 != md_get_column_value_as_cursor(parent_row, list_col, 1, &prev_cursor_value))
+                    return false;
+                
+                if (CursorRow(&prev_cursor_value) != CursorRow(&current_cursor_value))
+                {
+                    // We found the last cursor value that doesn't match the current value.
+                    // Go back to it.
+                    md_cursor_next(&parent_row);
+                    break;
+        }
+            }
+
+            for (; CursorRow(&parent_row) <= CursorRow(&list_owner); md_cursor_next(&parent_row))
+            {
+                if (1 != md_set_column_value_as_cursor(parent_row, list_col, 1, new_row))
+                    return false;
+            }
         }
         return true;
     }
