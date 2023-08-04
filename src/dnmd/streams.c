@@ -331,6 +331,7 @@ bool try_get_pdb(mdcxt_t* cxt, md_pdb_t* pdb)
 
 mdstream_t* get_heap_by_id(mdcxt_t* cxt, mdtcol_t heap_id)
 {
+    assert(cxt != NULL);
     switch (heap_id)
     {
         case mdtc_hblob:

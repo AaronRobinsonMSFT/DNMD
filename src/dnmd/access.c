@@ -28,7 +28,9 @@ bool create_access_context(mdcursor_t* cursor, col_index_t col_idx, uint32_t row
         acxt->writable_data = acxt->writable_data + (row * table->row_size_bytes) + offset;
     }
     else
+    {
         acxt->writable_data = NULL;
+    }
     
     acxt->start = acxt->data = table->data.ptr + (row * table->row_size_bytes) + offset;
 

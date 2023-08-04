@@ -2,8 +2,7 @@
 
 static bool append_heaps_from_delta(mdcxt_t* cxt, mdcxt_t* delta)
 {
-    if (delta == NULL)
-        return false;
+    assert(delta != NULL);
     
     if (!append_heap(cxt, delta, mdtc_hstring))
         return false;
@@ -30,23 +29,32 @@ typedef enum
     dops_EventCreate,
 } delta_ops_t;
 
-struct map_table_group_t
+#define NO_TOKENS_IN_GROUP (uint32_t)(-1)
+
+// Tokens in the EncMap table may have the high bit set to indicate that they aren't true token references.
+// Deltas produced by CoreCLR, CLR, and ILASM will have this bit set. Roslyn does not utilize this bit.
+// We'll strip this high bit if it is set since we don't need it.
+#define RemoveRecordBit(x) (x & 0x7fffffff)
+
+typedef struct _map_table_group_t
 {
     mdcursor_t start;
     uint32_t count;
-};
+} map_table_group_t;
 
 typedef struct _enc_token_map_t
 {
-    struct map_table_group_t map_cur_by_table[MDTABLE_MAX_COUNT];
+    map_table_group_t map_cur_by_table[MDTABLE_MAX_COUNT];
 } enc_token_map_t;
 
 static bool initialize_token_map(mdtable_t* map, enc_token_map_t* token_map)
 {
+    assert(map != NULL);
+    assert(token_map != NULL);
     assert(map->table_id == mdtid_ENCMap);
     for (uint32_t i = 0; i < MDTABLE_MAX_COUNT; ++i)
     {
-        token_map->map_cur_by_table[i].count = (uint32_t)(-1);
+        token_map->map_cur_by_table[i].count = NO_TOKENS_IN_GROUP;
     }
 
     // If we don't have any entries in the map table, then we don't have any remapped tokens.
@@ -62,19 +70,17 @@ static bool initialize_token_map(mdtable_t* map, enc_token_map_t* token_map)
     {
         mdToken tk;
         if (1 != md_get_column_value_as_constant(map_cur, mdtENCMap_Token, 1, &tk))
-        {
             return false;
-        }
         
         // Tokens in the EncMap table may have the high bit set to indicate that they aren't true token references.
         // Deltas produced by CoreCLR, CLR, and ILASM will have this bit set. Roslyn does not utilize this bit.
         // Strip this high bit if it is set. We don't need it.
-        mdtable_id_t table_id = ExtractTokenType(tk) & 0x7F;
+        mdtable_id_t table_id = ExtractTokenType(RemoveRecordBit(tk));
 
         if (table_id < mdtid_First || table_id >= mdtid_End)
             return false;
 
-        if (token_map->map_cur_by_table[table_id].count == (uint32_t)(-1))
+        if (token_map->map_cur_by_table[table_id].count == NO_TOKENS_IN_GROUP)
         {
             token_map->map_cur_by_table[table_id].start = map_cur;
             token_map->map_cur_by_table[table_id].count = 1;
@@ -110,34 +116,27 @@ static bool resolve_token(enc_token_map_t* token_map, mdToken referenced_token, 
 
     // If we don't have any EncMap entries for this table,
     // then the token in the EncLog is the token we need to look up in the delta image to get the delta info to apply.
-    if (token_map->map_cur_by_table[type].count == (uint32_t)(-1))
+    if (token_map->map_cur_by_table[type].count == NO_TOKENS_IN_GROUP)
     {
-        if (!md_token_to_cursor(delta_image, referenced_token, row_in_delta))
+        return md_token_to_cursor(delta_image, referenced_token, row_in_delta);
+    }
+
+    mdcursor_t map_record = token_map->map_cur_by_table[type].start;
+    for (uint32_t i = 0; i < token_map->map_cur_by_table[type].count; md_cursor_next(&map_record), i++)
+    {
+        mdToken mappedToken;
+        if (1 != md_get_column_value_as_constant(map_record, mdtENCMap_Token, 1, &mappedToken))
             return false;
-    }
-    else
-    {
-        mdcursor_t map_record = token_map->map_cur_by_table[type].start;
-        for (uint32_t i = 0; i < token_map->map_cur_by_table[type].count; md_cursor_next(&map_record), i++)
-        {
-            mdToken mappedToken;
-            if (1 != md_get_column_value_as_constant(map_record, mdtENCMap_Token, 1, &mappedToken))
-                return false;
-            
-            assert((mdtable_id_t)(ExtractTokenType(mappedToken) & 0x7f) == type);
-            if (RidFromToken(mappedToken) == rid)
-            {
-                if (!md_token_to_cursor(delta_image, TokenFromRid(i + 1, CreateTokenType(type)), row_in_delta))
-                    return false;
-                
-                return true;
-            }
-        }
         
-        // If we have a set of remapped tokens for a table,
-        // we will remap all tokens in the EncLog.
-        return false;
+        assert((mdtable_id_t)ExtractTokenType(RemoveRecordBit(mappedToken)) == type);
+        if (RidFromToken(mappedToken) == rid)
+        {
+            return md_token_to_cursor(delta_image, TokenFromRid(i + 1, CreateTokenType(type)), row_in_delta);
+        }
     }
+    
+    // If we have a set of remapped tokens for a table,
+    // we will remap all tokens in the EncLog.
     return false;
 }
 
@@ -159,7 +158,8 @@ static bool process_log(mdcxt_t* cxt, mdcxt_t* delta)
     // The EncMap table is grouped by token type and sorted by the order of the rows in the tables in the delta.
     mdtable_t* map = &delta->tables[mdtid_ENCMap];
     enc_token_map_t token_map;
-    initialize_token_map(map, &token_map);
+    if (!initialize_token_map(map, &token_map))
+        return false;
 
     mdtable_t* log = &delta->tables[mdtid_ENCLog];
     mdcursor_t log_cur = create_cursor(log, 1);
@@ -177,7 +177,7 @@ static bool process_log(mdcxt_t* cxt, mdcxt_t* delta)
         // Tokens in the EncLog table may have the high bit set to indicate that they aren't true token references.
         // Deltas produced by CoreCLR, CLR, and ILASM will have this bit set. Roslyn does not utilize this bit.
         // Strip this high bit if it is set. We don't need it.
-        tk &= 0x7fffffff;
+        tk = RemoveRecordBit(tk);
 
         switch ((delta_ops_t)op)
         {
@@ -242,7 +242,6 @@ static bool process_log(mdcxt_t* cxt, mdcxt_t* delta)
             if (ExtractTokenType(tk) != mdtid_EventMap)
                 return false;
 
-
             // By the time we're adding a member to a list, the parent should already be in the image.
             mdcursor_t parent;
             if (!md_token_to_cursor(cxt, tk, &parent))
@@ -264,8 +263,10 @@ static bool process_log(mdcxt_t* cxt, mdcxt_t* delta)
             if (rid == 0)
                 return false;
             
+            // Resolve the token in the delta image that has the data that we need to copy to the base image.
             mdcursor_t delta_record;
-            resolve_token(&token_map, tk, delta, &delta_record);
+            if (!resolve_token(&token_map, tk, delta, &delta_record))
+                return false;
             
             // Try resolving the original token to determine what row we're editing.
             // We'll try to look up the row in the base image.
@@ -273,8 +274,6 @@ static bool process_log(mdcxt_t* cxt, mdcxt_t* delta)
             // but instead creating a new row.
             mdcursor_t record_to_edit;
             bool edit_record = md_token_to_cursor(cxt, tk, &record_to_edit);
-
-            mdtable_t* table = &cxt->tables[table_id];
     
             // We can only add rows directly to the end of the table.
             // TODO: In the future, we could be smarter
@@ -285,6 +284,11 @@ static bool process_log(mdcxt_t* cxt, mdcxt_t* delta)
             // this optimization may reduce the need for maintaining a manual sorting above the metadata layer.
             if (!edit_record)
             {
+                mdtable_t* table = &cxt->tables[table_id];
+
+                // If we're adding a row to a table, then the row we're adding must be the next row in the table.
+                // If it's not, then we're missing some row-add operations that should have happened previously.
+                // The ENC Log is invalid.
                 if (table->row_count != (rid - 1))
                     return false;
                 
@@ -296,9 +300,7 @@ static bool process_log(mdcxt_t* cxt, mdcxt_t* delta)
                 return false;
             
             if (!edit_record)
-            {
                 md_commit_row_add(record_to_edit);
-            }
 
             if (last_op == dops_ParamCreate)
             {
@@ -345,21 +347,15 @@ bool merge_in_delta(mdcxt_t* cxt, mdcxt_t* delta)
 
     md_guid_t base_mvid;
     if (1 != md_get_column_value_as_guid(base_module, mdtModule_Mvid, 1, &base_mvid))
-    {
         return false;
-    }
 
     md_guid_t delta_mvid;
     if (1 != md_get_column_value_as_guid(delta_module, mdtModule_Mvid, 1, &delta_mvid))
-    {
         return false;
-    }
 
     // MVIDs must match between base and delta images.
     if (memcmp(&base_mvid, &delta_mvid, sizeof(md_guid_t)) != 0)
-    {
         return false;
-    }
 
     // The EncBaseId of the delta must equal the EncId of the base image.
     // This ensures that we are applying deltas in order.
@@ -385,18 +381,14 @@ bool merge_in_delta(mdcxt_t* cxt, mdcxt_t* delta)
     }
 
     // Now that we've applied the delta,
-    // update our Enc Id to match the delta's Id in preparation for the next delta.
+    // update our Enc IDd to match the delta's ID in preparation for the next delta.
     // We don't want to manipulate the heap sizes, so we'll pull the heap offset directly from the delta and use that
     // in the base image.
     uint32_t new_enc_base_id_offset;
     if (1 != get_column_value_as_heap_offset(delta_module, mdtModule_EncId, 1, &new_enc_base_id_offset))
-    {
         return false;
-    }
     if (1 != set_column_value_as_heap_offset(base_module, mdtModule_EncId, 1, &new_enc_base_id_offset))
-    {
         return false;
-    }
 
     return true;
 }

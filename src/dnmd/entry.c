@@ -270,9 +270,9 @@ bool md_apply_delta(mdhandle_t handle, void const* data, size_t data_len)
     return result;
 }
 
-typedef struct mdmem_t
+typedef struct _mdmem_t
 {
-    struct mdmem_t* next;
+    mdmem_t* next;
     size_t size;
     uint8_t data[];
 } mdmem_t;

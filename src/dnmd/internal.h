@@ -107,7 +107,7 @@ typedef enum
 
 // Macros used to insert/extract the heap type
 #define InsertHeapType(h) ((h) & mdtc_hmask)
-#define ExtractHeapType(h) (((h) & mdtc_hmask))
+#define ExtractHeapType(h) ((h) & mdtc_hmask)
 
 // Forward declare.
 struct _mdcxt_t;
@@ -127,15 +127,15 @@ typedef struct _mdtable_t
 
 typedef mdcdata_t mdstream_t;
 
-struct mdmem_t;
+typedef struct _mdmem_t mdmem_t;
 
-struct mdeditor_t;
+typedef struct _mdeditor_t mdeditor_t;
 
 typedef struct _mdcxt_t
 {
     uint32_t magic; // mdlib magic
     mdcdata_t raw_metadata; // metadata raw bytes
-    struct mdeditor_t* editor; // metadata editor
+    mdeditor_t* editor; // metadata editor
     mdcxt_flag_t context_flags;
 
     // Metadata root details - II.24.2.1
@@ -158,7 +158,7 @@ typedef struct _mdcxt_t
     mdtable_t* tables;
 
     // Additional memory used for dynamic operations
-    struct mdmem_t* mem;
+    mdmem_t* mem;
 } mdcxt_t;
 
 // Extract a context from the mdhandle_t.
@@ -334,13 +334,12 @@ static col_index_t index_to_col(uint8_t idx, mdtable_id_t table_id)
 #endif
 }
 
-
 // Copy data from a cursor to one row to a cursor to another row.
 bool copy_cursor(mdcursor_t dest, mdcursor_t src);
 
 // Raw table data access
 
-typedef struct
+typedef struct _access_cxt_t
 {
     mdtable_t* table;
     mdtcol_t col_details;

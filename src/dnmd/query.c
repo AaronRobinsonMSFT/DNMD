@@ -180,7 +180,7 @@ static int32_t get_column_value_as_token_or_cursor(mdcursor_t* c, uint32_t col_i
             if (table_row > table->row_count + 1)
                 return -1;
             
-            // Sometimes we can get an index into a table is 0 or 1 past the end
+            // Sometimes we can get an index into a table of 0 or 1 past the end
             // of a table that does not exist. In that case, our table object here
             // will be completely uninitialized. Set the table id so we can do operations
             // that need a table id, like creating the table or getting a token.

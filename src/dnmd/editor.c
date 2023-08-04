@@ -13,7 +13,7 @@ typedef struct _md_heap_editor_t
     mdstream_t* stream; // The read-only stream that corresponds to this editor.
 } md_heap_editor_t;
 
-typedef struct mdeditor_t
+typedef struct _mdeditor_t
 {
     mdcxt_t* cxt; // Non-null is indication of complete initialization
 
@@ -305,6 +305,7 @@ static bool set_column_size_for_max_row_count(mdeditor_t* editor, mdtable_t* tab
 
 bool update_table_references_for_shifted_rows(mdeditor_t* editor, mdtable_id_t updated_table, uint32_t changed_row_start, int64_t shift)
 {
+    assert(updated_table != mdtid_Unused);
     // Make sure we aren't shifting into negative row ids or shifting above the max row id. That isn't legal.
     assert(changed_row_start + shift > 0 && changed_row_start + shift < 0x00ffffff);
     for (mdtable_id_t table_id = mdtid_First; table_id < mdtid_End; table_id++)
