@@ -812,7 +812,7 @@ bool copy_cursor(mdcursor_t dest, mdcursor_t src)
 static bool validate_row_sorted_within_table(mdcursor_t row)
 {
     mdtable_t* table = CursorTable(&row);
-    md_key_info* keys;
+    md_key_info const* keys;
     uint8_t count_keys = get_table_keys(table->table_id, &keys);
     assert(count_keys != 0); // We should only ever have a sorted table for a table with keys.
 
