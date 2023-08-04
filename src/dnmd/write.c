@@ -114,6 +114,7 @@ static int32_t set_column_value_as_token_or_cursor(mdcursor_t c, uint32_t col_id
             mdcursor_t current_row = c;
             bool success = md_cursor_move(&current_row, written);
             assert(success);
+            (void)success;
             mdcursor_t prior_row = current_row;
             if (md_cursor_move(&prior_row, -1) && !CursorNull(&prior_row))
             {
@@ -138,6 +139,7 @@ static int32_t set_column_value_as_token_or_cursor(mdcursor_t c, uint32_t col_id
         mdcursor_t current_row = c;
         bool success = md_cursor_move(&current_row, written);
         assert(success);
+        (void)success;
         mdcursor_t next_row = current_row;
         if (md_cursor_move(&next_row, 1) && !CursorEnd(&next_row))
         {
@@ -218,6 +220,7 @@ int32_t md_set_column_value_as_constant(mdcursor_t c, col_index_t col_idx, uint3
             mdcursor_t current_row = c;
             bool success = md_cursor_move(&current_row, written);
             assert(success);
+            (void)success;
             mdcursor_t prior_row = current_row;
             if (md_cursor_move(&prior_row, -1) && !CursorNull(&prior_row))
             {
@@ -242,6 +245,7 @@ int32_t md_set_column_value_as_constant(mdcursor_t c, col_index_t col_idx, uint3
         mdcursor_t current_row = c;
         bool success = md_cursor_move(&current_row, written);
         assert(success);
+        (void)success;
         mdcursor_t next_row = current_row;
         if (md_cursor_move(&next_row, 1) && !CursorEnd(&next_row))
         {
@@ -787,8 +791,7 @@ bool md_add_new_row_to_list(mdcursor_t list_owner, col_index_t list_col, mdcurso
 bool copy_cursor(mdcursor_t dest, mdcursor_t src)
 {
     mdtable_t* table = CursorTable(&src);
-    mdtable_t* dest_table = CursorTable(&dest);
-    assert(table->column_count == dest_table->column_count);
+    assert(table->column_count == CursorTable(&dest)->column_count);
 
     for (uint8_t i = 0; i < table->column_count; i++)
     {
