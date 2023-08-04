@@ -408,6 +408,9 @@ bool initialize_new_table_details(mdcxt_t* cxt, mdtable_id_t id, mdtable_t* tabl
 int32_t update_shifted_row_references(mdcursor_t* c, uint32_t count, uint8_t col_index, mdtable_id_t updated_table, uint32_t original_starting_table_index, uint32_t new_starting_table_index);
 bool insert_row_into_table(mdcxt_t* cxt, mdtable_id_t table_id, uint32_t row_index, mdcursor_t* new_row);
 
+// Sort a row list (like FieldList, MethodList, ParamList, etc.) by the values specified in the given constant column on the target table.
+bool sort_list_by_column(mdcursor_t parent, col_index_t list_col, col_index_t col);
+
 // Add the heap with the specified id from the delta image to the cxt image.
 bool append_heap(mdcxt_t* cxt, mdcxt_t* delta, mdtcol_t heap_id);
 

@@ -163,6 +163,7 @@ static bool process_log(mdcxt_t* cxt, mdcxt_t* delta)
 
     mdtable_t* log = &delta->tables[mdtid_ENCLog];
     mdcursor_t log_cur = create_cursor(log, 1);
+    delta_ops_t last_op = dops_Default;
     for (uint32_t i = 0; i < log->row_count; (void)md_cursor_next(&log_cur), ++i)
     {
         mdToken tk;
@@ -212,7 +213,6 @@ static bool process_log(mdcxt_t* cxt, mdcxt_t* delta)
         {
             if (ExtractTokenType(tk) != mdtid_MethodDef)
                 return false;
-
 
             // By the time we're adding a member to a list, the parent should already be in the image.
             mdcursor_t parent;
@@ -299,6 +299,21 @@ static bool process_log(mdcxt_t* cxt, mdcxt_t* delta)
             {
                 md_commit_row_add(record_to_edit);
             }
+
+            if (last_op == dops_ParamCreate)
+            {
+                // If the last operation we did was a "create parameter" operation,
+                // then we need to ensure that the ParamList is sorted by Sequence.
+                // This ordering is not guaranteed by EnC delta producers,
+                // so we need to enforce it ourselves during delta application.
+                mdcursor_t parent;
+                bool success = md_find_cursor_of_range_element(record_to_edit, &parent);
+                assert(success);
+                (void)success;
+
+                if (!sort_list_by_column(parent, mdtMethodDef_ParamList, mdtParam_Sequence))
+                   return false;
+            }
             // TODO: Write to the ENC Log in cxt to record the change.
             break;
         }
@@ -306,6 +321,8 @@ static bool process_log(mdcxt_t* cxt, mdcxt_t* delta)
             assert(!"Unknown delta operation");
             return false;
         }
+
+        last_op = (delta_ops_t)op;
     }
 
     return true;

@@ -740,7 +740,7 @@ bool md_add_new_row_to_list(mdcursor_t list_owner, col_index_t list_col, mdcurso
             mdcursor_t parent_row = list_owner;
             mdcursor_t current_cursor_value;
             if (1 != md_get_column_value_as_cursor(list_owner, list_col, 1, &current_cursor_value))
-                return false;
+               return false;
 
             while (md_cursor_move(&parent_row, -1))
             {
@@ -754,7 +754,7 @@ bool md_add_new_row_to_list(mdcursor_t list_owner, col_index_t list_col, mdcurso
                     // Go back to it.
                     md_cursor_next(&parent_row);
                     break;
-        }
+                }
             }
 
             for (; CursorRow(&parent_row) <= CursorRow(&list_owner); md_cursor_next(&parent_row))
@@ -843,4 +843,99 @@ void md_commit_row_add(mdcursor_t row)
 
 
     table->is_adding_new_row = false;
+}
+
+bool sort_list_by_column(mdcursor_t parent, col_index_t list_col, col_index_t col)
+{
+    mdcursor_t range;
+    uint32_t count;
+    bool success = md_get_column_value_as_range(parent, list_col, &range, &count);
+    assert(success);
+    (void)success;
+
+    // A one element range is always sorted.
+    if (count == 1)
+        return true;
+
+    void* cursor_order_buffer = malloc((sizeof(mdcursor_t) + sizeof(int32_t)) * count);
+    mdcursor_t* correct_cursor_order = cursor_order_buffer;
+    int32_t* correct_cursor_order_ids = (int32_t*)(((mdcursor_t*)cursor_order_buffer) + count);
+
+    if (correct_cursor_order == NULL)
+        return false;
+
+    memset(correct_cursor_order, 0, sizeof(*correct_cursor_order) * count);
+
+    bool need_to_sort = false;
+    mdcursor_t list_item = range;
+    int32_t next_index = 0;
+    // Gather cursors to all of the rows in the list,
+    // and put them in the order specified by the column.
+    for (uint32_t i = 0; i < count; i++, md_cursor_next(&list_item))
+    {
+        mdcursor_t target;
+        if (!md_resolve_indirect_cursor(list_item, &target))
+            return false;
+
+        uint32_t sequence_number;
+        if (1 != md_get_column_value_as_constant(target, col, 1, &sequence_number))
+        {
+            free(cursor_order_buffer);
+            assert(!"Failed to read constant column from target cursor");
+            return false;
+        }
+
+        assert(CursorNull(&correct_cursor_order[next_index]));
+        correct_cursor_order[next_index] = target;
+        correct_cursor_order_ids[next_index] = sequence_number;
+
+        // Sequence ids need to be in ascending order to be sorted.
+        if (next_index > 0
+            && correct_cursor_order_ids[next_index - 1] > correct_cursor_order_ids[next_index])
+        {
+            need_to_sort = true;
+        }
+
+        ++next_index;
+    }
+
+    // If we are already sorted, we're done.
+    if (!need_to_sort)
+    {
+        free(cursor_order_buffer);
+        return true;
+    }
+
+    // If we don't have an indirection table, we need to create one now.
+    mdtable_t* table = CursorTable(&range);
+    if (!table_is_indirect_table(table->table_id))
+    {
+        mdtable_id_t indirect_table = get_corresponding_indirection_table(table->table_id);
+        assert(indirect_table != mdtid_Unused);
+
+        if (!create_and_fill_indirect_table(table->cxt, table->table_id, indirect_table))
+        {
+            free(cursor_order_buffer);
+            assert(!"Failed to create indirection table");
+            return false;
+        }
+
+        mdtcol_t* list_col_details = &CursorTable(&parent)->column_details[col_to_index(list_col, table)];
+        // Clear the target column of the table index, so that we can set it to the new indirection table.
+        *list_col_details = (*list_col_details & ~mdtc_timask) | InsertTable(indirect_table);
+
+        // Now update c to point to the same row in the new indirection table.
+        range = create_cursor(&table->cxt->tables[indirect_table], CursorRow(&range));
+    }
+
+    col_index_t indirect_col = index_to_col(0, CursorTable(&range)->table_id);
+
+    if (next_index != md_set_column_value_as_cursor(range, indirect_col, (uint32_t)next_index, correct_cursor_order))
+    {
+        free(cursor_order_buffer);
+        return false;
+    }
+
+    free(cursor_order_buffer);
+    return true;
 }

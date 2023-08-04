@@ -429,13 +429,13 @@ bool insert_row_into_table(mdcxt_t* cxt, mdtable_id_t table_id, uint32_t row_ind
             last_row_end_offset - next_row_start_offset);
 
     }
-        // Clear the new row.
-        memset(target_table_editor->data.ptr + next_row_start_offset, 0, target_table_editor->table->row_size_bytes);
+    // Clear the new row.
+    memset(target_table_editor->data.ptr + next_row_start_offset, 0, target_table_editor->table->row_size_bytes);
 
-        // Update table references
+    // Update table references
     // We may have columns that are pointing to the row just after the end of the table, so we need to do this in all cases,
     // not just the "in the middle" case.
-        update_table_references_for_shifted_rows(editor, table_id, row_index, 1);
+    update_table_references_for_shifted_rows(editor, table_id, row_index, 1);
 
     target_table_editor->table->data.size += target_table_editor->table->row_size_bytes;
     target_table_editor->table->row_count++;
