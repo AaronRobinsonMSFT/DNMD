@@ -230,8 +230,10 @@ static bool set_column_size_for_max_row_count(mdeditor_t* editor, mdtable_t* tab
         {
             bool composed = compose_coded_index(TokenFromRid(initial_row_count, CreateTokenType(updated_table)), col_details, &initial_max_column_value);
             assert(composed);
+            (void)composed;
             composed = compose_coded_index(TokenFromRid(new_max_row_count, CreateTokenType(updated_table)), col_details, &new_max_column_value);
             assert(composed);
+            (void)composed;
         }
         else if ((col_details & (mdtc_idx_heap)) == mdtc_idx_heap && ExtractHeapType(col_details) == updated_heap)
         {
