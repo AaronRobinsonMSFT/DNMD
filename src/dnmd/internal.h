@@ -284,29 +284,35 @@ mdtable_id_t get_corresponding_indirection_table(mdtable_id_t table_id);
 // Limited validation is done for the arguments.
 mdcursor_t create_cursor(mdtable_t* table, uint32_t row);
 
-inline mdtable_t* CursorTable(mdcursor_t* c)
+// We declare these functions as static so they can be included in each translation unit.
+// Some units may not use them, so we ignore the unused function warning.
+#ifdef __GNUC__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-function"
+#endif
+static mdtable_t* CursorTable(mdcursor_t* c)
 {
     assert(c != NULL);
     return (mdtable_t*)c->_reserved1;
 }
 
-inline uint32_t CursorRow(mdcursor_t* c)
+static uint32_t CursorRow(mdcursor_t* c)
 {
     assert(c != NULL);
     return RidFromToken(c->_reserved2);
 }
 
-inline bool CursorNull(mdcursor_t* c)
+static bool CursorNull(mdcursor_t* c)
 {
     return CursorRow(c) == 0;
 }
 
-inline bool CursorEnd(mdcursor_t* c)
+static bool CursorEnd(mdcursor_t* c)
 {
     return (CursorTable(c)->row_count + 1) == CursorRow(c);
 }
 
-inline uint8_t col_to_index(col_index_t col_idx, mdtable_t const* table)
+static uint8_t col_to_index(col_index_t col_idx, mdtable_t const* table)
 {
     assert(table != NULL);
     uint32_t idx = (uint32_t)col_idx;
@@ -324,7 +330,7 @@ inline uint8_t col_to_index(col_index_t col_idx, mdtable_t const* table)
     return (uint8_t)idx;
 }
 
-inline col_index_t index_to_col(uint8_t idx, mdtable_id_t table_id)
+static col_index_t index_to_col(uint8_t idx, mdtable_id_t table_id)
 {
 #ifdef DEBUG_TABLE_COLUMN_LOOKUP
     return (col_index_t)((table_id << 8) | idx);
@@ -333,6 +339,9 @@ inline col_index_t index_to_col(uint8_t idx, mdtable_id_t table_id)
     return (col_index_t)idx;
 #endif
 }
+#ifdef __GNUC__
+#pragma GCC diagnostic pop
+#endif
 
 // Copy data from a cursor to one row to a cursor to another row.
 bool copy_cursor(mdcursor_t dest, mdcursor_t src);
