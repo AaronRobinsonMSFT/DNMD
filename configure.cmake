@@ -9,7 +9,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 include(CheckCCompilerFlag)
-
+include(CheckSymbolExists)
 include(CheckCXXCompilerFlag)
 
 #
@@ -56,3 +56,12 @@ endif()
 # Agnostic compiler/platform settings
 #
 add_compile_definitions(__STDC_WANT_LIB_EXT1__=1) # https://en.cppreference.com/w/c/error#Bounds_checking
+
+list(APPEND CMAKE_REQUIRED_DEFINITIONS __STDC_WANT_LIB_EXT1__)
+
+if (CMAKE_GENERATOR MATCHES "Visual Studio")
+  # The VS generator for CMake doesn't work with check_symbol_exists, so we'll record the results manually.
+  set(C_HAS_QSORT_S 1 CACHE INTERNAL "Have symbol qsort_s")
+else()
+  check_symbol_exists(qsort_s stdlib.h C_HAS_QSORT_S)
+endif()

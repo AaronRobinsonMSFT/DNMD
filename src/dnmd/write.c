@@ -848,6 +848,92 @@ void md_commit_row_add(mdcursor_t row)
     table->is_adding_new_row = false;
 }
 
+static void swap(uint8_t* base, size_t left, size_t right, rsize_t size)
+{
+    uint8_t* p_left = base + (left * size);
+    uint8_t* p_right = base + (right * size);
+    if (left != right)
+    {
+        while (size--)
+        {
+            char const tmp = *p_left;
+            *p_left++ = *p_right;
+            *p_right++ = tmp;
+        }
+    }
+}
+
+#ifndef C_HAS_QSORT_S
+// Implement our own copy of qsort_s for platforms that don't have it.
+// MSVC provides an implementation, but not all platforms do.
+static void qsort_s(
+    void* base,
+    rsize_t count,
+    rsize_t size,
+    int (*comp)(void const*, void const*, void*),
+    void* context)
+{
+    rsize_t left, right, last, i;
+
+    for (;;)
+    {
+        // if less than two elements you're done.
+        if (left >= right)
+            return;
+
+        // Assert that we now have valid indices.
+        assert(left >= 0 && left < count);
+        assert(right >= 0 && right < count);
+
+        // The mid-element is the pivot, move it to the left.
+        swap(base, left, (left + right) / 2, size);
+        last = left;
+
+        // move everything that is smaller than the pivot to the left.
+        for (i = left + 1; i <= right; i++)
+        {
+            if (comp(((uint8_t*)base) + (i * size), ((uint8_t*)base) + (left * size), context) < 0)
+            {
+                swap(base, i, ++last, size);
+            }
+        }
+
+        // Put the pivot to the point where it is in between smaller and larger elements.
+        swap(base, left, last, size);
+
+        // Sort each partition.
+        size_t left_last = last - 1;
+        size_t right_first = last + 1;
+        if (left_last - left < right - right_first)
+        {   // Left partition is smaller, sort it recursively
+            qsort_s(((uint8_t*)base) + (left * size), left_last - left + 1, size, comp, context);
+            // Loop to sort the right (bigger) partition
+            left = right_first;
+            continue;
+        }
+        else
+        {   // Right partition is smaller, sort it recursively
+            qsort_s(((uint8_t*)base) + (right_first * size), right - right_first + 1, size, comp, context);
+            // Loop to sort the left (bigger) partition
+            right = left_last;
+            continue;
+        }
+    }
+}
+#endif
+
+static int compare_by_column(mdcursor_t const* left, mdcursor_t const* right, col_index_t const* col)
+{
+    uint32_t left_val, right_val;
+    if (1 != md_get_column_value_as_constant(*left, *col, 1, &left_val))
+        return -1;
+    
+    if (1 != md_get_column_value_as_constant(*right, *col, 1, &right_val))
+        return -1;
+    
+    return (int)left_val - (int)right_val;
+}
+
 bool sort_list_by_column(mdcursor_t parent, col_index_t list_col, col_index_t col)
 {
     mdcursor_t range;
@@ -908,6 +994,9 @@ bool sort_list_by_column(mdcursor_t parent, col_index_t list_col, col_index_t co
         free(cursor_order_buffer);
         return true;
     }
+
+    // Sort the list of the cursors by their column value.
+    qsort_s(correct_cursor_order, count, sizeof(*correct_cursor_order), compare_by_column, &col);
 
     // If we don't have an indirection table, we need to create one now.
     mdtable_t* table = CursorTable(&range);

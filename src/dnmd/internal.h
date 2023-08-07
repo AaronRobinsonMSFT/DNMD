@@ -9,6 +9,8 @@
 #include <corhdr.h>
 #include <dnmd.h>
 
+#include "configure.h"
+
 // Implementations for missing bounds checking APIs.
 // See https://en.cppreference.com/w/c/error#Bounds_checking
 #if !defined(__STDC_LIB_EXT1__) && !defined(BUILD_WINDOWS)

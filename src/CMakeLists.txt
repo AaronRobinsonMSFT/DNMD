@@ -3,6 +3,9 @@ include(../configure.cmake)
 
 include_directories(BEFORE ./inc)
 
+configure_file(inc/internal/configure.h.in ${CMAKE_CURRENT_BINARY_DIR}/inc/configure.h)
+include_directories($<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/inc>)
+
 add_subdirectory(dnmd/)
 add_subdirectory(interfaces/)
 add_subdirectory(mddump/)
