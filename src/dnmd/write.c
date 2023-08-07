@@ -922,13 +922,16 @@ static void qsort_s(
 }
 #endif
 
-static int compare_by_column(mdcursor_t const* left, mdcursor_t const* right, col_index_t const* col)
+static int compare_by_column(void const* left, void const* right, void const* col)
 {
+    mdcursor_t left_cursor = *(mdcursor_t*)left;
+    mdcursor_t right_cursor = *(mdcursor_t*)right;
+    col_index_t col_index = *(col_index_t*)col;
     uint32_t left_val, right_val;
-    if (1 != md_get_column_value_as_constant(*left, *col, 1, &left_val))
+    if (1 != md_get_column_value_as_constant(left_cursor, col_index, 1, &left_val))
         return -1;
     
-    if (1 != md_get_column_value_as_constant(*right, *col, 1, &right_val))
+    if (1 != md_get_column_value_as_constant(right_cursor, col_index, 1, &right_val))
         return -1;
     
     return (int)left_val - (int)right_val;
