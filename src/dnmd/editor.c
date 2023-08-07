@@ -312,7 +312,7 @@ static bool set_column_size_for_max_row_count(mdeditor_t* editor, mdtable_t* tab
     return true;
 }
 
-bool update_table_references_for_shifted_rows(mdeditor_t* editor, mdtable_id_t updated_table, uint32_t changed_row_start, int64_t shift)
+static bool update_table_references_for_shifted_rows(mdeditor_t* editor, mdtable_id_t updated_table, uint32_t changed_row_start, int64_t shift)
 {
     assert(updated_table != mdtid_Unused);
     // Make sure we aren't shifting into negative row ids or shifting above the max row id. That isn't legal.
@@ -325,7 +325,8 @@ bool update_table_references_for_shifted_rows(mdeditor_t* editor, mdtable_id_t u
 
         // Update all columns in the table that can refer to the updated table
         // to be the correct width for the updated table's new size.
-        set_column_size_for_max_row_count(editor, table, updated_table, mdtc_none, (uint32_t)(table->row_count + shift));
+        if (!set_column_size_for_max_row_count(editor, table, updated_table, mdtc_none, (uint32_t)(table->row_count + shift)))
+            return false;
 
         for (uint8_t i = 0; i < table->column_count; i++)
         {
@@ -447,7 +448,8 @@ bool insert_row_into_table(mdcxt_t* cxt, mdtable_id_t table_id, uint32_t row_ind
     // Update table references
     // We may have columns that are pointing to the row just after the end of the table, so we need to do this in all cases,
     // not just the "in the middle" case.
-    update_table_references_for_shifted_rows(editor, table_id, row_index, 1);
+    if (!update_table_references_for_shifted_rows(editor, table_id, row_index, 1))
+        return false;
 
     target_table_editor->table->data.size += target_table_editor->table->row_size_bytes;
     target_table_editor->table->row_count++;
@@ -532,7 +534,8 @@ static bool reserve_heap_space(mdeditor_t* editor, uint32_t space_size, mdtcol_t
 
         // Update all columns in the table that can refer to the updated heap
         // to be the correct width for the updated heap's new size.
-        set_column_size_for_max_row_count(editor, table, mdtid_Unused, heap_id, new_heap_size / index_scale);
+        if (!set_column_size_for_max_row_count(editor, table, mdtid_Unused, heap_id, new_heap_size / index_scale))
+            return false;
     }
 
     // Now that the new heap size can be referenced, let's update the heap size.
