@@ -31,7 +31,7 @@ typedef enum
 
 #define NO_TOKENS_IN_GROUP (uint32_t)(-1)
 
-// Tokens in the EncMap table may have the high bit set to indicate that they aren't true token references.
+// Tokens in the EncMap and EncLog tables may have the high bit set to indicate that they aren't true token references.
 // Deltas produced by CoreCLR, CLR, and ILASM will have this bit set. Roslyn does not utilize this bit.
 // We'll strip this high bit if it is set since we don't need it.
 #define RemoveRecordBit(x) (x & 0x7fffffff)
@@ -72,9 +72,6 @@ static bool initialize_token_map(mdtable_t* map, enc_token_map_t* token_map)
         if (1 != md_get_column_value_as_constant(map_cur, mdtENCMap_Token, 1, &tk))
             return false;
         
-        // Tokens in the EncMap table may have the high bit set to indicate that they aren't true token references.
-        // Deltas produced by CoreCLR, CLR, and ILASM will have this bit set. Roslyn does not utilize this bit.
-        // Strip this high bit if it is set. We don't need it.
         mdtable_id_t table_id = ExtractTokenType(RemoveRecordBit(tk));
 
         if (table_id < mdtid_First || table_id >= mdtid_End)
@@ -174,9 +171,6 @@ static bool process_log(mdcxt_t* cxt, mdcxt_t* delta)
             return false;
         }
 
-        // Tokens in the EncLog table may have the high bit set to indicate that they aren't true token references.
-        // Deltas produced by CoreCLR, CLR, and ILASM will have this bit set. Roslyn does not utilize this bit.
-        // Strip this high bit if it is set. We don't need it.
         tk = RemoveRecordBit(tk);
 
         switch ((delta_ops_t)op)

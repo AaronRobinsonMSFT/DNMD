@@ -78,7 +78,9 @@ bool create_and_fill_indirect_table(mdcxt_t* cxt, mdtable_id_t original_table, m
     mdtable_t* target_table = editor->tables[indirect_table].table;
     assert(target_table->cxt == NULL);
 
-    initialize_new_table_details(cxt, indirect_table, target_table);
+    if (!initialize_new_table_details(cxt, indirect_table, target_table))
+        return false;
+
     target_table->cxt = editor->cxt;
     // Assert that the indirection table has exactly one column that points back at the original table.
     // The width can be either a short or wide column.
@@ -208,10 +210,14 @@ static bool set_column_size_for_max_row_count(mdeditor_t* editor, mdtable_t* tab
         {
             if ((editor->cxt->context_flags & large_heap_flag) == large_heap_flag
                 && new_max_row_count <= UINT16_MAX)
+            {
                 editor->cxt->context_flags &= ~large_heap_flag;
+            }
             else if ((editor->cxt->context_flags & large_heap_flag) == 0
                 && new_max_row_count > UINT16_MAX)
+            {
                 editor->cxt->context_flags |= large_heap_flag;
+            }
         }
     }
 
@@ -246,9 +252,13 @@ static bool set_column_size_for_max_row_count(mdeditor_t* editor, mdtable_t* tab
         }
 
         if ((col_details & mdtc_b2) && new_max_column_value > UINT16_MAX)
+        {
             new_column_details[col_index] = (col_details & ~mdtc_b2) | mdtc_b4;
+        }
         else if ((col_details & mdtc_b4) && new_max_column_value <= UINT16_MAX)
+        {
             new_column_details[col_index] = (col_details & ~mdtc_b4) | mdtc_b2;
+        }
     }
 
     // We want to make sure that we can store as many rows as the current table can in our new allocation.
@@ -272,9 +282,6 @@ static bool set_column_size_for_max_row_count(mdeditor_t* editor, mdtable_t* tab
     if (mem == NULL)
         return false;
     uint8_t* new_data_blob = mem;
-
-    if (new_data_blob == NULL)
-        return false;
 
     // Go through all of the columns of each row and copy them to the new memory for the table
     // in their correct size.
@@ -376,7 +383,9 @@ bool allocate_new_table(mdcxt_t* cxt, mdtable_id_t table_id)
     // We should not be allocating for a newly-initialized table.
     assert(table->cxt == NULL);
 
-    initialize_new_table_details(cxt, table_id, table);
+    if (!initialize_new_table_details(cxt, table_id, table))
+        return false;
+
     table->cxt = cxt;
     // Allocate some memory for the table.
     // The number of rows in this allocation is arbitrary.
@@ -619,8 +628,7 @@ uint32_t add_to_user_string_heap(mdcxt_t* cxt, char16_t const* str)
         }
     }
     
-    
-    uint8_t compressed_length[4];
+    uint8_t compressed_length[sizeof(str_len)];
     size_t compressed_length_size = 0;
     if (!compress_u32(str_len, compressed_length, &compressed_length_size))
         return 0;
