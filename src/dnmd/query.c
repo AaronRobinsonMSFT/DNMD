@@ -455,8 +455,8 @@ typedef int32_t(*md_bcompare_t)(void const* key, void const* row, void*);
 static void const* md_bsearch(
     void const* key,
     void const* base,
-    rsize_t count,
-    rsize_t element_size,
+    size_t count,
+    size_t element_size,
     md_bcompare_t cmp,
     void* cxt)
 {
@@ -488,14 +488,14 @@ static void const* md_bsearch(
 static void const* md_lsearch(
     void const* key,
     void const* base,
-    rsize_t count,
-    rsize_t element_size,
+    size_t count,
+    size_t element_size,
     md_bcompare_t cmp,
     void* cxt)
 {
     assert(key != NULL && base != NULL);
     void const* row = base;
-    for (rsize_t i = 0; i < count; ++i)
+    for (size_t i = 0; i < count; ++i)
     {
         int32_t res = cmp(key, row, cxt);
         if (res == 0)
@@ -701,8 +701,8 @@ static int32_t mdtable_bsearch_closest(
 {
     assert(table != NULL && found_row != NULL);
     void const* base = table->data.ptr;
-    rsize_t count = table->row_count;
-    rsize_t element_size = table->row_size_bytes;
+    size_t count = table->row_count;
+    size_t element_size = table->row_size_bytes;
 
     int32_t res = 0;
     void const* row = base;
