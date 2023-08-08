@@ -848,82 +848,6 @@ void md_commit_row_add(mdcursor_t row)
     table->is_adding_new_row = false;
 }
 
-static void swap_cursor(mdcursor_t* left, mdcursor_t* right)
-{
-    mdcursor_t tmp = *left;
-    *left = *right;
-    *right = tmp;
-}
-
-static void swap_value(int32_t* left, int32_t* right)
-{
-    int32_t tmp = *left;
-    *left = *right;
-    *right = tmp;
-}
-
-// Implement our own copy of qsort_s for platforms that don't have it.
-// MSVC provides an implementation, but not all platforms do.
-static void sort_by_column(
-    mdcursor_t* cursors,
-    int32_t* column_value,
-    size_t count)
-{
-    size_t left = 0;
-    size_t right = count - 1;
-    size_t last, i;
-
-    for (;;)
-    {
-        // if less than two elements you're done.
-        if (left >= right)
-            return;
-
-        // Assert that we now have valid indices.
-        assert(left >= 0 && left < count);
-        assert(right >= 0 && right < count);
-
-        // The mid-element is the pivot, move it to the left.
-        swap_cursor(&cursors[left], &cursors[(left + right) / 2]);
-        swap_value(&column_value[left], &column_value[(left + right) / 2]);
-        last = left;
-
-        // move everything that is smaller than the pivot to the left.
-        for (i = left + 1; i <= right; i++)
-        {
-            if (column_value[i] < column_value[left])
-            {
-                swap_cursor(&cursors[++last], &cursors[i]);
-                swap_value(&column_value[last], &column_value[i]);
-            }
-        }
-
-        // Put the pivot to the point where it is in between smaller and larger elements.
-        swap_cursor(&cursors[left], &cursors[last]);
-        swap_value(&column_value[left], &column_value[last]);
-
-        // Sort each partition.
-        size_t left_last = last - 1;
-        size_t right_first = last + 1;
-        if (left_last - left < right - right_first)
-        {
-            // Left partition is smaller, sort it recursively
-            sort_by_column(&cursors[left], &column_value[left], left_last - left + 1);
-            // Loop to sort the right (bigger) partition
-            left = right_first;
-            continue;
-        }
-        else
-        {
-            // Right partition is smaller, sort it recursively
-            sort_by_column(&cursors[right_first], &column_value[right_first], right - right_first + 1);
-            // Loop to sort the left (bigger) partition
-            right = left_last;
-            continue;
-        }
-    }
-}
-
 bool sort_list_by_column(mdcursor_t parent, col_index_t list_col, col_index_t col)
 {
     mdcursor_t range;
@@ -945,7 +869,7 @@ bool sort_list_by_column(mdcursor_t parent, col_index_t list_col, col_index_t co
 
     memset(correct_cursor_order, 0, sizeof(*correct_cursor_order) * count);
 
-    bool need_to_sort = false;
+    bool need_to_update = false;
     mdcursor_t list_item = range;
     int32_t next_index = 0;
     // Gather cursors to all of the rows in the list,
@@ -972,21 +896,31 @@ bool sort_list_by_column(mdcursor_t parent, col_index_t list_col, col_index_t co
         if (next_index > 0
             && correct_cursor_order_ids[next_index - 1] > correct_cursor_order_ids[next_index])
         {
-            need_to_sort = true;
+            // Do a simple insertion sort as we go.
+            // It's unlikely we'll need to sort,
+            // and even when we do, we'll likely be mostly sorted anyway.
+            for (uint32_t j = next_index - 1; j >= 0; --j)
+            {
+                if (correct_cursor_order_ids[j] > correct_cursor_order_ids[j + 1])
+                {
+                    memmove(&correct_cursor_order[j], &correct_cursor_order[j + 1], sizeof(mdcursor_t) * (next_index - j));
+                    memmove(&correct_cursor_order_ids[j], &correct_cursor_order_ids[j + 1], sizeof(int32_t) * (next_index - j));
+                    correct_cursor_order[j] = target;
+                    correct_cursor_order_ids[j] = sequence_number;
+                }
+            }
+            need_to_update = true;
         }
 
         ++next_index;
     }
 
     // If we are already sorted, we're done.
-    if (!need_to_sort)
+    if (!need_to_update)
     {
         free(cursor_order_buffer);
         return true;
     }
-
-    // Sort the list of the cursors by their column value.
-    sort_by_column(correct_cursor_order, correct_cursor_order_ids, count);
 
     // If we don't have an indirection table, we need to create one now.
     mdtable_t* table = CursorTable(&range);
