@@ -104,7 +104,8 @@ static int32_t set_column_value_as_token_or_cursor(mdcursor_t c, uint32_t col_id
                 return -1;
         }
 
-        write_column_data(&acxt, raw);
+        if (!write_column_data(&acxt, raw))
+            return -1;
 
         // If the column we are writing to is a key of a sorted column, then we need to validate that it is sorted correctly.
         // We'll validate against the previous row here and then validate against the next row after we've written all of the columns that we will write.
@@ -878,7 +879,10 @@ bool sort_list_by_column(mdcursor_t parent, col_index_t list_col, col_index_t co
     {
         mdcursor_t target;
         if (!md_resolve_indirect_cursor(list_item, &target))
+        {
+            free(cursor_order_buffer);
             return false;
+        }
 
         uint32_t sequence_number;
         if (1 != md_get_column_value_as_constant(target, col, 1, &sequence_number))
