@@ -520,6 +520,9 @@ static bool copy_cursor_column(mdcursor_t dest, mdcursor_t src, col_index_t idx)
         if (1 != get_column_value_as_heap_offset(src, idx, 1, &column_value))
             return false;
         break;
+    default:
+        assert(!"Unknown category");
+        return false;
     }
 
     switch (dest_table->column_details[idx] & mdtc_categorymask)
@@ -537,6 +540,9 @@ static bool copy_cursor_column(mdcursor_t dest, mdcursor_t src, col_index_t idx)
         if (1 != set_column_value_as_heap_offset(dest, idx, 1, &column_value))
             return false;
         break;
+    default:
+        assert(!"Unknown category");
+        return false;
     }
     return true;
 }
@@ -845,7 +851,6 @@ void md_commit_row_add(mdcursor_t row)
         table->is_sorted = validate_row_sorted_within_table(row);
     }
 
-
     table->is_adding_new_row = false;
 }
 
@@ -862,13 +867,12 @@ bool sort_list_by_column(mdcursor_t parent, col_index_t list_col, col_index_t co
         return true;
 
     void* cursor_order_buffer = malloc((sizeof(mdcursor_t) + sizeof(int32_t)) * count);
-    mdcursor_t* correct_cursor_order = cursor_order_buffer;
-    int32_t* correct_cursor_order_ids = (int32_t*)(((mdcursor_t*)cursor_order_buffer) + count);
-
-    if (correct_cursor_order == NULL)
+    if (cursor_order_buffer == NULL)
         return false;
 
+    mdcursor_t* correct_cursor_order = cursor_order_buffer;
     memset(correct_cursor_order, 0, sizeof(*correct_cursor_order) * count);
+    int32_t* correct_cursor_order_ids = (int32_t*)(((mdcursor_t*)cursor_order_buffer) + count);
 
     bool need_to_update = false;
     mdcursor_t list_item = range;
