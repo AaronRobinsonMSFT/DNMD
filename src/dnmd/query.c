@@ -585,11 +585,11 @@ static int32_t col_compare_4bytes(void const* key, void const* row, void* cxt)
 typedef int32_t(*md_bcompare_t)(void const* key, void const* row, void*);
 
 // Define all 2 and 4 byte search functions
-#define SEARCH_COMPARE col_compare_2bytes
+#define SEARCH_COMPARE(...) col_compare_2bytes(__VA_ARGS__)
 #define SEARCH_FUNC_NAME(n) n ## _2bytes
 #include "search.template"
 
-#define SEARCH_COMPARE col_compare_4bytes
+#define SEARCH_COMPARE(...) col_compare_4bytes(__VA_ARGS__)
 #define SEARCH_FUNC_NAME(n) n ## _4bytes
 #include "search.template"
 
@@ -657,7 +657,7 @@ md_range_result_t md_find_range_from_cursor(mdcursor_t begin, col_index_t idx, u
     mdtable_t* table = CursorTable(&begin);
     if (!table->is_sorted)
         return MD_RANGE_NOT_SUPPORTED;
-        
+
     md_key_info const* keys;
     uint8_t keys_count = get_table_keys(table->table_id, &keys);
     if (keys_count == 0)
@@ -815,7 +815,7 @@ static bool find_range_element(mdcursor_t element, mdcursor_t* tgt_cursor)
         mdcursor_t indir_row;
         if (!find_row_from_cursor(indir_table_cursor, indir_col, &row, &indir_row))
             return false;
-        
+
         // Now that we've found the indirection cell, we can look in the target table for the
         // element that contains the indirection cell in its range.
         row = CursorRow(&indir_row);

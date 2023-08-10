@@ -3,7 +3,7 @@
 //
 
 #ifndef SEARCH_COMPARE
-#error Must define SEARCH_COMPARE macro
+#error Must define SEARCH_COMPARE() macro
 #endif // SEARCH_COMPARE
 
 #ifndef SEARCH_FUNC_NAME
