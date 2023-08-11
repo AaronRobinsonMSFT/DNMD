@@ -587,11 +587,11 @@ typedef int32_t(*md_bcompare_t)(void const* key, void const* row, void*);
 // Define all 2 and 4 byte search functions
 #define SEARCH_COMPARE(...) col_compare_2bytes(__VA_ARGS__)
 #define SEARCH_FUNC_NAME(n) n ## _2bytes
-#include "search.template"
+#include "search.template.h"
 
 #define SEARCH_COMPARE(...) col_compare_4bytes(__VA_ARGS__)
 #define SEARCH_FUNC_NAME(n) n ## _4bytes
-#include "search.template"
+#include "search.template.h"
 
 static void const* cursor_to_row_bytes(mdcursor_t* c)
 {
