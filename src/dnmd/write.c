@@ -954,6 +954,13 @@ static bool validate_row_sorted_within_table(mdcursor_t row)
 void md_commit_row_add(mdcursor_t row)
 {
     mdtable_t* table = CursorTable(&row);
+
+    // If this method is called with a zero-initialized cursor,
+    // no-op. This helps make the C++ helper md_added_row_t function more easily.
+    // This also allows users to call this method in all cases, even if the row-add fails.
+    if (table == NULL)
+        return;
+
     assert(table->is_adding_new_row);
 
     // If the table was previously sorted,
