@@ -571,6 +571,11 @@ size_t md_get_save_size(mdhandle_t handle)
     return save_size;
 }
 
+static bool advance_output_stream(uint8_t** data, size_t* data_len, size_t b)
+{
+    return advance_stream((uint8_t const**)data, data_len, b);
+}
+
 // II.24.2.2 Stream header
 static bool write_stream_header(char const* name, size_t size, uint32_t** offset_space, uint8_t** buffer, size_t* buffer_len)
 {
@@ -579,7 +584,7 @@ static bool write_stream_header(char const* name, size_t size, uint32_t** offset
 
     *offset_space = (uint32_t*)*buffer;
 
-    if (!advance_stream(buffer, buffer_len, 4) // Offset
+    if (!advance_output_stream(buffer, buffer_len, 4) // Offset
         || !write_u32(buffer, buffer_len, (uint32_t)size)) // Size
     {
         return false;
@@ -590,9 +595,9 @@ static bool write_stream_header(char const* name, size_t size, uint32_t** offset
 
     // Name
     memcpy(*buffer, name, name_len + 1);
-    advance_stream(buffer, buffer_len, name_len + 1);
+    advance_output_stream(buffer, buffer_len, name_len + 1);
     // Pad the name to a 4-byte boundary.
-    advance_stream(buffer, buffer_len, name_buf_len - name_len - 1);
+    advance_output_stream(buffer, buffer_len, name_buf_len - name_len - 1);
 
     return true;
 }
@@ -634,7 +639,7 @@ bool md_save(mdhandle_t handle, uint8_t* buffer, size_t buffer_len, size_t* cons
     memcpy(buffer, cxt->version, version_str_len + 1);
     // Pad the version string to a 4-byte boundary.
     memset(buffer + version_str_len + 1, 0, version_buf_len - version_str_len - 1);
-    advance_stream(&buffer, &remaining_buffer_len, version_buf_len);
+    advance_output_stream(&buffer, &remaining_buffer_len, version_buf_len);
 
     if (!write_u16(&buffer, &remaining_buffer_len, cxt->flags))
         return false;
@@ -755,7 +760,7 @@ bool md_save(mdhandle_t handle, uint8_t* buffer, size_t buffer_len, size_t* cons
             return false;
         memcpy(buffer, cxt->strings_heap.ptr, cxt->strings_heap.size);
         memset((uint8_t*)buffer + cxt->strings_heap.size, 0, string_heap_size - cxt->strings_heap.size);
-        advance_stream(&buffer, &remaining_buffer_len, string_heap_size);
+        advance_output_stream(&buffer, &remaining_buffer_len, string_heap_size);
     }
 
     if (cxt->blob_heap.size != 0)
@@ -765,7 +770,7 @@ bool md_save(mdhandle_t handle, uint8_t* buffer, size_t buffer_len, size_t* cons
         if (remaining_buffer_len < cxt->blob_heap.size)
             return false;
         memcpy(buffer, cxt->blob_heap.ptr, cxt->blob_heap.size);
-        advance_stream(&buffer, &remaining_buffer_len, cxt->blob_heap.size);
+        advance_output_stream(&buffer, &remaining_buffer_len, cxt->blob_heap.size);
     }
 
     if (cxt->guid_heap.size != 0)
@@ -775,7 +780,7 @@ bool md_save(mdhandle_t handle, uint8_t* buffer, size_t buffer_len, size_t* cons
         if (remaining_buffer_len < cxt->guid_heap.size)
             return false;
         memcpy(buffer, cxt->guid_heap.ptr, cxt->guid_heap.size);
-        advance_stream(&buffer, &remaining_buffer_len, cxt->guid_heap.size);
+        advance_output_stream(&buffer, &remaining_buffer_len, cxt->guid_heap.size);
     }
 
     if (cxt->user_string_heap.size != 0)
@@ -785,7 +790,7 @@ bool md_save(mdhandle_t handle, uint8_t* buffer, size_t buffer_len, size_t* cons
         if (remaining_buffer_len < cxt->user_string_heap.size)
             return false;
         memcpy(buffer, cxt->user_string_heap.ptr, cxt->user_string_heap.size);
-        advance_stream(&buffer, &remaining_buffer_len, cxt->user_string_heap.size);
+        advance_output_stream(&buffer, &remaining_buffer_len, cxt->user_string_heap.size);
     }
 
 #ifdef DNMD_PORTABLE_PDB
@@ -796,7 +801,7 @@ bool md_save(mdhandle_t handle, uint8_t* buffer, size_t buffer_len, size_t* cons
         if (remaining_buffer_len < cxt->pdb.size)
             return false;
         memcpy(buffer, cxt->pdb.ptr, cxt->pdb.size);
-        advance_stream(&buffer, &remaining_buffer_len, cxt->pdb.size);
+        advance_output_stream(&buffer, &remaining_buffer_len, cxt->pdb.size);
     }
 #endif // DNMD_PORTABLE_PDB
 
@@ -834,7 +839,7 @@ bool md_save(mdhandle_t handle, uint8_t* buffer, size_t buffer_len, size_t* cons
             {
                 assert (remaining_buffer_len >= cxt->tables[i].data.size);
                 memcpy(buffer, cxt->tables[i].data.ptr, cxt->tables[i].data.size);
-                advance_stream(&buffer, &remaining_buffer_len, cxt->tables[i].data.size);
+                advance_output_stream(&buffer, &remaining_buffer_len, cxt->tables[i].data.size);
             }
         }
     }
