@@ -442,7 +442,9 @@ int32_t md_get_column_value_as_guid(mdcursor_t c, col_index_t col_idx, uint32_t 
 // are in their raw form.
 // Callers should indicate ('true') using the 'values_to_get' collection which columns are desired.
 // Corresponding entries in 'values_raw' will only be set if a 'true' value is set in 'values_to_get'.
-// Note this API was not designed in a performance critical manner.
+// Note this API was not designed in a performance critical manner and should only be used if necessary.
+// The APIs that retrieve specific columns in their respective formatted forms have been designed for performance
+// and should be preferred whenever possible.
 bool md_get_column_values_raw(mdcursor_t c, uint32_t values_length, bool* values_to_get, uint32_t* values_raw);
 
 // Find a row or range of rows where the supplied column has the expected value.
