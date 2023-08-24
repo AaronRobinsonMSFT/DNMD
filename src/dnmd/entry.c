@@ -613,6 +613,8 @@ bool md_write_to_buffer(mdhandle_t handle, uint8_t* buffer, size_t* len)
     size_t image_size = get_image_size(cxt);
     size_t const full_buffer_len = *len;
 
+    // Handle the case where no edits have occurred.
+    // This operation is basically a "copy to new buffer".
     if (cxt->editor == NULL)
     {
         if (buffer == NULL || full_buffer_len < cxt->raw_metadata.size)
