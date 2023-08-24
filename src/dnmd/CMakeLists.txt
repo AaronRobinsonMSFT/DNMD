@@ -21,12 +21,24 @@ add_library(dnmd
   ${SOURCES}
   ${HEADERS}
 )
+add_library(dnmd_pdb
+  STATIC
+  ${SOURCES}
+  ${HEADERS}
+)
+
+target_compile_definitions(dnmd_pdb PUBLIC DNMD_PORTABLE_PDB)
 
 add_library(dnmd::dnmd ALIAS dnmd)
+add_library(dnmd::pdb ALIAS dnmd_pdb)
 
 target_include_directories(dnmd PUBLIC $<INSTALL_INTERFACE:include>)
+target_include_directories(dnmd_pdb PUBLIC $<INSTALL_INTERFACE:include>)
 
 set_target_properties(dnmd PROPERTIES
+  PUBLIC_HEADER "../inc/dnmd.h;../inc/dnmd.hpp")
+
+set_target_properties(dnmd_pdb PROPERTIES
   PUBLIC_HEADER "../inc/dnmd.h;../inc/dnmd.hpp")
 
 install(TARGETS dnmd EXPORT dnmd
@@ -34,5 +46,12 @@ install(TARGETS dnmd EXPORT dnmd
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin)
+  
+install(TARGETS dnmd_pdb EXPORT pdb
+  PUBLIC_HEADER DESTINATION include
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION bin)
 
 install(EXPORT dnmd NAMESPACE dnmd:: FILE dnmdlib.cmake DESTINATION lib/cmake/dnmd)
+install(EXPORT pdb NAMESPACE dnmd:: FILE dnmdpdb.cmake DESTINATION lib/cmake/dnmd)

@@ -7,8 +7,10 @@ add_executable(mddump
 )
 
 target_link_libraries(mddump
-  dnmd::dnmd
+  dnmd::pdb
   dncp::dncp)
+
+target_compile_definitions(mddump PRIVATE DNMD_PORTABLE_PDB)
 
 if(NOT MSVC)
   target_link_libraries(mddump dncp::winhdrs)
