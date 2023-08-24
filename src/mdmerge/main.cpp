@@ -187,10 +187,10 @@ void merge(merge_config_t cfg)
         std::fprintf(stderr, "invalid metadata!\n");
     }
 
-    size_t save_size = md_get_save_size(handle.get());
+    size_t save_size;
+    md_write_to_buffer(handle.get(), nullptr, &save_size);
     malloc_span<uint8_t> out_buffer { (uint8_t*)malloc(save_size), save_size };
-    size_t consumed_size;
-    if (!md_save(handle.get(), out_buffer, out_buffer.size(), &consumed_size))
+    if (!md_write_to_buffer(handle.get(), out_buffer, &save_size))
     {
         std::fprintf(stderr, "Failed to save image.\n");
     }

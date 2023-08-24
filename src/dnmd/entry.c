@@ -530,12 +530,8 @@ static size_t get_table_stream_size(mdcxt_t* cxt)
     return save_size;
 }
 
-size_t md_get_save_size(mdhandle_t handle)
-{
-    mdcxt_t* cxt = extract_mdcxt(handle);
-    if (cxt == NULL)
-        return 0;
-    
+static size_t get_image_size(mdcxt_t* cxt)
+{    
     if (cxt->editor == NULL)
         return cxt->raw_metadata.size;
     
@@ -578,12 +574,14 @@ static bool advance_output_stream(uint8_t** data, size_t* data_len, size_t b)
 }
 
 // II.24.2.2 Stream header
-static bool write_stream_header(char const* name, size_t size, uint32_t** offset_space, uint8_t** buffer, size_t* buffer_len)
+static bool write_stream_header(char const* name, size_t size, mddata_t* offset_space, uint8_t** buffer, size_t* buffer_len)
 {
+    assert(offset_space != NULL);
     size_t name_len = strlen(name);
     size_t name_buf_len = align_to((uint32_t)name_len + 1, 4);
 
-    *offset_space = (uint32_t*)*buffer;
+    offset_space->ptr = *buffer;
+    offset_space->size = 4;
 
     if (!advance_output_stream(buffer, buffer_len, 4) // Offset
         || !write_u32(buffer, buffer_len, (uint32_t)size)) // Size
@@ -603,23 +601,37 @@ static bool write_stream_header(char const* name, size_t size, uint32_t** offset
     return true;
 }
 
-bool md_save(mdhandle_t handle, uint8_t* buffer, size_t buffer_len, size_t* consumed_buffer_len)
+bool md_write_to_buffer(mdhandle_t handle, uint8_t* buffer, size_t* len)
 {
+    if (len == NULL)
+        return false;
+
     mdcxt_t* cxt = extract_mdcxt(handle);
     if (cxt == NULL)
         return false;
 
+    size_t image_size = get_image_size(cxt);
+    size_t const full_buffer_len = *len;
+
     if (cxt->editor == NULL)
     {
-        if (buffer_len < cxt->raw_metadata.size)
+        if (buffer == NULL || full_buffer_len < cxt->raw_metadata.size)
+        {
+            *len = cxt->raw_metadata.size;
             return false;
+        }
         memcpy(buffer, cxt->raw_metadata.ptr, cxt->raw_metadata.size);
         return true;
     }
+    
+    if (buffer == NULL || full_buffer_len < image_size)
+    {
+        *len = image_size;
+        return false;
+    }
 
     uint8_t* const buffer_start = buffer;
-    size_t const full_buffer_len = buffer_len;
-    size_t remaining_buffer_len = buffer_len;
+    size_t remaining_buffer_len = full_buffer_len;
     if (!write_u32(&buffer, &remaining_buffer_len, METADATA_SIG)
         || !write_u16(&buffer, &remaining_buffer_len, cxt->major_ver)
         || !write_u16(&buffer, &remaining_buffer_len, cxt->minor_ver)
@@ -689,25 +701,25 @@ bool md_save(mdhandle_t handle, uint8_t* buffer, size_t buffer_len, size_t* cons
     if (!write_u16(&buffer, &remaining_buffer_len, stream_count))
         return false;
 
-    uint32_t* blob_heap_offset_space = NULL;
-    uint32_t* strings_heap_offset_space = NULL;
-    uint32_t* guid_heap_offset_space = NULL;
-    uint32_t* user_string_heap_offset_space = NULL;
-    uint32_t* tables_heap_offset_space = NULL;
+    mddata_t blob_heap_offset_space = { 0 };
+    mddata_t strings_heap_offset_space = { 0 };
+    mddata_t guid_heap_offset_space = { 0 };
+    mddata_t user_string_heap_offset_space = { 0 };
+    mddata_t tables_heap_offset_space = { 0 };
 #ifdef DNMD_PORTABLE_PDB
-    uint32_t* pdb_offset_space = NULL;
+    mddata_t pdb_offset_space = { 0 };
 #endif
 
     // Write the stream headers.
     if (cxt->context_flags & mdc_minimal_delta)
     {
-        uint32_t* offset_space;
+        mddata_t offset_space;
         if (!write_stream_header("#JTD", 0, &offset_space, &buffer, &remaining_buffer_len))
             return false;
         
         // Set the stream offset to the location of the stream header.
         // There's no content in this stream, but the offset must be valid.
-        *offset_space = (uint32_t)((uint8_t*)offset_space - buffer_start);
+        write_u32(&offset_space.ptr, &offset_space.size, (uint32_t)((uint8_t*)offset_space.ptr - buffer_start));
     }
 
     if (cxt->strings_heap.size != 0)
@@ -754,8 +766,8 @@ bool md_save(mdhandle_t handle, uint8_t* buffer, size_t buffer_len, size_t* cons
     // Write the stream data
     if (cxt->strings_heap.size != 0)
     {
-        assert(strings_heap_offset_space != NULL);
-        *strings_heap_offset_space = (uint32_t)(buffer - buffer_start);
+        assert(strings_heap_offset_space.ptr != NULL && strings_heap_offset_space.size == 4);
+        write_u32(&strings_heap_offset_space.ptr, &strings_heap_offset_space.size, (uint32_t)(buffer - buffer_start));
         uint32_t string_heap_size = align_to((uint32_t)cxt->strings_heap.size, 4);
         if (remaining_buffer_len < string_heap_size)
             return false;
@@ -766,8 +778,8 @@ bool md_save(mdhandle_t handle, uint8_t* buffer, size_t buffer_len, size_t* cons
 
     if (cxt->blob_heap.size != 0)
     {
-        assert(blob_heap_offset_space != NULL);
-        *blob_heap_offset_space = (uint32_t)(buffer - buffer_start);
+        assert(blob_heap_offset_space.ptr != NULL && blob_heap_offset_space.size == 4);
+        write_u32(&blob_heap_offset_space.ptr, &blob_heap_offset_space.size, (uint32_t)(buffer - buffer_start));
         if (remaining_buffer_len < cxt->blob_heap.size)
             return false;
         memcpy(buffer, cxt->blob_heap.ptr, cxt->blob_heap.size);
@@ -776,8 +788,8 @@ bool md_save(mdhandle_t handle, uint8_t* buffer, size_t buffer_len, size_t* cons
 
     if (cxt->guid_heap.size != 0)
     {
-        assert(guid_heap_offset_space != NULL);
-        *guid_heap_offset_space = (uint32_t)(buffer - buffer_start);
+        assert(guid_heap_offset_space.ptr != NULL && guid_heap_offset_space.size == 4);
+        write_u32(&guid_heap_offset_space.ptr, &guid_heap_offset_space.size, (uint32_t)(buffer - buffer_start));
         if (remaining_buffer_len < cxt->guid_heap.size)
             return false;
         memcpy(buffer, cxt->guid_heap.ptr, cxt->guid_heap.size);
@@ -786,8 +798,8 @@ bool md_save(mdhandle_t handle, uint8_t* buffer, size_t buffer_len, size_t* cons
 
     if (cxt->user_string_heap.size != 0)
     {
-        assert(user_string_heap_offset_space != NULL);
-        *user_string_heap_offset_space = (uint32_t)(buffer - buffer_start);
+        assert(user_string_heap_offset_space.ptr != NULL && user_string_heap_offset_space.size == 4);
+        write_u32(&user_string_heap_offset_space.ptr, &user_string_heap_offset_space.size, (uint32_t)(buffer - buffer_start));
         if (remaining_buffer_len < cxt->user_string_heap.size)
             return false;
         memcpy(buffer, cxt->user_string_heap.ptr, cxt->user_string_heap.size);
@@ -797,8 +809,8 @@ bool md_save(mdhandle_t handle, uint8_t* buffer, size_t buffer_len, size_t* cons
 #ifdef DNMD_PORTABLE_PDB
     if (cxt->pdb.size != 0)
     {
-        assert(pdb_offset_space != NULL);
-        *pdb_offset_space = (uint32_t)(buffer - buffer_start);
+        assert(pdb_offset_space.ptr != NULL && pdb_offset_space.size == 4);
+        write_u32(&pdb_offset_space.ptr, &pdb_offset_space.size, (uint32_t)(buffer - buffer_start));
         if (remaining_buffer_len < cxt->pdb.size)
             return false;
         memcpy(buffer, cxt->pdb.ptr, cxt->pdb.size);
@@ -810,8 +822,8 @@ bool md_save(mdhandle_t handle, uint8_t* buffer, size_t buffer_len, size_t* cons
         return false;
 
     // Always write the table stream header. This is required for a valid image.
-    assert(tables_heap_offset_space != NULL);
-    *tables_heap_offset_space = (uint32_t)(buffer - buffer_start);
+    assert(tables_heap_offset_space.ptr != NULL && tables_heap_offset_space.size == 4);
+    write_u32(&tables_heap_offset_space.ptr, &tables_heap_offset_space.size, (uint32_t)(buffer - buffer_start));
     if (!write_u32(&buffer, &remaining_buffer_len, 0) // Reserved
         || !write_u8(&buffer, &remaining_buffer_len, 2) // MajorVersion
         || !write_u8(&buffer, &remaining_buffer_len, 0) // MinorVersion
@@ -845,8 +857,6 @@ bool md_save(mdhandle_t handle, uint8_t* buffer, size_t buffer_len, size_t* cons
         }
     }
 
-    *consumed_buffer_len = (full_buffer_len - remaining_buffer_len);
-
-    assert(*consumed_buffer_len == md_get_save_size(handle));
+    assert(full_buffer_len - remaining_buffer_len == image_size);
     return true;
 }
