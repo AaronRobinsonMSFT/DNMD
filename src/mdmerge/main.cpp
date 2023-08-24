@@ -203,7 +203,7 @@ void merge(merge_config_t cfg)
     std::printf("Wrote out '%s'.\n", cfg.output_path);
 }
 
-static char const* s_usage = "Syntax: mddump [-o <output_path>] [-d <path_to_delta>]* <path ecma-335 data>";
+static char const* s_usage = "Syntax: mdmerge [-o <output_path>] [-d <path_to_delta>]* <path ecma-335 data>";
 
 int main(int ac, char** av)
 {

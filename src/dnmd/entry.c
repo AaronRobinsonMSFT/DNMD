@@ -481,6 +481,7 @@ void free_mdmem(mdcxt_t* cxt, void* mem)
 
 static size_t get_stream_header_and_contents_size(char const* heap_name, size_t heap_size)
 {
+    assert(heap_name != NULL);
     // II.24.2.2 Stream header
     size_t const base_stream_header_size =
         sizeof(uint32_t) // Offset
@@ -489,6 +490,7 @@ static size_t get_stream_header_and_contents_size(char const* heap_name, size_t 
     ;
 
     // Add the size of the stream header
+    // II.24.2.2 Stream name is padded to a 4-byte boundary
     size_t save_size = base_stream_header_size;
     save_size += align_to((uint32_t)strlen(heap_name) + 1, 4);
     // Add the size of the stream itself.
@@ -509,8 +511,8 @@ static size_t get_table_stream_size(mdcxt_t* cxt)
         + sizeof(uint8_t) // MinorVersion
         + sizeof(uint8_t) // HeapSizes
         + sizeof(uint8_t) // Reserved
-        + sizeof(uint64_t) // Valid
-        + sizeof(uint64_t) // Sorted
+        + sizeof(uint64_t) // Valid tables
+        + sizeof(uint64_t) // Sorted tables
         // Rows and Tables entries are both variable length and calculated below
     ;
     
@@ -548,7 +550,6 @@ size_t md_get_save_size(mdhandle_t handle)
         + sizeof(uint16_t) // Flags
         + sizeof(uint16_t) // Streams (number of streams)
     ;
-
     
     size_t save_size = image_header_size;
 
@@ -654,7 +655,7 @@ bool md_save(mdhandle_t handle, uint8_t* buffer, size_t buffer_len, size_t* cons
     if (cxt->user_string_heap.size != 0)
         stream_count++;
 
-    const char* tables_stream_name = "#~";
+    char const* tables_stream_name = "#~";
 
     if (cxt->context_flags & mdc_minimal_delta)
     {
