@@ -39,7 +39,7 @@ set_target_properties(dnmd PROPERTIES
   PUBLIC_HEADER "../inc/dnmd.h;../inc/dnmd.hpp")
 
 set_target_properties(dnmd_pdb PROPERTIES
-  PUBLIC_HEADER "../inc/dnmd.h;../inc/dnmd.hpp")
+  PUBLIC_HEADER "../inc/dnmd.h;../inc/dnmd.hpp;../inc/dnmd_pdb.h")
 
 install(TARGETS dnmd EXPORT dnmd
   PUBLIC_HEADER DESTINATION include
