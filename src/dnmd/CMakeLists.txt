@@ -28,6 +28,7 @@ add_library(dnmd_pdb
 )
 
 target_compile_definitions(dnmd_pdb PUBLIC DNMD_PORTABLE_PDB)
+target_sources(dnmd_pdb PRIVATE ../inc/dnmd_pdb.h pdb_blobs.c)
 
 add_library(dnmd::dnmd ALIAS dnmd)
 add_library(dnmd::pdb ALIAS dnmd_pdb)

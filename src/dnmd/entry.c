@@ -343,6 +343,20 @@ static bool dump_table_rows(mdtable_t* table)
     uint32_t raw_values[ARRAY_SIZE(to_get)];
 
 #define IF_NOT_ONE_REPORT_RAW(exp) if (1 != (exp)) { printf("Invalid (%u) [%#x]|", j, raw_values[j]); continue; }
+#define IF_INVALID_BLOB_REPORT_RAW(parse_fn, blob_type, result_buf, result_buf_len) \
+    do \
+    { \
+        result_buf = NULL; \
+        md_blob_parse_result_t result = parse_fn(table->cxt, blob, blob_len, result_buf, &result_buf_len); \
+        if (result == mdbpr_InvalidBlob) { printf("Invalid PDB Blob (" blob_type ") Offset: %zu (len: %u) [%#x]|", (blob - table->cxt->blob_heap.ptr), blob_len, raw_values[j]); continue; } \
+        assert(result == mdbpr_InsufficientBuffer); \
+        result_buf = malloc(result_buf_len); \
+        if (result_buf == NULL) { printf("Ran out of memory when parsing PDB blob.\n"); return false; } \
+        result = parse_fn(table->cxt, blob, blob_len, result_buf, &result_buf_len); \
+        if (result == mdbpr_InvalidBlob) { printf("Invalid PDB Blob (" blob_type ") Offset: %zu (len: %u) [%#x]|", (blob - table->cxt->blob_heap.ptr), blob_len, raw_values[j]); free(result_buf); continue; } \
+        assert(result == mdbpr_Success); \
+    } while(0)
+
     for (uint32_t i = 0; i < table->row_count; ++i)
     {
         if (!md_get_column_values_raw(cursor, table->column_count, to_get, raw_values))
@@ -371,6 +385,20 @@ static bool dump_table_rows(mdtable_t* table)
             }
             else if (table->column_details[j] & mdtc_hblob)
             {
+                col_index_t col = IDX(j);
+#ifdef DNMD_PORTABLE_PDB
+                if (table->table_id == mdtid_Document && col == mdtDocument_Name)
+                {
+                    IF_NOT_ONE_REPORT_RAW(md_get_column_value_as_blob(cursor, IDX(j), 1, &blob, &blob_len));
+                    
+                    char* document_name;
+                    size_t name_len;
+                    IF_INVALID_BLOB_REPORT_RAW(md_parse_document_name, "DocumentName", document_name, name_len);
+                    printf("DocumentName: '%s' [%#x]|", document_name, raw_values[j]);
+                    free(document_name);
+                    continue;
+                }
+#endif
                 IF_NOT_ONE_REPORT_RAW(md_get_column_value_as_blob(cursor, IDX(j), 1, &blob, &blob_len));
                 printf("Offset: %zu (len: %u) [%#x]|", (blob - table->cxt->blob_heap.ptr), blob_len, raw_values[j]);
             }
@@ -576,11 +604,6 @@ static size_t get_image_size(mdcxt_t* cxt)
     save_size += get_stream_header_and_contents_size("#~", get_table_stream_size(cxt));
 
     return save_size;
-}
-
-static bool advance_output_stream(uint8_t** data, size_t* data_len, size_t b)
-{
-    return advance_stream((uint8_t const**)data, data_len, b);
 }
 
 // II.24.2.2 Stream header
