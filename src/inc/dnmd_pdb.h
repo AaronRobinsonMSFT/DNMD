@@ -122,40 +122,6 @@ typedef struct md_imports__
 } md_imports_t;
 md_blob_parse_result_t md_parse_imports(mdhandle_t handle, uint8_t const* blob, size_t blob_len, md_imports_t* imports, size_t* buffer_len);
 
-// Parse an Edit-and-Continue Local Slot Map blob.
-typedef struct md_enc_local_slot_map__
-{
-    uint32_t syntax_offset_baseline;
-    uint32_t slot_count;
-    struct
-    {
-        uint8_t kind;
-        uint32_t syntax_offset;
-        uint32_t ordinal;
-    } slots[];
-} md_enc_local_slot_map_t;
-md_blob_parse_result_t md_parse_enc_local_slot_map(mdhandle_t handle, uint8_t const* blob, size_t blob_len, md_enc_local_slot_map_t* local_slot_map, size_t* buffer_len);
-
-// Parse an Edit-and-Continue Lambda and Closure Map blob.
-typedef struct md_enc_lambda_and_closure_map__
-{
-    uint32_t method_ordinal;
-    uint32_t syntax_offset_baseline;
-    uint32_t closure_count;
-    struct closure__
-    {
-        uint32_t syntax_offset;
-    };
-    struct closure__* closure_syntax_offsets;
-    struct
-    {
-        uint32_t syntax_offset;
-        struct closure__* closure;
-    } lambda[];
-} md_enc_lambda_and_closure_map_t;
-md_blob_parse_result_t md_parse_enc_lambda_and_closure_map(mdhandle_t handle, uint8_t const* blob, size_t blob_len, md_enc_lambda_and_closure_map_t* lambda_and_closure_map, size_t* buffer_len);
-
-
 #ifdef __cplusplus
 }
 #endif
