@@ -85,7 +85,7 @@ md_blob_parse_result_t md_parse_document_name(mdhandle_t handle, uint8_t const* 
 // However, the PE format that an ECMA-335 blob is commonly wrapped in
 // can only support up to 4GB files, so we can't possibly have UINT32_MAX - 1 entries
 // in any existing scenario anyway.
-static uint32_t get_num_sequence_points(mdcursor_t debug_info_row, uint8_t const* blob, size_t blob_len)
+static uint32_t get_num_sequence_points(mdcursor_t method_debug_information, uint8_t const* blob, size_t blob_len)
 {
     uint32_t num_records = 0;
     uint32_t ignored;
@@ -93,7 +93,7 @@ static uint32_t get_num_sequence_points(mdcursor_t debug_info_row, uint8_t const
         return UINT32_MAX;
     
     mdcursor_t document;
-    if (1 != md_get_column_value_as_cursor(debug_info_row, mdtMethodDebugInformation_Document, 1, &document))
+    if (1 != md_get_column_value_as_cursor(method_debug_information, mdtMethodDebugInformation_Document, 1, &document))
         return UINT32_MAX;
 
     if (CursorNull(&document) && !decompress_u32(&blob, &blob_len, &ignored)) // header InitialDocument
@@ -145,15 +145,15 @@ static uint32_t get_num_sequence_points(mdcursor_t debug_info_row, uint8_t const
     return num_records;
 }
 
-md_blob_parse_result_t md_parse_sequence_points(mdcursor_t debug_info_row, uint8_t const* blob, size_t blob_len, md_sequence_points_t* sequence_points, size_t* buffer_len)
+md_blob_parse_result_t md_parse_sequence_points(mdcursor_t method_debug_information, uint8_t const* blob, size_t blob_len, md_sequence_points_t* sequence_points, size_t* buffer_len)
 {
-    if (CursorNull(&debug_info_row) || CursorEnd(&debug_info_row))
+    if (CursorNull(&method_debug_information) || CursorEnd(&method_debug_information))
         return mdbpr_InvalidArgument;
     
     if (blob == NULL || buffer_len == NULL)
         return mdbpr_InvalidArgument;
 
-    uint32_t num_records = get_num_sequence_points(debug_info_row, blob, blob_len);
+    uint32_t num_records = get_num_sequence_points(method_debug_information, blob, blob_len);
 
     if (num_records == UINT32_MAX)
         return mdbpr_InvalidBlob;
@@ -170,11 +170,11 @@ md_blob_parse_result_t md_parse_sequence_points(mdcursor_t debug_info_row, uint8
         return mdbpr_InvalidBlob;
     
     mdcursor_t document;
-    if (1 != md_get_column_value_as_cursor(debug_info_row, mdtMethodDebugInformation_Document, 1, &document))
+    if (1 != md_get_column_value_as_cursor(method_debug_information, mdtMethodDebugInformation_Document, 1, &document))
         return mdbpr_InvalidBlob;
 
     // Create a "null" cursor to default-initialize the document field.
-    mdcxt_t* cxt = extract_mdcxt(md_extract_handle_from_cursor(debug_info_row));
+    mdcxt_t* cxt = extract_mdcxt(md_extract_handle_from_cursor(method_debug_information));
     sequence_points->document = create_cursor(&cxt->tables[mdtid_Document], 0);
     
     // header InitialDocument
@@ -277,8 +277,9 @@ md_blob_parse_result_t md_parse_sequence_points(mdcursor_t debug_info_row, uint8
 
 md_blob_parse_result_t md_parse_local_constant_sig(mdhandle_t handle, uint8_t const* blob, size_t blob_len, md_local_constant_sig_t* local_constant_sig, size_t* buffer_len)
 {
-    // We take the mdhandle_t to keep a consistent API surface between the different blob parsing functions.
-    (void)handle;
+    if (extract_mdcxt(handle) == NULL || blob == NULL || buffer_len == NULL)
+        return mdbpr_InvalidArgument;
+
     // Walk the custom modifiers portion of the signature to calculate the required buffer space.
     uint8_t const* custom_modifiers_blob = blob;
     size_t custom_modifiers_blob_len = blob_len;
@@ -540,7 +541,7 @@ static uint32_t get_num_imports(uint8_t const* blob, size_t blob_len)
 md_blob_parse_result_t md_parse_imports(mdhandle_t handle, uint8_t const* blob, size_t blob_len, md_imports_t* imports, size_t* buffer_len)
 {
     mdcxt_t* cxt = extract_mdcxt(handle);
-    if (cxt == NULL)
+    if (cxt == NULL || blob == NULL || buffer_len == NULL)
         return mdbpr_InvalidArgument;
 
     uint32_t num_imports = get_num_imports(blob, blob_len);
