@@ -31,9 +31,9 @@ typedef struct md_sequence_points__
     {
         enum
         {
-            DocumentRecord,
-            SequencePointRecord,
-            HiddenSequencePointRecord,
+            mdsp_DocumentRecord,
+            mdsp_SequencePointRecord,
+            mdsp_HiddenSequencePointRecord,
         } kind;
         union
         {
@@ -45,7 +45,7 @@ typedef struct md_sequence_points__
             {
                 uint32_t il_offset;
                 uint32_t num_lines;
-                int64_t num_columns;
+                int64_t delta_columns;
                 int64_t start_line;
                 int64_t start_column;
             } sequence_point;
@@ -56,7 +56,7 @@ typedef struct md_sequence_points__
         };
     } records[];
 } md_sequence_points_t;
-md_blob_parse_result_t md_parse_sequence_points(mdhandle_t handle, uint8_t const* blob, size_t blob_len, md_sequence_points_t* sequence_points, size_t* buffer_len);
+md_blob_parse_result_t md_parse_sequence_points(mdcursor_t debug_info_row, uint8_t const* blob, size_t blob_len, md_sequence_points_t* sequence_points, size_t* buffer_len);
 
 // Parse a LocalConstantSig blob.
 typedef struct md_local_constant_sig__

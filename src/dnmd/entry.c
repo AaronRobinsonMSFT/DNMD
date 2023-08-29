@@ -1,6 +1,7 @@
 #include "internal.h"
 
 #include <stdio.h>
+#include <inttypes.h>
 
 // mdlib magic number for context
 #define MDLIB_MAGIC_NUMBER 0x3d71b
@@ -343,19 +344,16 @@ static bool dump_table_rows(mdtable_t* table)
     uint32_t raw_values[ARRAY_SIZE(to_get)];
 
 #define IF_NOT_ONE_REPORT_RAW(exp) if (1 != (exp)) { printf("Invalid (%u) [%#x]|", j, raw_values[j]); continue; }
-#define IF_INVALID_BLOB_REPORT_RAW(parse_fn, blob_type, result_buf, result_buf_len) \
-    do \
-    { \
-        result_buf = NULL; \
-        md_blob_parse_result_t result = parse_fn(table->cxt, blob, blob_len, result_buf, &result_buf_len); \
-        if (result == mdbpr_InvalidBlob) { printf("Invalid PDB Blob (" blob_type ") Offset: %zu (len: %u) [%#x]|", (blob - table->cxt->blob_heap.ptr), blob_len, raw_values[j]); continue; } \
-        assert(result == mdbpr_InsufficientBuffer); \
-        result_buf = malloc(result_buf_len); \
-        if (result_buf == NULL) { printf("Ran out of memory when parsing PDB blob.\n"); return false; } \
-        result = parse_fn(table->cxt, blob, blob_len, result_buf, &result_buf_len); \
-        if (result == mdbpr_InvalidBlob) { printf("Invalid PDB Blob (" blob_type ") Offset: %zu (len: %u) [%#x]|", (blob - table->cxt->blob_heap.ptr), blob_len, raw_values[j]); free(result_buf); continue; } \
-        assert(result == mdbpr_Success); \
-    } while(0)
+#define IF_INVALID_BLOB_REPORT_RAW(parse_fn, handle_or_cursor, blob_type, result_buf, result_buf_len) \
+    result_buf = NULL; \
+    md_blob_parse_result_t result = parse_fn(handle_or_cursor, blob, blob_len, result_buf, &result_buf_len); \
+    if (result == mdbpr_InvalidBlob) { printf("Invalid PDB Blob (" blob_type ") Offset: %zu (len: %u) [%#x]|", (blob - table->cxt->blob_heap.ptr), blob_len, raw_values[j]); continue; } \
+    assert(result == mdbpr_InsufficientBuffer); \
+    result_buf = malloc(result_buf_len); \
+    if (result_buf == NULL) { printf("Ran out of memory when parsing PDB blob.\n"); return false; } \
+    result = parse_fn(handle_or_cursor, blob, blob_len, result_buf, &result_buf_len); \
+    if (result == mdbpr_InvalidBlob) { printf("Invalid PDB Blob (" blob_type ") Offset: %zu (len: %u) [%#x]|", (blob - table->cxt->blob_heap.ptr), blob_len, raw_values[j]); free(result_buf); continue; } \
+    assert(result == mdbpr_Success) \
 
     for (uint32_t i = 0; i < table->row_count; ++i)
     {
@@ -393,9 +391,65 @@ static bool dump_table_rows(mdtable_t* table)
                     
                     char* document_name;
                     size_t name_len;
-                    IF_INVALID_BLOB_REPORT_RAW(md_parse_document_name, "DocumentName", document_name, name_len);
+                    IF_INVALID_BLOB_REPORT_RAW(md_parse_document_name, table->cxt, "DocumentName", document_name, name_len);
                     printf("DocumentName: '%s' [%#x]|", document_name, raw_values[j]);
                     free(document_name);
+                    continue;
+                }
+                else if (table->table_id == mdtid_MethodDebugInformation && col == mdtMethodDebugInformation_SequencePoints)
+                {
+                    IF_NOT_ONE_REPORT_RAW(md_get_column_value_as_blob(cursor, IDX(j), 1, &blob, &blob_len));
+                    
+                    if (blob_len == 0)
+                    {
+                        printf("Empty SequencePoints: Offset: %zu (len: %u) [%#x]|", (blob - table->cxt->blob_heap.ptr), blob_len, raw_values[j]);
+                        continue;
+                    }
+
+                    md_sequence_points_t* sequence_points;
+                    size_t sequence_points_len;
+                    IF_INVALID_BLOB_REPORT_RAW(md_parse_sequence_points, cursor, "SequencePoints", sequence_points, sequence_points_len);
+                    printf("SequencePoints: LocalSignature 0x%08x (mdToken) ", sequence_points->signature);
+                    mdToken document_tok;
+                    md_cursor_to_token(sequence_points->document, &document_tok);
+                    printf("Document 0x%08x (mdToken) ", document_tok);
+                    printf("{ ");
+                    bool first = true;
+                    for (uint32_t k = 0; k < sequence_points->record_count; ++k)
+                    {
+                        if (!first)
+                        {
+                            printf(", ");
+                        }
+                        first = false;
+                        if (sequence_points->records[k].kind == mdsp_DocumentRecord)
+                        {
+                            printf("document-record: ");
+                            md_cursor_to_token(sequence_points->records[k].document.document, &document_tok);
+                            printf("0x%08x (mdToken)", document_tok);
+                        }
+                        else if (sequence_points->records[k].kind == mdsp_HiddenSequencePointRecord)
+                        {
+                            printf("hidden-sequence-point-record: %u", sequence_points->records[k].hidden_sequence_point.il_offset);
+                        }
+                        else if (sequence_points->records[k].kind == mdsp_SequencePointRecord)
+                        {
+                            printf("sequence-point-record: (%u, %u, %" PRId64 ", %" PRId64 ", %" PRId64 ")",
+                                sequence_points->records[k].sequence_point.il_offset,
+                                sequence_points->records[k].sequence_point.num_lines,
+                                sequence_points->records[k].sequence_point.delta_columns,
+                                sequence_points->records[k].sequence_point.start_line,
+                                sequence_points->records[k].sequence_point.start_column);
+                        }
+                        else
+                        {
+                            assert(!"Invalid sequence point record kind.");
+                        }
+                    }
+                    
+                    printf(" } [%#x]|", raw_values[j]);
+
+                    free(sequence_points);
                     continue;
                 }
 #endif
