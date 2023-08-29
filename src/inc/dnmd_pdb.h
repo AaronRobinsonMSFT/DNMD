@@ -63,9 +63,9 @@ typedef struct md_local_constant_sig__
 {
     enum
     {
-        PrimitiveConstant,
-        EnumConstant,
-        GeneralConstant
+        mdck_PrimitiveConstant,
+        mdck_EnumConstant,
+        mdck_GeneralConstant
     } constant_kind;
 
     union
@@ -85,16 +85,18 @@ typedef struct md_local_constant_sig__
         {
             enum
             {
-                ValueType,
-                Class,
-                Object
+                mdgc_ValueType,
+                mdgc_Class,
+                mdgc_Object
             } kind;
             mdToken type;
         } general;
     };
 
-    const uint8_t* value_blob;
-    const uint32_t value_len;
+    uint8_t const* value_blob;
+    size_t value_len;
+
+    uint32_t custom_modifier_count;
     
     struct {
         bool required;

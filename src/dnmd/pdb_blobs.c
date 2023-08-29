@@ -274,3 +274,196 @@ md_blob_parse_result_t md_parse_sequence_points(mdcursor_t debug_info_row, uint8
     sequence_points->record_count = num_records;
     return mdbpr_Success;
 }
+
+md_blob_parse_result_t md_parse_local_constant_sig(mdhandle_t handle, uint8_t const* blob, size_t blob_len, md_local_constant_sig_t* local_constant_sig, size_t* buffer_len)
+{
+    // We take the mdhandle_t to keep a consistent API surface between the different blob parsing functions.
+    (void)handle;
+    // Walk the custom modifiers portion of the signature to calculate the required buffer space.
+    uint8_t const* custom_modifiers_blob = blob;
+    size_t custom_modifiers_blob_len = blob_len;
+    uint32_t num_custom_modifiers = 0;
+    for (; custom_modifiers_blob_len > 0; ++num_custom_modifiers)
+    {
+        uint32_t element_type;
+        if (!decompress_u32(&custom_modifiers_blob, &custom_modifiers_blob_len, &element_type))
+            return mdbpr_InvalidBlob;
+        
+        if (element_type != ELEMENT_TYPE_CMOD_OPT && element_type != ELEMENT_TYPE_CMOD_REQD)
+            break;
+
+        uint32_t cindex;
+        if (!decompress_u32(&custom_modifiers_blob, &custom_modifiers_blob_len, &cindex))
+            return mdbpr_InvalidBlob;
+    }
+
+    size_t required_size = sizeof(md_local_constant_sig_t) + num_custom_modifiers * sizeof(local_constant_sig->custom_modifiers[0]);
+
+    if (local_constant_sig == NULL || *buffer_len < required_size)
+    {
+        *buffer_len = required_size;
+        return mdbpr_InsufficientBuffer;
+    }
+
+    local_constant_sig->custom_modifier_count = num_custom_modifiers;
+
+    for (uint8_t i = 0; i < num_custom_modifiers; ++i)
+    {
+        uint32_t element_type;
+        if (!decompress_u32(&custom_modifiers_blob, &custom_modifiers_blob_len, &element_type))
+            return mdbpr_InvalidBlob;
+        
+        if (element_type != ELEMENT_TYPE_CMOD_OPT && element_type != ELEMENT_TYPE_CMOD_REQD)
+            break;
+
+        local_constant_sig->custom_modifiers[i].required = element_type == ELEMENT_TYPE_CMOD_REQD;
+
+        uint32_t cindex;
+        if (!decompress_u32(&custom_modifiers_blob, &custom_modifiers_blob_len, &cindex))
+            return mdbpr_InvalidBlob;
+            
+        mdtable_id_t table;
+        uint32_t row_id;
+        // Technically the spec defines this as a TypeDefOrRefOrSpecEncoded token,
+        // but the implementation of the TypeDefOrRef coded index has the same configuration as the
+        // TypeDefOrRefOrSpec encoding.
+        if (!decompose_coded_index(cindex, mdtc_idx_coded | InsertCodedIndex(mdci_TypeDefOrRef), &table, &row_id))
+            return mdbpr_InvalidBlob;
+        
+        local_constant_sig->custom_modifiers[i].type = CreateTokenType(table) | row_id;
+    }
+
+    uint32_t type_code;
+    if (!decompress_u32(&blob, &blob_len, &type_code))
+        return mdbpr_InvalidBlob;
+    
+    uint32_t constant_type_index;
+    mdtable_id_t constant_type_table;
+    uint32_t constant_type_row;
+    switch (type_code)
+    {
+        case ELEMENT_TYPE_OBJECT:
+            local_constant_sig->constant_kind = mdck_GeneralConstant;
+            local_constant_sig->general.kind = mdgc_Object;
+            local_constant_sig->general.type = 0;
+            local_constant_sig->value_blob = blob;
+            local_constant_sig->value_len = blob_len;
+            break;
+        case ELEMENT_TYPE_VALUETYPE:
+            local_constant_sig->constant_kind = mdck_GeneralConstant;
+            local_constant_sig->general.kind = mdgc_ValueType;
+            if (!decompress_u32(&blob, &blob_len, &constant_type_index))
+                return mdbpr_InvalidBlob;
+            if (!decompose_coded_index(constant_type_index, mdtc_idx_coded | InsertCodedIndex(mdci_TypeDefOrRef), &constant_type_table, &constant_type_row))
+                return mdbpr_InvalidBlob;
+            local_constant_sig->general.type = CreateTokenType(constant_type_table) | constant_type_row;
+            local_constant_sig->value_blob = blob;
+            local_constant_sig->value_len = blob_len;
+            break;
+        case ELEMENT_TYPE_CLASS:
+            local_constant_sig->constant_kind = mdck_GeneralConstant;
+            local_constant_sig->general.kind = mdgc_Class;
+            if (!decompress_u32(&blob, &blob_len, &constant_type_index))
+                return mdbpr_InvalidBlob;
+            if (!decompose_coded_index(constant_type_index, mdtc_idx_coded | InsertCodedIndex(mdci_TypeDefOrRef), &constant_type_table, &constant_type_row))
+                return mdbpr_InvalidBlob;
+            local_constant_sig->general.type = CreateTokenType(constant_type_table) | constant_type_row;
+            local_constant_sig->value_blob = blob;
+            local_constant_sig->value_len = blob_len;
+            break;
+        // These constants are never enums, so we don't need to skip the content.
+        case ELEMENT_TYPE_R4:
+            if (blob_len != 4)
+                return mdbpr_InvalidBlob;
+            local_constant_sig->constant_kind = mdck_PrimitiveConstant;
+            local_constant_sig->primitive.type_code = (uint8_t)type_code;
+            local_constant_sig->value_blob = blob;
+            local_constant_sig->value_len = blob_len;
+        case ELEMENT_TYPE_R8:
+            if (blob_len != 8)
+                return mdbpr_InvalidBlob;
+            local_constant_sig->constant_kind = mdck_PrimitiveConstant;
+            local_constant_sig->primitive.type_code = (uint8_t)type_code;
+            local_constant_sig->value_blob = blob;
+            local_constant_sig->value_len = blob_len;
+        case ELEMENT_TYPE_STRING:
+            local_constant_sig->constant_kind = mdck_PrimitiveConstant;
+            local_constant_sig->primitive.type_code = (uint8_t)type_code;
+            local_constant_sig->value_blob = blob;
+            local_constant_sig->value_len = blob_len;
+            break;
+        // These constant types might be enums, so we need to check if there's a TypeDefOrRefOrSpecEncoded value
+        // after the value to determine if the constant is an enum.
+        case ELEMENT_TYPE_BOOLEAN:
+        case ELEMENT_TYPE_CHAR:
+        case ELEMENT_TYPE_I1:
+        case ELEMENT_TYPE_U1:
+        case ELEMENT_TYPE_I2:
+        case ELEMENT_TYPE_U2:
+        case ELEMENT_TYPE_I4:
+        case ELEMENT_TYPE_U4:
+        case ELEMENT_TYPE_I8:
+        case ELEMENT_TYPE_U8:
+            local_constant_sig->value_blob = blob;
+            local_constant_sig->value_len = blob_len;
+            switch (type_code)
+            {
+                case ELEMENT_TYPE_BOOLEAN:
+                case ELEMENT_TYPE_I1:
+                case ELEMENT_TYPE_U1:
+                {
+                    uint8_t dummy;
+                    if (!read_u8(&blob, &blob_len, &dummy))
+                        return mdbpr_InvalidBlob;
+                    break;
+                }
+                case ELEMENT_TYPE_CHAR:
+                case ELEMENT_TYPE_I2:
+                case ELEMENT_TYPE_U2:
+                {
+                    uint16_t dummy;
+                    if (!read_u16(&blob, &blob_len, &dummy))
+                        return mdbpr_InvalidBlob;
+                    break;
+                }
+                case ELEMENT_TYPE_I4:
+                case ELEMENT_TYPE_U4:
+                {
+                    uint32_t dummy;
+                    if (!read_u32(&blob, &blob_len, &dummy))
+                        return mdbpr_InvalidBlob;
+                    break;
+                }
+                case ELEMENT_TYPE_I8:
+                case ELEMENT_TYPE_U8:
+                {
+                    uint64_t dummy;
+                    if (!read_u64(&blob, &blob_len, &dummy))
+                        return mdbpr_InvalidBlob;
+                    break;
+                }
+            }
+            
+            if (blob_len == 0)
+            {
+                local_constant_sig->constant_kind = mdck_PrimitiveConstant;
+                local_constant_sig->primitive.type_code = (uint8_t)type_code;
+            }
+            else
+            {
+                // If we have data remaining, then we need to read the enum type.
+                // In this case, the we need to subtract off the rest of the blob length from the value blob length
+                // as it isn't part of the value.
+                local_constant_sig->value_len -= blob_len;
+                if (!decompress_u32(&blob, &blob_len, &constant_type_index)
+                    || !decompose_coded_index(constant_type_index, mdtc_idx_coded | InsertCodedIndex(mdci_TypeDefOrRef), &constant_type_table, &constant_type_row))
+                    return mdbpr_InvalidBlob;
+
+                local_constant_sig->constant_kind = mdck_EnumConstant;
+                local_constant_sig->enum_constant.type_code = (uint8_t)type_code;
+                local_constant_sig->enum_constant.enum_type = CreateTokenType(constant_type_table) | constant_type_row;
+            }
+            break;
+    }
+    return mdbpr_Success;
+}

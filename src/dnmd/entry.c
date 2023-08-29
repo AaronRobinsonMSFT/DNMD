@@ -452,6 +452,41 @@ static bool dump_table_rows(mdtable_t* table)
                     free(sequence_points);
                     continue;
                 }
+                else if (table->table_id == mdtid_LocalConstant && col == mdtLocalConstant_Signature)
+                {
+                    if (i == 32)
+                    {
+                        printf("");
+                    }
+                    IF_NOT_ONE_REPORT_RAW(md_get_column_value_as_blob(cursor, IDX(j), 1, &blob, &blob_len));
+                    md_local_constant_sig_t* local_constant_sig;
+                    size_t local_constant_sig_len;
+                    IF_INVALID_BLOB_REPORT_RAW(md_parse_local_constant_sig, table->cxt, "LocalConstantSig", local_constant_sig, local_constant_sig_len);
+                    printf("LocalConstantSig: ");
+                    for (uint32_t k = 0; k < local_constant_sig->custom_modifier_count; ++k)
+                    {
+                        printf("%s(0x%08x) ", local_constant_sig->custom_modifiers[k].required ? "modreq" : "modopt", local_constant_sig->custom_modifiers[k].type);
+                    }
+
+                    if (local_constant_sig->constant_kind == mdck_PrimitiveConstant)
+                    {
+                        printf("Primitive: 0x%02x ", local_constant_sig->primitive.type_code);
+                    }
+                    else if (local_constant_sig->constant_kind == mdck_EnumConstant)
+                    {
+                        printf("Enum: 0x%02x{0x%08x (mdToken)} ", local_constant_sig->enum_constant.type_code, local_constant_sig->enum_constant.enum_type);
+                    }
+                    else if (local_constant_sig->constant_kind == mdck_GeneralConstant)
+                    {
+                        printf("General: 0x%02x{0x%08x (mdToken)} ", local_constant_sig->general.kind, local_constant_sig->general.type);
+                    }
+                    else
+                    {
+                        assert(!"Invalid constant kind.");
+                    }
+                    printf("Value Offset: %zu (len: %zu) [%#x]|", local_constant_sig->value_blob - table->cxt->blob_heap.ptr, local_constant_sig->value_len, raw_values[j]);
+                    continue;
+                }
 #endif
                 IF_NOT_ONE_REPORT_RAW(md_get_column_value_as_blob(cursor, IDX(j), 1, &blob, &blob_len));
                 printf("Offset: %zu (len: %u) [%#x]|", (blob - table->cxt->blob_heap.ptr), blob_len, raw_values[j]);
