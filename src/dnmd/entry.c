@@ -454,10 +454,6 @@ static bool dump_table_rows(mdtable_t* table)
                 }
                 else if (table->table_id == mdtid_LocalConstant && col == mdtLocalConstant_Signature)
                 {
-                    if (i == 32)
-                    {
-                        printf("");
-                    }
                     IF_NOT_ONE_REPORT_RAW(md_get_column_value_as_blob(cursor, IDX(j), 1, &blob, &blob_len));
                     md_local_constant_sig_t* local_constant_sig;
                     size_t local_constant_sig_len;
@@ -485,6 +481,70 @@ static bool dump_table_rows(mdtable_t* table)
                         assert(!"Invalid constant kind.");
                     }
                     printf("Value Offset: %zu (len: %zu) [%#x]|", local_constant_sig->value_blob - table->cxt->blob_heap.ptr, local_constant_sig->value_len, raw_values[j]);
+                    
+                    free(local_constant_sig);
+                    continue;
+                }
+                else if (table->table_id == mdtid_ImportScope && col == mdtImportScope_Imports)
+                {
+                    IF_NOT_ONE_REPORT_RAW(md_get_column_value_as_blob(cursor, IDX(j), 1, &blob, &blob_len));
+                    
+                    if (blob_len == 0)
+                    {
+                        printf("Empty Imports: Offset: %zu (len: %u) [%#x]|", (blob - table->cxt->blob_heap.ptr), blob_len, raw_values[j]);
+                        continue;
+                    }
+
+                    md_imports_t* imports;
+                    size_t imports_len;
+                    IF_INVALID_BLOB_REPORT_RAW(md_parse_imports, table->cxt, "Imports", imports, imports_len);
+                    printf("{ ");
+                    bool first = true;
+                    for (uint32_t k = 0; k < imports->count; ++k)
+                    {
+                        if (!first)
+                        {
+                            printf(", ");
+                        }
+                        first = false;
+                        switch (imports->imports[k].kind)
+                        {
+                        case mdidk_ImportNamespace:
+                            printf("ns('%.*s')", imports->imports[k].target_namespace_len, imports->imports[k].target_namespace);
+                            break;
+                        case mdidk_ImportAssemblyNamespace:
+                            printf("ns('%.*s' in 0x%08x (mdToken))", imports->imports[k].target_namespace_len, imports->imports[k].target_namespace, imports->imports[k].assembly);
+                            break;
+                        case mdidk_ImportType:
+                            printf("type(0x%08x (mdToken))", imports->imports[k].target_type);
+                            break;
+                        case mdidk_ImportXmlNamespace:
+                            printf("xml-alias('%.*s' for '%.*s')", imports->imports[k].alias_len, imports->imports[k].alias, imports->imports[k].target_namespace_len, imports->imports[k].target_namespace);
+                            break;
+                        case mdidk_ImportAssemblyReferenceAlias:
+                            printf("import-alias('%.*s')", imports->imports[k].alias_len, imports->imports[k].alias);
+                            break;
+                        case mdidk_AliasAssemblyReference:
+                            printf("alias('%.*s' for 0x%08x (mdToken))", imports->imports[k].alias_len, imports->imports[k].alias, imports->imports[k].assembly);
+                            break;
+                        case mdidk_AliasNamespace:
+                            printf("alias('%.*s' for '%.*s')", imports->imports[k].alias_len, imports->imports[k].alias, imports->imports[k].target_namespace_len, imports->imports[k].target_namespace);
+                            break;
+                        case mdidk_AliasAssemblyNamespace:
+                            printf("alias('%.*s' for '%.*s' in 0x%08x (mdToken))", imports->imports[k].alias_len, imports->imports[k].alias, imports->imports[k].target_namespace_len, imports->imports[k].target_namespace, imports->imports[k].assembly);
+                            break;
+                        case mdidk_AliasType:
+                            printf("alias('%.*s' for  0x%08x (mdToken))", imports->imports[k].alias_len, imports->imports[k].alias, imports->imports[k].target_type);
+                            break;
+                        default:
+                            assert(!"Invalid import kind.");
+                            break;
+                        }
+                    }
+                    
+                    printf(" } [%#x]|", raw_values[j]);
+
+                    free(imports);
                     continue;
                 }
 #endif

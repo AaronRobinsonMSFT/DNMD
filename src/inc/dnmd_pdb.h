@@ -111,7 +111,18 @@ typedef struct md_imports__
     uint32_t count;
     struct
     {
-        uint32_t kind;
+        enum
+        {
+            mdidk_ImportNamespace = 1,
+            mdidk_ImportAssemblyNamespace = 2,
+            mdidk_ImportType = 3,
+            mdidk_ImportXmlNamespace = 4,
+            mdidk_ImportAssemblyReferenceAlias = 5,
+            mdidk_AliasAssemblyReference = 6,
+            mdidk_AliasNamespace = 7,
+            mdidk_AliasAssemblyNamespace = 8,
+            mdidk_AliasType = 9,
+        } kind;
         char const* alias;
         uint32_t alias_len;
         mdToken assembly;

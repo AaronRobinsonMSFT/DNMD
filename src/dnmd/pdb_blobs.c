@@ -467,3 +467,214 @@ md_blob_parse_result_t md_parse_local_constant_sig(mdhandle_t handle, uint8_t co
     }
     return mdbpr_Success;
 }
+
+// We only support up to UINT32_MAX - 1 imports per Imports blob.
+// Technically, the number of supported imports in the spec is unbounded.
+// However, the PE format that an ECMA-335 blob is commonly wrapped in
+// can only support up to 4GB files, so we can't possibly have UINT32_MAX - 1 entries
+// in any existing scenario anyway.
+static uint32_t get_num_imports(uint8_t const* blob, size_t blob_len)
+{
+    uint32_t num_imports = 0;
+    for (;blob_len > 0 && num_imports < UINT32_MAX; ++num_imports)
+    {
+        uint8_t kind;
+        if (!read_u8(&blob, &blob_len, &kind))
+            return UINT32_MAX;
+        
+        uint32_t raw;
+        switch (kind)
+        {
+            case mdidk_ImportNamespace:
+                if (!decompress_u32(&blob, &blob_len, &raw)) // target-namespace
+                    return UINT32_MAX;
+                break;
+            case mdidk_ImportAssemblyNamespace:
+                if (!decompress_u32(&blob, &blob_len, &raw)) // target-assembly
+                    return UINT32_MAX;
+                if (!decompress_u32(&blob, &blob_len, &raw)) // target-namespace
+                    return UINT32_MAX;
+                break;
+            case mdidk_ImportType:
+                if (!decompress_u32(&blob, &blob_len, &raw)) // target-type
+                    return UINT32_MAX;
+                break;
+            case mdidk_AliasNamespace:
+            case mdidk_ImportXmlNamespace:
+                if (!decompress_u32(&blob, &blob_len, &raw)) // alias
+                    return UINT32_MAX;
+                if (!decompress_u32(&blob, &blob_len, &raw)) // target-namespace
+                    return UINT32_MAX;
+                break;
+            case mdidk_ImportAssemblyReferenceAlias:
+                if (!decompress_u32(&blob, &blob_len, &raw)) // alias
+                    return UINT32_MAX;
+                break;
+            case mdidk_AliasAssemblyReference:
+                if (!decompress_u32(&blob, &blob_len, &raw)) // alias
+                    return UINT32_MAX;
+                if (!decompress_u32(&blob, &blob_len, &raw)) // target-assembly
+                    return UINT32_MAX;
+                break;
+            case mdidk_AliasAssemblyNamespace:
+                if (!decompress_u32(&blob, &blob_len, &raw)) // alias
+                    return UINT32_MAX;
+                if (!decompress_u32(&blob, &blob_len, &raw)) // target-assembly
+                    return UINT32_MAX;
+                if (!decompress_u32(&blob, &blob_len, &raw)) // target-namespace
+                    return UINT32_MAX;
+                break;
+            case mdidk_AliasType:
+                if (!decompress_u32(&blob, &blob_len, &raw)) // alias
+                    return UINT32_MAX;
+                if (!decompress_u32(&blob, &blob_len, &raw)) // target-type
+                    return UINT32_MAX;
+                break;
+            default:
+                return UINT32_MAX;
+        }
+    }
+    return num_imports;
+}
+
+md_blob_parse_result_t md_parse_imports(mdhandle_t handle, uint8_t const* blob, size_t blob_len, md_imports_t* imports, size_t* buffer_len)
+{
+    mdcxt_t* cxt = extract_mdcxt(handle);
+    if (cxt == NULL)
+        return mdbpr_InvalidArgument;
+
+    uint32_t num_imports = get_num_imports(blob, blob_len);
+
+    if (num_imports == UINT32_MAX)
+        return mdbpr_InvalidBlob;
+
+    size_t required_size = sizeof(md_imports_t) + num_imports * sizeof(imports->imports[0]);
+
+    if (imports == NULL || *buffer_len < required_size)
+    {
+        *buffer_len = required_size;
+        return mdbpr_InsufficientBuffer;
+    }
+
+    imports->count = num_imports;
+    for (uint32_t i = 0; i < num_imports; ++i)
+    {
+        uint8_t kind;
+        if (!read_u8(&blob, &blob_len, &kind))
+            return mdbpr_InvalidBlob;
+        
+        // Zero out this import entry.
+        memset(&imports->imports[i], 0, sizeof(imports->imports[i]));
+        
+        imports->imports[i].kind = kind;
+        uint32_t raw;
+        switch (kind)
+        {
+            case mdidk_ImportNamespace:
+                if (!decompress_u32(&blob, &blob_len, &raw))
+                    return mdbpr_InvalidBlob;
+
+                if (!try_get_blob(cxt, raw, (uint8_t const**)&imports->imports[i].target_namespace, &imports->imports[i].target_namespace_len))
+                    return mdbpr_InvalidBlob;
+                break;
+            case mdidk_ImportAssemblyNamespace:
+                if (!decompress_u32(&blob, &blob_len, &raw))
+                    return mdbpr_InvalidBlob;
+
+                imports->imports[i].assembly = CreateTokenType(mdtid_AssemblyRef) | raw;
+
+                if (!decompress_u32(&blob, &blob_len, &raw))
+                    return mdbpr_InvalidBlob;
+
+                if (!try_get_blob(cxt, raw, (uint8_t const**)&imports->imports[i].target_namespace, &imports->imports[i].target_namespace_len))
+                    return mdbpr_InvalidBlob;
+                break;
+            case mdidk_ImportType:
+            {
+                mdtable_id_t table;
+                uint32_t row_id;
+                if (!decompress_u32(&blob, &blob_len, &raw))
+                    return mdbpr_InvalidBlob;
+                
+                if (!decompose_coded_index(raw, mdtc_idx_coded | InsertCodedIndex(mdci_TypeDefOrRef), &table, &row_id))
+                    return mdbpr_InvalidBlob;
+                
+                imports->imports[i].target_type = CreateTokenType(table) | row_id;
+                break;
+            }
+            case mdidk_AliasNamespace:
+            case mdidk_ImportXmlNamespace:
+                if (!decompress_u32(&blob, &blob_len, &raw))
+                    return mdbpr_InvalidBlob;
+                
+                if (!try_get_blob(cxt, raw, (uint8_t const**)&imports->imports[i].alias, &imports->imports[i].alias_len))
+                    return mdbpr_InvalidBlob;
+
+                if (!decompress_u32(&blob, &blob_len, &raw))
+                    return mdbpr_InvalidBlob;
+
+                if (!try_get_blob(cxt, raw, (uint8_t const**)&imports->imports[i].target_namespace, &imports->imports[i].target_namespace_len))
+                    return mdbpr_InvalidBlob;
+                break;
+            case mdidk_ImportAssemblyReferenceAlias:
+                if (!decompress_u32(&blob, &blob_len, &raw))
+                    return mdbpr_InvalidBlob;
+                
+                if (!try_get_blob(cxt, raw, (uint8_t const**)&imports->imports[i].alias, &imports->imports[i].alias_len))
+                    return mdbpr_InvalidBlob;
+                break;
+            case mdidk_AliasAssemblyReference:
+                if (!decompress_u32(&blob, &blob_len, &raw))
+                    return mdbpr_InvalidBlob;
+                
+                if (!try_get_blob(cxt, raw, (uint8_t const**)&imports->imports[i].alias, &imports->imports[i].alias_len))
+                    return mdbpr_InvalidBlob;
+
+                if (!decompress_u32(&blob, &blob_len, &raw))
+                    return mdbpr_InvalidBlob;
+                
+                imports->imports[i].assembly = CreateTokenType(mdtid_AssemblyRef) | raw;
+                break;
+            case mdidk_AliasAssemblyNamespace:
+                if (!decompress_u32(&blob, &blob_len, &raw))
+                    return mdbpr_InvalidBlob;
+                
+                if (!try_get_blob(cxt, raw, (uint8_t const**)&imports->imports[i].alias, &imports->imports[i].alias_len))
+                    return mdbpr_InvalidBlob;
+
+                if (!decompress_u32(&blob, &blob_len, &raw))
+                    return mdbpr_InvalidBlob;
+                
+                imports->imports[i].assembly = CreateTokenType(mdtid_AssemblyRef) | raw;
+                
+                if (!decompress_u32(&blob, &blob_len, &raw))
+                    return mdbpr_InvalidBlob;
+
+                if (!try_get_blob(cxt, raw, (uint8_t const**)&imports->imports[i].target_namespace, &imports->imports[i].target_namespace_len))
+                    return mdbpr_InvalidBlob;
+                break;
+            case mdidk_AliasType:
+            {
+                if (!decompress_u32(&blob, &blob_len, &raw))
+                    return mdbpr_InvalidBlob;
+                
+                if (!try_get_blob(cxt, raw, (uint8_t const**)&imports->imports[i].alias, &imports->imports[i].alias_len))
+                    return mdbpr_InvalidBlob;
+
+                mdtable_id_t table;
+                uint32_t row_id;
+                if (!decompress_u32(&blob, &blob_len, &raw))
+                    return mdbpr_InvalidBlob;
+                
+                if (!decompose_coded_index(raw, mdtc_idx_coded | InsertCodedIndex(mdci_TypeDefOrRef), &table, &row_id))
+                    return mdbpr_InvalidBlob;
+                
+                imports->imports[i].target_type = CreateTokenType(table) | row_id;
+                break;
+            }
+            default:
+                return mdbpr_InvalidBlob;
+        }
+    }
+    return mdbpr_Success;
+}
