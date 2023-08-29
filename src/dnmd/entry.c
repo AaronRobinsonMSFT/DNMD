@@ -389,7 +389,7 @@ static bool dump_table_rows(mdtable_t* table)
 #ifdef DNMD_PORTABLE_PDB
                 if (table->table_id == mdtid_Document && col == mdtDocument_Name)
                 {
-                    IF_NOT_ONE_REPORT_RAW(md_get_column_value_as_blob(cursor, IDX(j), 1, &blob, &blob_len));
+                    IF_NOT_ONE_REPORT_RAW(md_get_column_value_as_blob(cursor, col, 1, &blob, &blob_len));
                     
                     char* document_name;
                     size_t name_len;
@@ -400,7 +400,7 @@ static bool dump_table_rows(mdtable_t* table)
                 }
                 else if (table->table_id == mdtid_MethodDebugInformation && col == mdtMethodDebugInformation_SequencePoints)
                 {
-                    IF_NOT_ONE_REPORT_RAW(md_get_column_value_as_blob(cursor, IDX(j), 1, &blob, &blob_len));
+                    IF_NOT_ONE_REPORT_RAW(md_get_column_value_as_blob(cursor, col, 1, &blob, &blob_len));
                     
                     if (blob_len == 0)
                     {
@@ -456,7 +456,7 @@ static bool dump_table_rows(mdtable_t* table)
                 }
                 else if (table->table_id == mdtid_LocalConstant && col == mdtLocalConstant_Signature)
                 {
-                    IF_NOT_ONE_REPORT_RAW(md_get_column_value_as_blob(cursor, IDX(j), 1, &blob, &blob_len));
+                    IF_NOT_ONE_REPORT_RAW(md_get_column_value_as_blob(cursor, col, 1, &blob, &blob_len));
                     md_local_constant_sig_t* local_constant_sig;
                     size_t local_constant_sig_len;
                     IF_INVALID_BLOB_REPORT_RAW(md_parse_local_constant_sig, table->cxt, "LocalConstantSig", local_constant_sig, local_constant_sig_len);
@@ -489,7 +489,7 @@ static bool dump_table_rows(mdtable_t* table)
                 }
                 else if (table->table_id == mdtid_ImportScope && col == mdtImportScope_Imports)
                 {
-                    IF_NOT_ONE_REPORT_RAW(md_get_column_value_as_blob(cursor, IDX(j), 1, &blob, &blob_len));
+                    IF_NOT_ONE_REPORT_RAW(md_get_column_value_as_blob(cursor, col, 1, &blob, &blob_len));
                     
                     if (blob_len == 0)
                     {
@@ -550,7 +550,7 @@ static bool dump_table_rows(mdtable_t* table)
                     continue;
                 }
 #endif
-                IF_NOT_ONE_REPORT_RAW(md_get_column_value_as_blob(cursor, IDX(j), 1, &blob, &blob_len));
+                IF_NOT_ONE_REPORT_RAW(md_get_column_value_as_blob(cursor, col, 1, &blob, &blob_len));
                 printf("Offset: %zu (len: %u) [%#x]|", (blob - table->cxt->blob_heap.ptr), blob_len, raw_values[j]);
             }
             else if (table->column_details[j] & mdtc_hus)
