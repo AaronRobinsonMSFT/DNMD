@@ -268,7 +268,7 @@ md_blob_parse_result_t md_parse_sequence_points(mdcursor_t method_debug_informat
         }
     }
 
-    if (!blob_len == 0)
+    if (blob_len != 0)
         return mdbpr_InvalidBlob;
     
     sequence_points->record_count = num_records;
