@@ -81,6 +81,7 @@ set_target_properties(dnmd_interfaces PROPERTIES
 install(TARGETS dnmd_interfaces dnmd_interfaces_static EXPORT interfaces
   PUBLIC_HEADER DESTINATION include
   ARCHIVE DESTINATION lib
-  LIBRARY DESTINATION lib)
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION bin)
 
 install(EXPORT interfaces NAMESPACE dnmd:: FILE dnmdinterfaces.cmake DESTINATION lib/cmake/dnmd)
