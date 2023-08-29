@@ -345,6 +345,7 @@ static bool dump_table_rows(mdtable_t* table)
 
 #define IF_NOT_ONE_REPORT_RAW(exp) if (1 != (exp)) { printf("Invalid (%u) [%#x]|", j, raw_values[j]); continue; }
 #define IF_INVALID_BLOB_REPORT_RAW(parse_fn, handle_or_cursor, blob_type, result_buf, result_buf_len) \
+    { \
     result_buf = NULL; \
     md_blob_parse_result_t result = parse_fn(handle_or_cursor, blob, blob_len, result_buf, &result_buf_len); \
     if (result == mdbpr_InvalidBlob) { printf("Invalid PDB Blob (" blob_type ") Offset: %zu (len: %u) [%#x]|", (blob - table->cxt->blob_heap.ptr), blob_len, raw_values[j]); continue; } \
@@ -353,7 +354,8 @@ static bool dump_table_rows(mdtable_t* table)
     if (result_buf == NULL) { printf("Ran out of memory when parsing PDB blob.\n"); return false; } \
     result = parse_fn(handle_or_cursor, blob, blob_len, result_buf, &result_buf_len); \
     if (result == mdbpr_InvalidBlob) { printf("Invalid PDB Blob (" blob_type ") Offset: %zu (len: %u) [%#x]|", (blob - table->cxt->blob_heap.ptr), blob_len, raw_values[j]); free(result_buf); continue; } \
-    assert(result == mdbpr_Success) \
+    assert(result == mdbpr_Success); \
+    }
 
     for (uint32_t i = 0; i < table->row_count; ++i)
     {
