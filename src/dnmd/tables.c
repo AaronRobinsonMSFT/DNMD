@@ -696,7 +696,7 @@ bool initialize_table_details(
         assert(mdtDocument_ColCount == get_table_column_count(id));
         break;
     case mdtid_MethodDebugInformation:
-        table->column_details[mdtMethodDebugInformation_Document] = compute_table_index(TABLE_INDEX_ARGS(mdtid_MethodDebugInformation));
+        table->column_details[mdtMethodDebugInformation_Document] = compute_table_index(TABLE_INDEX_ARGS(mdtid_Document));
         table->column_details[mdtMethodDebugInformation_SequencePoints] = blob_index;
         assert(mdtMethodDebugInformation_ColCount == get_table_column_count(id));
         break;
