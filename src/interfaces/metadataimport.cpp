@@ -2396,7 +2396,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetMemberProps(
 namespace
 {
     HRESULT FindConstant(
-        mdhandle_ptr& ptr,
+        mdhandle_view ptr,
         uint32_t lookupValue,
         DWORD& cnstCorType,
         UVCP_CONSTANT& cnst,

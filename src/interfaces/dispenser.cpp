@@ -85,13 +85,13 @@ namespace
 
             try
             {
-                obj->CreateAndAddTearOff<MetadataImportRO>(std::move(md_ptr), std::move(copiedMem), std::move(nowOwned));
+                DNMDOwner* handle_owner = obj->CreateAndAddTearOff<DNMDOwner>(std::move(md_ptr), std::move(copiedMem), std::move(nowOwned));
+                obj->CreateAndAddTearOff<MetadataImportRO>(handle_owner->MetaData());
             }
             catch(std::bad_alloc const&)
             {
                 return E_OUTOFMEMORY;
             }
-            
 
             return obj->QueryInterface(riid, (void**)ppIUnk);
         }
