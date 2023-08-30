@@ -496,6 +496,10 @@ static bool col_points_to_list(mdcursor_t* c, col_index_t col_index)
         return col_index == mdtEventMap_EventList;
     case mdtid_MethodDef:
         return col_index == mdtMethodDef_ParamList;
+#ifdef DNMD_PORTABLE_PDB
+    case mdtid_LocalScope:
+        return col_index == mdtLocalScope_VariableList || col_index == mdtLocalScope_ConstantList;
+#endif // DNMD_PORTABLE_PDB
     }
     return false;
 }
