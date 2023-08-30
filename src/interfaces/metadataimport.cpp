@@ -19,7 +19,7 @@
     } \
 }
 
-mdhandle_t MetadataImportRO::MetaData() const
+mdhandle_t MetadataImportRO::MetaData()
 {
     return _md_ptr.get();
 }

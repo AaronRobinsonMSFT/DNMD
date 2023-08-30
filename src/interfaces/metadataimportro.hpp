@@ -40,7 +40,7 @@ public:
 
     virtual ~MetadataImportRO() = default;
 
-    mdhandle_t MetaData() const;
+    mdhandle_t MetaData();
 
 public: // IMetaDataImport
     STDMETHOD_(void, CloseEnum)(HCORENUM hEnum) override;

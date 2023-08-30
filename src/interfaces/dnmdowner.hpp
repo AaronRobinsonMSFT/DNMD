@@ -11,6 +11,13 @@
 #include <cstdint>
 #include <atomic>
 
+EXTERN_GUID(IID_IDNMDOwner, 0x250ebc02, 0x1a92, 0x4638, 0xaa, 0x6c, 0x3d, 0x0f, 0x98, 0xb3, 0xa6, 0xfb);
+
+// This interface is an IUnknown interface for the purposes of easy discovery.
+struct IDNMDOwner : IUnknown
+{
+    virtual mdhandle_t MetaData() = 0;
+};
 
 // We use a reference wrapper around the handle to allow the handle to be swapped out.
 // We plan to use swapping to implement table sorting as DNMD itself does not support
@@ -18,45 +25,43 @@
 struct mdhandle_view
 {
 private:
-    mdhandle_ptr& ptr;
+    dncp::com_ptr<IDNMDOwner> owner;
 public:
-    mdhandle_view() = delete;
-    mdhandle_view(mdhandle_ptr& ptr)
-        : ptr{ ptr }
-    { }
-
-    mdhandle_t get() const
+    mdhandle_view(dncp::com_ptr<IDNMDOwner> owner)
     {
-        return ptr.get();
+        owner->AddRef();
+        this->owner.Attach(owner.p);
     }
 
-    bool operator==(std::nullptr_t) const
+    mdhandle_view(mdhandle_view& other)
     {
-        return ptr == nullptr;
+        other.owner->AddRef();
+        this->owner.Attach(other.owner.p);
     }
-    bool operator!=(std::nullptr_t) const
+    mdhandle_t get()
     {
-        return ptr != nullptr;
+        return owner->MetaData();
+    }
+
+    bool operator==(std::nullptr_t)
+    {
+        return get() == nullptr;
+    }
+    bool operator!=(std::nullptr_t)
+    {
+        return get() != nullptr;
     }
 };
 
-inline bool operator==(std::nullptr_t, mdhandle_view const& view)
+inline bool operator==(std::nullptr_t, mdhandle_view& view)
 {
     return view == nullptr;
 }
 
-inline bool operator!=(std::nullptr_t, mdhandle_view const& view)
+inline bool operator!=(std::nullptr_t, mdhandle_view& view)
 {
     return view != nullptr;
 }
-
-EXTERN_GUID(IID_IDNMDOwner, 0x250ebc02, 0x1a92, 0x4638, 0xaa, 0x6c, 0x3d, 0x0f, 0x98, 0xb3, 0xa6, 0xfb);
-
-// This interface is an IUnknown interface for the purposes of easy discovery.
-struct IDNMDOwner : IUnknown
-{
-    virtual mdhandle_view MetaData() = 0;
-};
 
 class DNMDOwner final : public TearOffBase<IDNMDOwner>
 {
@@ -88,10 +93,10 @@ public:
     virtual ~DNMDOwner() = default;
 
 public: // IDNMDOwner
-    mdhandle_view MetaData()
+    mdhandle_t MetaData()
     {
         // We use a reference here to enable us to swap out the underlying metadata handle.
-        return m_handle;
+        return m_handle.get();
     }
 };
 
