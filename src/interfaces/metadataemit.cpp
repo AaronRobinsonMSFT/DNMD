@@ -1,6 +1,7 @@
 #include "metadataemit.hpp"
 #include "pal.hpp"
 #include <limits>
+#include <fstream>
 
 #define RETURN_IF_FAILED(exp) \
 { \
@@ -74,27 +75,71 @@ HRESULT MetadataEmit::Save(
         LPCWSTR     szFile,
         DWORD       dwSaveFlags)
 {
-    UNREFERENCED_PARAMETER(szFile);
-    UNREFERENCED_PARAMETER(dwSaveFlags);
-    return E_NOTIMPL;
+    if (dwSaveFlags != 0)
+        return E_INVALIDARG;
+
+    pal::StringConvert<WCHAR, char> cvt(szFile);
+    if (!cvt.Success())
+        return E_INVALIDARG;
+
+    std::ofstream file(cvt, std::ios::binary);
+    
+    size_t saveSize;
+    md_write_to_buffer(MetaData(), nullptr, &saveSize);
+    std::unique_ptr<uint8_t[]> buffer { new uint8_t[saveSize] };
+    if (!md_write_to_buffer(MetaData(), buffer.get(), &saveSize))
+        return E_FAIL;
+
+    size_t totalSaved = 0;
+    while (totalSaved < saveSize)
+    {
+        size_t numBytesToWrite = std::min(saveSize, (size_t)std::numeric_limits<std::streamsize>::max());
+        file.write((const char*)buffer.get() + totalSaved, numBytesToWrite);
+        if (file.bad())
+            return E_FAIL;
+        totalSaved += numBytesToWrite;
+    }
+
+    return S_OK;
 }
 
 HRESULT MetadataEmit::SaveToStream(
         IStream     *pIStream,
         DWORD       dwSaveFlags)
 {
-    UNREFERENCED_PARAMETER(pIStream);
-    UNREFERENCED_PARAMETER(dwSaveFlags);
-    return E_NOTIMPL;
+    HRESULT hr;
+    if (dwSaveFlags != 0)
+        return E_INVALIDARG;
+
+    size_t saveSize;
+    md_write_to_buffer(MetaData(), nullptr, &saveSize);
+    std::unique_ptr<uint8_t[]> buffer { new uint8_t[saveSize] };
+    md_write_to_buffer(MetaData(), buffer.get(), &saveSize);
+
+    size_t totalSaved = 0;
+    while (totalSaved < saveSize)
+    {
+        ULONG numBytesToWrite = (ULONG)std::min(saveSize, (size_t)std::numeric_limits<ULONG>::max());
+        RETURN_IF_FAILED(pIStream->Write((const char*)buffer.get() + totalSaved, numBytesToWrite, nullptr));
+        totalSaved += numBytesToWrite;
+    }
+
+    return pIStream->Write(buffer.get(), (ULONG)saveSize, nullptr);
 }
 
 HRESULT MetadataEmit::GetSaveSize(
         CorSaveSize fSave,
         DWORD       *pdwSaveSize)
 {
+    // TODO: Do we want to support different save modes (as specified through dispenser options)?
+    // If so, we'll need to handle that here in addition to the ::Save* methods.
     UNREFERENCED_PARAMETER(fSave);
-    UNREFERENCED_PARAMETER(pdwSaveSize);
-    return E_NOTIMPL;
+    size_t saveSize;
+    md_write_to_buffer(MetaData(), nullptr, &saveSize);
+    if (saveSize > std::numeric_limits<DWORD>::max())
+        return CLDB_E_TOO_BIG;
+    *pdwSaveSize = (DWORD)saveSize;
+    return S_OK;
 }
 
 HRESULT MetadataEmit::DefineTypeDef(
@@ -532,9 +577,8 @@ HRESULT MetadataEmit::SaveToMemory(
         void        *pbData,
         ULONG       cbData)
 {
-    UNREFERENCED_PARAMETER(pbData);
-    UNREFERENCED_PARAMETER(cbData);
-    return E_NOTIMPL;
+    size_t saveSize = cbData;
+    return md_write_to_buffer(MetaData(), (uint8_t*)pbData, &saveSize) ? S_OK : E_OUTOFMEMORY;
 }
 
 HRESULT MetadataEmit::DefineUserString(
