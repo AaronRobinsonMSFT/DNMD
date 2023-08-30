@@ -548,9 +548,15 @@ HRESULT MetadataEmit::SetParent(
         mdMemberRef mr,
         mdToken     tk)
 {
-    UNREFERENCED_PARAMETER(mr);
-    UNREFERENCED_PARAMETER(tk);
-    return E_NOTIMPL;
+    mdcursor_t c;
+    if (!md_token_to_cursor(MetaData(), mr, &c))
+        return CLDB_E_FILE_CORRUPT;
+    
+    if (1 != md_set_column_value_as_token(c, mdtMemberRef_Class, 1, &tk))
+        return E_FAIL;
+    
+    // TODO: Update EncLog
+    return S_OK;
 }
 
 HRESULT MetadataEmit::GetTokenFromTypeSpec(
@@ -596,7 +602,7 @@ HRESULT MetadataEmit::DefineUserString(
         return E_FAIL;
 
     *pstk = TokenFromRid((mdString)c, mdtString);
-    return E_NOTIMPL;
+    return S_OK;
 }
 
 HRESULT MetadataEmit::DeleteToken(
@@ -612,11 +618,34 @@ HRESULT MetadataEmit::SetMethodProps(
         ULONG       ulCodeRVA,
         DWORD       dwImplFlags)
 {
-    UNREFERENCED_PARAMETER(md);
-    UNREFERENCED_PARAMETER(dwMethodFlags);
-    UNREFERENCED_PARAMETER(ulCodeRVA);
-    UNREFERENCED_PARAMETER(dwImplFlags);
-    return E_NOTIMPL;
+    mdcursor_t c;
+    if (!md_token_to_cursor(MetaData(), md, &c))
+        return CLDB_E_FILE_CORRUPT;
+    
+    if (dwMethodFlags != std::numeric_limits<UINT32>::max())
+    {
+        // TODO: Strip the reserved flags from user input and preserve the existing reserved flags.
+        uint32_t flags = dwMethodFlags;
+        if (1 != md_set_column_value_as_constant(c, mdtMethodDef_Flags, 1, &flags))
+            return E_FAIL;
+    }
+    
+    if (ulCodeRVA != std::numeric_limits<UINT32>::max())
+    {
+        uint32_t rva = ulCodeRVA;
+        if (1 != md_set_column_value_as_constant(c, mdtMethodDef_Rva, 1, &rva))
+            return E_FAIL;
+    }
+    
+    if (dwImplFlags != std::numeric_limits<UINT32>::max())
+    {
+        uint32_t implFlags = dwImplFlags;
+        if (1 != md_set_column_value_as_constant(c, mdtMethodDef_ImplFlags, 1, &implFlags))
+            return E_FAIL;
+    }
+    
+    // TODO: Update EncLog
+    return S_OK;
 }
 
 HRESULT MetadataEmit::SetTypeDefProps(
@@ -625,11 +654,74 @@ HRESULT MetadataEmit::SetTypeDefProps(
         mdToken     tkExtends,
         mdToken     rtkImplements[])
 {
-    UNREFERENCED_PARAMETER(td);
-    UNREFERENCED_PARAMETER(dwTypeDefFlags);
-    UNREFERENCED_PARAMETER(tkExtends);
-    UNREFERENCED_PARAMETER(rtkImplements);
-    return E_NOTIMPL;
+    mdcursor_t c;
+    if (!md_token_to_cursor(MetaData(), td, &c))
+        return CLDB_E_FILE_CORRUPT;
+    
+    if (dwTypeDefFlags != std::numeric_limits<UINT32>::max())
+    {
+        // TODO: Strip the reserved flags from user input and preserve the existing reserved flags.
+        uint32_t flags = dwTypeDefFlags;
+        if (1 != md_set_column_value_as_constant(c, mdtTypeDef_Flags, 1, &flags))
+            return E_FAIL;
+    }
+
+    if (tkExtends != std::numeric_limits<UINT32>::max())
+    {
+        if (IsNilToken(tkExtends))
+            tkExtends = mdTypeDefNil;
+        
+        if (1 != md_set_column_value_as_token(c, mdtTypeDef_Extends, 1, &tkExtends))
+            return E_FAIL;
+    }
+
+    if (rtkImplements)
+    {
+        // First null-out the Class columns of the current implementations.
+        // We can't delete here as we hand out tokens into this table to the caller.
+        // This would be much more efficient if we could delete rows, as nulling out the parent will almost assuredly make the column
+        // unsorted.
+        mdcursor_t interfaceImplCursor;
+        uint32_t numInterfaceImpls;
+        if (md_create_cursor(MetaData(), mdtid_InterfaceImpl, &interfaceImplCursor, &numInterfaceImpls)
+            && md_find_range_from_cursor(interfaceImplCursor, mdtInterfaceImpl_Class, RidFromToken(td), &interfaceImplCursor, &numInterfaceImpls) != MD_RANGE_NOT_FOUND)
+        {
+            for (uint32_t i = 0; i < numInterfaceImpls; ++i)
+            {
+                mdToken parent;
+                if (1 != md_get_column_value_as_token(interfaceImplCursor, mdtInterfaceImpl_Class, 1, &parent))
+                    return E_FAIL;
+                
+                // If getting a range was unsupported, then we're doing a whole table scan here.
+                // In that case, we can't assume that we've already validated the parent.
+                // Update it here.
+                if (parent == td)
+                {
+                    mdToken newParent = mdTypeDefNil;
+                    if (1 != md_set_column_value_as_token(interfaceImplCursor, mdtInterfaceImpl_Class, 1, &newParent))
+                        return E_FAIL;
+                }
+            }
+        }
+
+        size_t implIndex = 0;
+        mdToken currentImplementation = rtkImplements[implIndex];
+        do
+        {
+            md_added_row_t interfaceImpl;
+            if (!md_append_row(MetaData(), mdtid_InterfaceImpl, &interfaceImpl))
+                return E_FAIL;
+            
+            if (1 != md_set_column_value_as_cursor(interfaceImpl, mdtInterfaceImpl_Class, 1, &c))
+                return E_FAIL;
+            
+            if (1 != md_set_column_value_as_token(interfaceImpl, mdtInterfaceImpl_Interface, 1, &currentImplementation))
+                return E_FAIL;
+        } while ((currentImplementation = rtkImplements[++implIndex]) != mdTokenNil);
+    }
+
+    // TODO: Update EncLog
+    return S_OK;
 }
 
 HRESULT MetadataEmit::SetEventProps(
@@ -672,11 +764,56 @@ HRESULT MetadataEmit::DefinePinvokeMap(
         LPCWSTR     szImportName,
         mdModuleRef mrImportDLL)
 {
-    UNREFERENCED_PARAMETER(tk);
-    UNREFERENCED_PARAMETER(dwMappingFlags);
-    UNREFERENCED_PARAMETER(szImportName);
-    UNREFERENCED_PARAMETER(mrImportDLL);
-    return E_NOTIMPL;
+    mdcursor_t c;
+    if (!md_token_to_cursor(MetaData(), tk, &c))
+        return CLDB_E_FILE_CORRUPT;
+    
+    if (TypeFromToken(tk) == mdtMethodDef)
+    {
+        // Set "has impl map flag" and check for duplicates
+    }
+    else if (TypeFromToken(tk) == mdtFieldDef)
+    {
+        // Set "has impl map flag" and check for duplicates
+    }
+
+    // If we found a duplicate and ENC is on, update.
+    // If we found a duplicate and ENC is off, fail.
+    // Otherwise, we need to make a new row
+    mdcursor_t row_to_edit;
+    md_added_row_t added_row_wrapper;
+
+    // TODO: We don't expose tokens for the ImplMap table, so as long as we aren't generating ENC deltas
+    // we can insert in-place.
+    if (!md_append_row(MetaData(), mdtid_ImplMap, &row_to_edit))
+        return E_FAIL;
+    added_row_wrapper = md_added_row_t(row_to_edit);
+
+    if (1 != md_set_column_value_as_token(row_to_edit, mdtImplMap_MemberForwarded, 1, &tk))
+        return E_FAIL;
+    
+    if (dwMappingFlags != std::numeric_limits<uint32_t>::max())
+    {
+        uint32_t mappingFlags = dwMappingFlags;
+        if (1 != md_set_column_value_as_constant(row_to_edit, mdtImplMap_MappingFlags, 1, &mappingFlags))
+            return E_FAIL;
+    }
+    
+    pal::StringConvert<WCHAR, char> cvt(szImportName);
+    const char* name = cvt;
+    if (1 != md_set_column_value_as_utf8(row_to_edit, mdtImplMap_ImportName, 1, &name))
+        return E_FAIL;
+    
+    if (IsNilToken(mrImportDLL))
+    {
+        // TODO: If the token is nil, create a module ref to "" (if it doesn't exist) and use that.
+    }
+
+    if (1 != md_set_column_value_as_token(row_to_edit, mdtImplMap_ImportScope, 1, &mrImportDLL))
+        return E_FAIL;
+    
+    // TODO: Update EncLog
+    return S_OK;
 }
 
 HRESULT MetadataEmit::SetPinvokeMap(
@@ -685,11 +822,39 @@ HRESULT MetadataEmit::SetPinvokeMap(
         LPCWSTR     szImportName,
         mdModuleRef mrImportDLL)
 {
-    UNREFERENCED_PARAMETER(tk);
-    UNREFERENCED_PARAMETER(dwMappingFlags);
-    UNREFERENCED_PARAMETER(szImportName);
-    UNREFERENCED_PARAMETER(mrImportDLL);
-    return E_NOTIMPL;
+    mdcursor_t c;
+    if (!md_token_to_cursor(MetaData(), tk, &c))
+        return CLDB_E_FILE_CORRUPT;
+
+    mdcursor_t implMapCursor;
+    uint32_t numImplMaps;
+    if (!md_create_cursor(MetaData(), mdtid_ImplMap, &implMapCursor, &numImplMaps))
+        return E_FAIL;
+
+    mdcursor_t row_to_edit;
+    if (!md_find_row_from_cursor(implMapCursor, mdtImplMap_MemberForwarded, tk, &row_to_edit))
+        return CLDB_E_RECORD_NOTFOUND;
+    
+    if (dwMappingFlags != std::numeric_limits<uint32_t>::max())
+    {
+        uint32_t mappingFlags = dwMappingFlags;
+        if (1 != md_set_column_value_as_constant(row_to_edit, mdtImplMap_MappingFlags, 1, &mappingFlags))
+            return E_FAIL;
+    }
+    
+    if (szImportName != nullptr)
+    {
+        pal::StringConvert<WCHAR, char> cvt(szImportName);
+        const char* name = cvt;
+        if (1 != md_set_column_value_as_utf8(row_to_edit, mdtImplMap_ImportName, 1, &name))
+            return E_FAIL;
+    }
+    
+    if (1 != md_set_column_value_as_token(row_to_edit, mdtImplMap_ImportScope, 1, &mrImportDLL))
+        return E_FAIL;
+    
+    // TODO: Update EncLog
+    return S_OK;
 }
 
 HRESULT MetadataEmit::DeletePinvokeMap(
@@ -707,12 +872,40 @@ HRESULT MetadataEmit::DefineCustomAttribute(
         ULONG       cbCustomAttribute,
         mdCustomAttribute *pcv)
 {
-    UNREFERENCED_PARAMETER(tkOwner);
-    UNREFERENCED_PARAMETER(tkCtor);
-    UNREFERENCED_PARAMETER(pCustomAttribute);
-    UNREFERENCED_PARAMETER(cbCustomAttribute);
-    UNREFERENCED_PARAMETER(pcv);
-    return E_NOTIMPL;
+    if (TypeFromToken(tkOwner) == mdtCustomAttribute)
+        return E_INVALIDARG;
+
+    if (IsNilToken(tkOwner)
+        || IsNilToken(tkCtor)
+        || (TypeFromToken(tkCtor) != mdtMethodDef
+            && TypeFromToken(tkCtor) != mdtMemberRef) )
+    {
+        return E_INVALIDARG;
+    }
+
+    // TODO: Recognize pseudoattributes and handle them appropriately.
+
+    // We hand out tokens here, so we can't move rows to keep the parent column sorted.
+    md_added_row_t new_row;
+    if (!md_append_row(MetaData(), mdtid_CustomAttribute, &new_row))
+        return E_FAIL;
+    
+    if (1 != md_set_column_value_as_token(new_row, mdtCustomAttribute_Parent, 1, &tkOwner))
+        return E_FAIL;
+    
+    if (1 != md_set_column_value_as_token(new_row, mdtCustomAttribute_Type, 1, &tkCtor))
+        return E_FAIL;
+    
+    uint8_t const* pCustomAttributeBlob = (uint8_t const*)pCustomAttribute;
+    uint32_t customAttributeBlobLen = cbCustomAttribute;
+    if (1 != md_set_column_value_as_blob(new_row, mdtCustomAttribute_Value, 1, &pCustomAttributeBlob, &customAttributeBlobLen))
+        return E_FAIL;
+    
+    if (!md_cursor_to_token(new_row, pcv))
+        return CLDB_E_FILE_CORRUPT;
+    
+    // TODO: Update EncLog
+    return S_OK;
 }
 
 HRESULT MetadataEmit::SetCustomAttributeValue(
@@ -720,10 +913,20 @@ HRESULT MetadataEmit::SetCustomAttributeValue(
         void const  *pCustomAttribute,
         ULONG       cbCustomAttribute)
 {
-    UNREFERENCED_PARAMETER(pcv);
-    UNREFERENCED_PARAMETER(pCustomAttribute);
-    UNREFERENCED_PARAMETER(cbCustomAttribute);
-    return E_NOTIMPL;
+    if (TypeFromToken(pcv) != mdtCustomAttribute)
+        return E_INVALIDARG;
+    
+    mdcursor_t c;
+    if (!md_token_to_cursor(MetaData(), pcv, &c))
+        return CLDB_E_FILE_CORRUPT;
+
+    uint8_t const* pCustomAttributeBlob = (uint8_t const*)pCustomAttribute;
+    uint32_t customAttributeBlobLen = cbCustomAttribute;
+    if (1 != md_set_column_value_as_blob(c, mdtCustomAttribute_Value, 1, &pCustomAttributeBlob, &customAttributeBlobLen))
+        return E_FAIL;
+    
+    // TODO: Update EncLog
+    return S_OK;
 }
 
 HRESULT MetadataEmit::DefineField(
