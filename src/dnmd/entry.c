@@ -576,6 +576,7 @@ static bool dump_table_rows(mdtable_t* table)
     }
     printf("\n");
 #undef IF_NOT_ONE_REPORT_RAW
+#undef IF_INVALID_BLOB_REPORT_RAW
 
     return true;
 }

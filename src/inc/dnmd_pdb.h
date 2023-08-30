@@ -98,7 +98,8 @@ typedef struct md_local_constant_sig__
 
     uint32_t custom_modifier_count;
     
-    struct {
+    struct
+    {
         bool required;
         mdToken type;
     } custom_modifiers[];
