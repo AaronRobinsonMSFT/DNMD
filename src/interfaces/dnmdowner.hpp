@@ -93,9 +93,8 @@ public:
     virtual ~DNMDOwner() = default;
 
 public: // IDNMDOwner
-    mdhandle_t MetaData()
+    mdhandle_t MetaData() override
     {
-        // We use a reference here to enable us to swap out the underlying metadata handle.
         return m_handle.get();
     }
 };
