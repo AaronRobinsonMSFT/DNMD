@@ -28,12 +28,12 @@ private:
     dncp::com_ptr<IDNMDOwner> owner;
 public:
     mdhandle_view(dncp::com_ptr<IDNMDOwner> owner)
-        :owner(owner.p)
+        : owner{ owner.p }
     {
     }
 
     mdhandle_view(mdhandle_view const& other)
-        :owner(other.owner.p)
+        : owner{ other.owner.p }
     {
     }
 
