@@ -28,15 +28,13 @@ private:
     dncp::com_ptr<IDNMDOwner> owner;
 public:
     mdhandle_view(dncp::com_ptr<IDNMDOwner> owner)
+        :owner(owner.p)
     {
-        owner->AddRef();
-        this->owner.Attach(owner.p);
     }
 
-    mdhandle_view(mdhandle_view& other)
+    mdhandle_view(mdhandle_view const& other)
+        :owner(other.owner.p)
     {
-        other.owner->AddRef();
-        this->owner.Attach(other.owner.p);
     }
     mdhandle_t get()
     {
