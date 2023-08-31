@@ -36,6 +36,17 @@ public:
         :owner(other.owner.p)
     {
     }
+
+    mdhandle_view(mdhandle_view&& other) = default;
+
+    mdhandle_view& operator=(mdhandle_view const& other)
+    {
+        owner = std::move(dncp::com_ptr<IDNMDOwner>{ other.owner.p });
+        return *this;
+    }
+
+    mdhandle_view& operator=(mdhandle_view&& other) = default;
+
     mdhandle_t get()
     {
         return owner->MetaData();
