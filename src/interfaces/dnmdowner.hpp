@@ -41,7 +41,7 @@ public:
 
     mdhandle_view& operator=(mdhandle_view const& other)
     {
-        _owner = std::move(dncp::com_ptr<IDNMDOwner>{ other._owner.p });
+        _owner = dncp::com_ptr<IDNMDOwner>{ other._owner.p };
         return *this;
     }
 
