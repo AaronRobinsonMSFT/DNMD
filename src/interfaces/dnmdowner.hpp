@@ -25,15 +25,15 @@ struct IDNMDOwner : IUnknown
 class mdhandle_view final
 {
 private:
-    dncp::com_ptr<IDNMDOwner> owner;
+    dncp::com_ptr<IDNMDOwner> _owner;
 public:
     mdhandle_view(dncp::com_ptr<IDNMDOwner> owner)
-        : owner{ owner.p }
+        : _owner{ owner.p }
     {
     }
 
     mdhandle_view(mdhandle_view const& other)
-        : owner{ other.owner.p }
+        : _owner{ other._owner.p }
     {
     }
 
@@ -41,7 +41,7 @@ public:
 
     mdhandle_view& operator=(mdhandle_view const& other)
     {
-        owner = std::move(dncp::com_ptr<IDNMDOwner>{ other.owner.p });
+        _owner = std::move(dncp::com_ptr<IDNMDOwner>{ other._owner.p });
         return *this;
     }
 
@@ -49,7 +49,7 @@ public:
 
     mdhandle_t get()
     {
-        return owner->MetaData();
+        return _owner->MetaData();
     }
 
     bool operator==(std::nullptr_t)
@@ -75,7 +75,7 @@ inline bool operator!=(std::nullptr_t, mdhandle_view& view)
 class DNMDOwner final : public TearOffBase<IDNMDOwner>
 {
 private:
-    mdhandle_ptr m_handle;
+    mdhandle_ptr _handle;
     malloc_ptr<void> _malloc_to_free;
     dncp::cotaskmem_ptr<void> _cotaskmem_to_free;
 
@@ -94,7 +94,7 @@ protected:
 public:
     DNMDOwner(IUnknown* controllingUnknown, mdhandle_ptr md_ptr, malloc_ptr<void> mallocMem, dncp::cotaskmem_ptr<void> cotaskmemMem)
         : TearOffBase(controllingUnknown)
-        , m_handle{ std::move(md_ptr) }
+        , _handle{ std::move(md_ptr) }
         , _malloc_to_free{ std::move(mallocMem) }
         , _cotaskmem_to_free{ std::move(cotaskmemMem) }
     { }
@@ -104,7 +104,7 @@ public:
 public: // IDNMDOwner
     mdhandle_t MetaData() override
     {
-        return m_handle.get();
+        return _handle.get();
     }
 };
 
