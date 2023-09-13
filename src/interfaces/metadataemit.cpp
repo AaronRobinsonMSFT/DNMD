@@ -1072,8 +1072,15 @@ HRESULT MetadataEmit::DefineSecurityAttributeSet(
 HRESULT MetadataEmit::ApplyEditAndContinue(
         IUnknown    *pImport)
 {
-    UNREFERENCED_PARAMETER(pImport);
-    return E_NOTIMPL;
+    HRESULT hr;
+    dncp::com_ptr<IDNMDOwner> delta;
+    RETURN_IF_FAILED(pImport->QueryInterface(IID_IDNMDOwner, (void**)&delta));
+
+    if (!md_apply_delta(MetaData(), delta->MetaData()))
+        return E_INVALIDARG;
+
+    // TODO: Reset and copy EncLog from delta metadata to this metadata.
+    return S_OK;
 }
 
 HRESULT MetadataEmit::TranslateSigWithScope(
