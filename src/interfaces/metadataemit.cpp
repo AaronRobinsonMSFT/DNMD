@@ -13,6 +13,9 @@
     } \
 }
 
+#define MD_MODULE_TOKEN TokenFromRid(1, mdtModule)
+#define MD_GLOBAL_PARENT_TOKEN TokenFromRid(1, mdtTypeDef)
+
 namespace
 {
     void SplitTypeName(
@@ -386,17 +389,17 @@ HRESULT MetadataEmit::DefineImportType(
     dncp::com_ptr<IDNMDOwner> assemImport{};
 
     if (pAssemImport != nullptr)
-        RETURN_IF_FAILED(pAssemImport->QueryInterface(&assemImport));
+        RETURN_IF_FAILED(pAssemImport->QueryInterface(IID_IDNMDOwner, (void**)&assemImport));
 
     dncp::com_ptr<IDNMDOwner> assemEmit{};
     if (pAssemEmit != nullptr)
-        RETURN_IF_FAILED(pAssemEmit->QueryInterface(&assemEmit));
+        RETURN_IF_FAILED(pAssemEmit->QueryInterface(IID_IDNMDOwner, (void**)&assemEmit));
 
     if (pImport == nullptr)
         return E_INVALIDARG;
     
     dncp::com_ptr<IDNMDOwner> import{};
-    RETURN_IF_FAILED(pImport->QueryInterface(&import));
+    RETURN_IF_FAILED(pImport->QueryInterface(IID_IDNMDOwner, (void**)&import));
 
     mdguid_t thisMvid = { 0 };
     mdguid_t assemEmitMvid = { 0 };
@@ -593,12 +596,36 @@ HRESULT MetadataEmit::DefineMemberRef(
         ULONG       cbSigBlob,
         mdMemberRef *pmr)
 {
-    UNREFERENCED_PARAMETER(tkImport);
-    UNREFERENCED_PARAMETER(szName);
-    UNREFERENCED_PARAMETER(pvSigBlob);
-    UNREFERENCED_PARAMETER(cbSigBlob);
-    UNREFERENCED_PARAMETER(pmr);
-    return E_NOTIMPL;
+    if (IsNilToken(tkImport))
+        tkImport = MD_GLOBAL_PARENT_TOKEN;
+    
+    pal::StringConvert<WCHAR, char> cvt(szName);
+    if (!cvt.Success())
+        return E_INVALIDARG;
+    const char* name = cvt;
+
+    // TODO: Check for duplicates
+
+    md_added_row_t c;
+    if (!md_append_row(MetaData(), mdtid_MemberRef, &c))
+        return E_FAIL;
+    
+    if (1 != md_set_column_value_as_token(c, mdtMemberRef_Class, 1, &tkImport))
+        return E_FAIL;
+    
+    if (1 != md_set_column_value_as_utf8(c, mdtMemberRef_Name, 1, &name))
+        return E_FAIL;
+    
+    uint8_t const* sig = (uint8_t const*)pvSigBlob;
+    uint32_t sigLength = cbSigBlob;
+    if (1 != md_set_column_value_as_blob(c, mdtMemberRef_Signature, 1, &sig, &sigLength))
+        return E_FAIL;
+    
+    if (!md_cursor_to_token(c, pmr))
+        return E_FAIL;
+    
+    // TODO: Update EncLog
+    return S_OK;
 }
 
 HRESULT MetadataEmit::DefineImportMember(
