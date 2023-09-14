@@ -1456,13 +1456,16 @@ HRESULT MetadataEmit::DefineMethodSpec(
     return S_OK;
 }
 
+// TODO: Add EnC mode support to the emit implementation.
+// Maybe we can do a layering model where we have a base emit implementation that doesn't support EnC,
+// and then a wrapper that does?
 HRESULT MetadataEmit::GetDeltaSaveSize(
         CorSaveSize fSave,
         DWORD       *pdwSaveSize)
 {
     UNREFERENCED_PARAMETER(fSave);
     UNREFERENCED_PARAMETER(pdwSaveSize);
-    return E_NOTIMPL;
+    return META_E_NOT_IN_ENC_MODE;
 }
 
 HRESULT MetadataEmit::SaveDelta(
@@ -1471,7 +1474,7 @@ HRESULT MetadataEmit::SaveDelta(
 {
     UNREFERENCED_PARAMETER(szFile);
     UNREFERENCED_PARAMETER(dwSaveFlags);
-    return E_NOTIMPL;
+    return META_E_NOT_IN_ENC_MODE;
 }
 
 HRESULT MetadataEmit::SaveDeltaToStream(
@@ -1480,7 +1483,7 @@ HRESULT MetadataEmit::SaveDeltaToStream(
 {
     UNREFERENCED_PARAMETER(pIStream);
     UNREFERENCED_PARAMETER(dwSaveFlags);
-    return E_NOTIMPL;
+    return META_E_NOT_IN_ENC_MODE;
 }
 
 HRESULT MetadataEmit::SaveDeltaToMemory(
@@ -1489,7 +1492,7 @@ HRESULT MetadataEmit::SaveDeltaToMemory(
 {
     UNREFERENCED_PARAMETER(pbData);
     UNREFERENCED_PARAMETER(cbData);
-    return E_NOTIMPL;
+    return META_E_NOT_IN_ENC_MODE;
 }
 
 HRESULT MetadataEmit::DefineGenericParam(
@@ -1528,7 +1531,7 @@ HRESULT MetadataEmit::SetGenericParamProps(
 
 HRESULT MetadataEmit::ResetENCLog()
 {
-    return E_NOTIMPL;
+    return META_E_NOT_IN_ENC_MODE;
 }
 
 HRESULT MetadataEmit::DefineAssembly(
@@ -1577,9 +1580,6 @@ HRESULT MetadataEmit::DefineAssembly(
     uint32_t hashAlgId = ulHashAlgId;
     if (1 != md_set_column_value_as_constant(c, mdtAssembly_HashAlgId, 1, &hashAlgId))
         return E_FAIL;
-    
-    // TODO: Handle pMetaData
-    UNREFERENCED_PARAMETER(pMetaData);
 
     if (pMetaData->usMajorVersion != std::numeric_limits<uint16_t>::max())
     {
@@ -1638,15 +1638,87 @@ HRESULT MetadataEmit::DefineAssemblyRef(
         DWORD       dwAssemblyRefFlags,
         mdAssemblyRef *pmdar)
 {
-    UNREFERENCED_PARAMETER(pbPublicKeyOrToken);
-    UNREFERENCED_PARAMETER(cbPublicKeyOrToken);
-    UNREFERENCED_PARAMETER(szName);
-    UNREFERENCED_PARAMETER(pMetaData);
-    UNREFERENCED_PARAMETER(pbHashValue);
-    UNREFERENCED_PARAMETER(cbHashValue);
-    UNREFERENCED_PARAMETER(dwAssemblyRefFlags);
-    UNREFERENCED_PARAMETER(pmdar);
-    return E_NOTIMPL;
+    if (szName == nullptr || pMetaData == nullptr || pmdar == nullptr)
+        return E_INVALIDARG;
+
+    pal::StringConvert<WCHAR, char> cvt(szName);
+    if (!cvt.Success())
+        return E_INVALIDARG;
+    
+    md_added_row_t c;
+    uint32_t count;
+    if (!md_append_row(MetaData(), mdtid_AssemblyRef, &c))
+        return E_FAIL;
+    
+    const uint8_t* publicKey = (const uint8_t*)pbPublicKeyOrToken;
+    if (publicKey != nullptr)
+    {
+        uint32_t publicKeyLength = cbPublicKeyOrToken;
+        if (1 != md_set_column_value_as_blob(c, mdtAssemblyRef_PublicKeyOrToken, 1, &publicKey, &publicKeyLength))
+            return E_FAIL;
+    }
+
+    if (pbHashValue != nullptr)
+    {
+        uint8_t const* hashValue = (uint8_t const*)pbHashValue;
+        uint32_t hashValueLength = cbHashValue;
+        if (1 != md_set_column_value_as_blob(c, mdtAssemblyRef_HashValue, 1, &hashValue, &hashValueLength))
+            return E_FAIL;
+    }
+    
+    uint32_t assemblyFlags = PrepareForSaving(dwAssemblyRefFlags);
+    if (1 != md_set_column_value_as_constant(c, mdtAssemblyRef_Flags, 1, &assemblyFlags))
+        return E_FAIL;
+
+    const char* name = cvt;
+    if (1 != md_set_column_value_as_utf8(c, mdtAssemblyRef_Name, 1, &name))
+        return E_FAIL;
+
+    if (pMetaData->usMajorVersion != std::numeric_limits<uint16_t>::max())
+    {
+        uint32_t majorVersion = pMetaData->usMajorVersion;
+        if (1 != md_set_column_value_as_constant(c, mdtAssemblyRef_MajorVersion, 1, &majorVersion))
+            return E_FAIL;
+    }
+
+    if (pMetaData->usMinorVersion != std::numeric_limits<uint16_t>::max())
+    {
+        uint32_t minorVersion = pMetaData->usMinorVersion;
+        if (1 != md_set_column_value_as_constant(c, mdtAssemblyRef_MinorVersion, 1, &minorVersion))
+            return E_FAIL;
+    }
+
+    if (pMetaData->usBuildNumber != std::numeric_limits<uint16_t>::max())
+    {
+        uint32_t buildNumber = pMetaData->usBuildNumber;
+        if (1 != md_set_column_value_as_constant(c, mdtAssemblyRef_BuildNumber, 1, &buildNumber))
+            return E_FAIL;
+    }
+
+    if (pMetaData->usRevisionNumber != std::numeric_limits<uint16_t>::max())
+    {
+        uint32_t revisionNumber = pMetaData->usRevisionNumber;
+        if (1 != md_set_column_value_as_constant(c, mdtAssemblyRef_RevisionNumber, 1, &revisionNumber))
+            return E_FAIL;
+    }
+
+    if (pMetaData->szLocale != nullptr)
+    {
+        pal::StringConvert<WCHAR, char> cvtLocale(pMetaData->szLocale);
+        if (!cvtLocale.Success())
+            return E_INVALIDARG;
+
+        const char* locale = cvtLocale;
+        if (1 != md_set_column_value_as_utf8(c, mdtAssemblyRef_Culture, 1, &locale))
+            return E_FAIL;
+    }
+
+    if (!md_cursor_to_token(c, pmdar))
+        return E_FAIL;
+
+    // TODO: Update ENC Log
+
+    return S_OK;
 }
 
 HRESULT MetadataEmit::DefineFile(
@@ -1656,12 +1728,41 @@ HRESULT MetadataEmit::DefineFile(
         DWORD       dwFileFlags,
         mdFile      *pmdf)
 {
-    UNREFERENCED_PARAMETER(szName);
-    UNREFERENCED_PARAMETER(pbHashValue);
-    UNREFERENCED_PARAMETER(cbHashValue);
-    UNREFERENCED_PARAMETER(dwFileFlags);
-    UNREFERENCED_PARAMETER(pmdf);
-    return E_NOTIMPL;
+    
+    pal::StringConvert<WCHAR, char> cvt(szName);
+    if (!cvt.Success())
+        return E_INVALIDARG;
+
+    md_added_row_t c;
+    
+    if (!md_append_row(MetaData(), mdtid_File, &c))
+        return E_FAIL;
+
+    char const* name = cvt;
+
+    if (1 != md_set_column_value_as_utf8(c, mdtFile_Name, 1, &name))
+        return E_FAIL;
+    
+    if (pbHashValue != nullptr)
+    {
+        uint8_t const* hashValue = (uint8_t const*)pbHashValue;
+        uint32_t hashValueLength = cbHashValue;
+        if (1 != md_set_column_value_as_blob(c, mdtFile_HashValue, 1, &hashValue, &hashValueLength))
+            return E_FAIL;
+    }
+
+    if (dwFileFlags != std::numeric_limits<uint32_t>::max())
+    {
+        uint32_t fileFlags = dwFileFlags;
+        if (1 != md_set_column_value_as_constant(c, mdtFile_Flags, 1, &fileFlags))
+            return E_FAIL;
+    }
+
+    if (!md_cursor_to_token(c, pmdf))
+        return E_FAIL;
+    
+    // TODO: Update ENC Log
+    return S_OK;
 }
 
 HRESULT MetadataEmit::DefineExportedType(
