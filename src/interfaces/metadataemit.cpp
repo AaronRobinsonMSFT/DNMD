@@ -1168,6 +1168,68 @@ HRESULT MetadataEmit::SetCustomAttributeValue(
     return S_OK;
 }
 
+namespace
+{
+    // Determine the blob size base of the ELEMENT_TYPE_* associated with the blob.
+    // This cannot be a table lookup because ELEMENT_TYPE_STRING is an unicode string.
+    uint32_t GetSizeOfConstantBlob(
+        int32_t  type,
+        void const* pValue,
+        uint32_t  strLen)
+    {
+        uint32_t size = 0;
+
+        switch (type)
+        {
+        case ELEMENT_TYPE_BOOLEAN:
+            size = sizeof(bool);
+            break;
+        case ELEMENT_TYPE_I1:
+        case ELEMENT_TYPE_U1:
+            size = sizeof(uint8_t);
+            break;
+        case ELEMENT_TYPE_CHAR:
+        case ELEMENT_TYPE_I2:
+        case ELEMENT_TYPE_U2:
+            size = sizeof(uint16_t);
+            break;
+        case ELEMENT_TYPE_I4:
+        case ELEMENT_TYPE_U4:
+        case ELEMENT_TYPE_R4:
+            size = sizeof(uint32_t);
+
+            break;
+
+        case ELEMENT_TYPE_I8:
+        case ELEMENT_TYPE_U8:
+        case ELEMENT_TYPE_R8:
+            size = sizeof(uint64_t);
+            break;
+
+        case ELEMENT_TYPE_STRING:
+            if (pValue == 0)
+                size = 0;
+            else
+            if (strLen != (uint32_t) -1)
+                size = strLen * sizeof(WCHAR);
+            else
+                size = (uint32_t)(sizeof(WCHAR) * PAL_wcslen((LPWSTR)pValue));
+            break;
+
+        case ELEMENT_TYPE_CLASS:
+            // The only legal value is a null pointer, and on 32 bit platforms we've already
+            // stored 32 bits, so we will use just 32 bits of null.  If the type is
+            // E_T_CLASS, the caller should know that the value is always null anyway.
+            size = sizeof(uint32_t);
+            break;
+        default:
+            assert(!"Not a valid type to specify default value!");
+            break;
+        }
+        return size;
+    }
+}
+
 HRESULT MetadataEmit::DefineField(
         mdTypeDef   td,
         LPCWSTR     szName,
@@ -1179,16 +1241,86 @@ HRESULT MetadataEmit::DefineField(
         ULONG       cchValue,
         mdFieldDef  *pmd)
 {
-    UNREFERENCED_PARAMETER(td);
-    UNREFERENCED_PARAMETER(szName);
-    UNREFERENCED_PARAMETER(dwFieldFlags);
-    UNREFERENCED_PARAMETER(pvSigBlob);
-    UNREFERENCED_PARAMETER(cbSigBlob);
-    UNREFERENCED_PARAMETER(dwCPlusTypeFlag);
-    UNREFERENCED_PARAMETER(pValue);
-    UNREFERENCED_PARAMETER(cchValue);
-    UNREFERENCED_PARAMETER(pmd);
-    return E_NOTIMPL;
+    pal::StringConvert<WCHAR, char> cvt(szName);
+    if (!cvt.Success())
+        return E_INVALIDARG;
+    
+    const char* name = cvt;
+
+    md_added_row_t c;
+    mdcursor_t typeDef;
+    if (!md_token_to_cursor(MetaData(), td, &typeDef))
+        return CLDB_E_FILE_CORRUPT;
+    
+    if (!md_add_new_row_to_list(typeDef, mdtTypeDef_FieldList, &c))
+        return E_FAIL;
+    
+    if (1 != md_set_column_value_as_utf8(c, mdtField_Name, 1, &name))
+        return E_FAIL;
+    
+    bool hasConstant = false;
+    // See if there is a Constant.
+    if ((dwCPlusTypeFlag != ELEMENT_TYPE_VOID && dwCPlusTypeFlag != ELEMENT_TYPE_END &&
+         dwCPlusTypeFlag != UINT32_MAX) &&
+        (pValue || (pValue == 0 && (dwCPlusTypeFlag == ELEMENT_TYPE_STRING ||
+                                    dwCPlusTypeFlag == ELEMENT_TYPE_CLASS))))
+    {
+        hasConstant = true;
+    }
+
+    if (dwFieldFlags != std::numeric_limits<UINT32>::max())
+    {
+        // TODO: Handle reserved flags
+        uint32_t fieldFlags = dwFieldFlags;
+
+        // If the field name has the special name for enum fields,
+        // set the special name and RTSpecialName flags.
+        // COMPAT: CoreCLR does not check if the field is actually in an enum type.
+        if (strcmp(name, COR_ENUM_FIELD_NAME) == 0)
+        {
+            fieldFlags |= fdRTSpecialName | fdSpecialName;
+        }
+        if (1 != md_set_column_value_as_constant(c, mdtField_Flags, 1, &fieldFlags))
+            return E_FAIL;
+    }
+
+    uint8_t const* sig = (uint8_t const*)pvSigBlob;
+    uint32_t sigLength = cbSigBlob;
+    if (sigLength != 0)
+    {
+        if (1 != md_set_column_value_as_blob(c, mdtField_Signature, 1, &sig, &sigLength))
+            return E_FAIL;
+    }
+
+    if (hasConstant)
+    {
+        md_added_row_t constant;
+        if (!md_append_row(MetaData(), mdtid_Constant, &constant))
+            return E_FAIL;
+        
+        if (1 != md_set_column_value_as_cursor(constant, mdtConstant_Parent, 1, &c))
+            return E_FAIL;
+        
+        uint32_t type = dwCPlusTypeFlag;
+        if (1 != md_set_column_value_as_constant(constant, mdtConstant_Type, 1, &type))
+            return E_FAIL;
+        
+        uint64_t defaultConstantValue = 0;
+        uint8_t const* pConstantValue = (uint8_t const*)pValue;
+        if (pConstantValue == nullptr)
+            pConstantValue = (uint8_t const*)&defaultConstantValue;
+        
+        uint32_t constantSize = GetSizeOfConstantBlob(dwCPlusTypeFlag, pConstantValue, cchValue);
+        if (1 != md_set_column_value_as_blob(constant, mdtConstant_Value, 1, &pConstantValue, &constantSize))
+            return E_FAIL;
+    
+    }
+
+    if (!md_cursor_to_token(c, pmd))
+        return CLDB_E_FILE_CORRUPT;
+    
+    // TODO: Update EncLog
+    return S_OK;
 }
 
 HRESULT MetadataEmit::DefineProperty(
