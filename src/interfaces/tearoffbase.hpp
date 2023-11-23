@@ -6,8 +6,6 @@
 #include <memory>
 #include <cassert>
 
-class ControllingIUnknown;
-
 class TearOffUnknown : public IUnknown
 {
     friend class ControllingIUnknown;
@@ -18,7 +16,7 @@ protected:
     virtual bool TryGetInterfaceOnThis(REFIID riid, void** ppvObject) PURE;
 
 public:
-    TearOffUnknown(IUnknown* outer)
+    explicit TearOffUnknown(IUnknown* outer)
         : _pUnkOuter{ outer }
     {
         assert(outer != nullptr);
@@ -84,4 +82,4 @@ public:
     }
 };
 
-#endif
+#endif // _SRC_INTERFACES_TEAROFFBASE_HPP_

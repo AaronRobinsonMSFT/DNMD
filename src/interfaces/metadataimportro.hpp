@@ -610,4 +610,4 @@ public: // IMetaDataAssemblyImport
         ULONG* pcAssemblies) override;
 };
 
-#endif
+#endif // _SRC_INTERFACES_METADATAIMPORTRO_HPP_
