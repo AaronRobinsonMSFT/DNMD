@@ -97,7 +97,7 @@ typedef struct md_local_constant_sig__
     size_t value_len;
 
     uint32_t custom_modifier_count;
-    
+
     struct
     {
         bool required;
