@@ -1,7 +1,7 @@
 #ifndef _SRC_INTERFACES_METADATAIMPORTRO_HPP_
 #define _SRC_INTERFACES_METADATAIMPORTRO_HPP_
 
-#include "internal/dnmd_platform.hpp"
+#include <internal/dnmd_platform.hpp>
 #include "tearoffbase.hpp"
 #include "controllingiunknown.hpp"
 #include "dnmdowner.hpp"
