@@ -242,7 +242,7 @@ md_blob_parse_result_t md_parse_sequence_points(
         if (delta_lines == 0 && delta_columns == 0)
         {
             sequence_points->records[i].kind = mdsp_HiddenSequencePointRecord;
-            sequence_points->records[i].hidden_sequence_point.il_offset = il_offset;
+            sequence_points->records[i].hidden_sequence_point.rolling_il_offset = il_offset;
             continue;
         }
 
@@ -276,11 +276,11 @@ md_blob_parse_result_t md_parse_sequence_points(
         }
 
         sequence_points->records[i].kind = mdsp_SequencePointRecord;
-        sequence_points->records[i].sequence_point.il_offset = il_offset;
-        sequence_points->records[i].sequence_point.num_lines = delta_lines;
+        sequence_points->records[i].sequence_point.rolling_il_offset = il_offset;
+        sequence_points->records[i].sequence_point.delta_lines = delta_lines;
         sequence_points->records[i].sequence_point.delta_columns = delta_columns;
-        sequence_points->records[i].sequence_point.start_line = start_line;
-        sequence_points->records[i].sequence_point.start_column = start_column;
+        sequence_points->records[i].sequence_point.rolling_start_line = start_line;
+        sequence_points->records[i].sequence_point.rolling_start_column = start_column;
     }
 
     if (blob_len != 0)
@@ -314,7 +314,6 @@ md_blob_parse_result_t md_parse_local_constant_sig(mdhandle_t handle, uint8_t co
     }
 
     size_t required_size = sizeof(md_local_constant_sig_t) + num_custom_modifiers * sizeof(local_constant_sig->custom_modifiers[0]);
-
     if (local_constant_sig == NULL || *buffer_len < required_size)
     {
         *buffer_len = required_size;
@@ -323,7 +322,7 @@ md_blob_parse_result_t md_parse_local_constant_sig(mdhandle_t handle, uint8_t co
 
     local_constant_sig->custom_modifier_count = num_custom_modifiers;
 
-    for (uint8_t i = 0; i < num_custom_modifiers; ++i)
+    for (uint32_t i = 0; i < num_custom_modifiers; ++i)
     {
         uint32_t element_type;
         if (!decompress_u32(&custom_modifiers_blob, &custom_modifiers_blob_len, &element_type))
@@ -395,6 +394,7 @@ md_blob_parse_result_t md_parse_local_constant_sig(mdhandle_t handle, uint8_t co
             local_constant_sig->primitive.type_code = (uint8_t)type_code;
             local_constant_sig->value_blob = blob;
             local_constant_sig->value_len = blob_len;
+            break;
         case ELEMENT_TYPE_R8:
             if (blob_len != 8)
                 return mdbpr_InvalidBlob;
@@ -402,6 +402,7 @@ md_blob_parse_result_t md_parse_local_constant_sig(mdhandle_t handle, uint8_t co
             local_constant_sig->primitive.type_code = (uint8_t)type_code;
             local_constant_sig->value_blob = blob;
             local_constant_sig->value_len = blob_len;
+            break;
         case ELEMENT_TYPE_STRING:
             local_constant_sig->constant_kind = mdck_PrimitiveConstant;
             local_constant_sig->primitive.type_code = (uint8_t)type_code;
@@ -420,6 +421,7 @@ md_blob_parse_result_t md_parse_local_constant_sig(mdhandle_t handle, uint8_t co
         case ELEMENT_TYPE_U4:
         case ELEMENT_TYPE_I8:
         case ELEMENT_TYPE_U8:
+            // Save off the value.
             local_constant_sig->value_blob = blob;
             local_constant_sig->value_len = blob_len;
             switch (type_code)
@@ -458,8 +460,12 @@ md_blob_parse_result_t md_parse_local_constant_sig(mdhandle_t handle, uint8_t co
                         return mdbpr_InvalidBlob;
                     break;
                 }
+                default:
+                    assert(false);
+                    return mdbpr_InvalidArgument;
             }
 
+            // Check if there is any remaining blob data.
             if (blob_len == 0)
             {
                 local_constant_sig->constant_kind = mdck_PrimitiveConstant;
@@ -468,18 +474,23 @@ md_blob_parse_result_t md_parse_local_constant_sig(mdhandle_t handle, uint8_t co
             else
             {
                 // If we have data remaining, then we need to read the enum type.
-                // In this case, the we need to subtract off the rest of the blob length from the value blob length
+                // In this case, we subtract off the rest of the blob length from the value blob length
                 // as it isn't part of the value.
                 local_constant_sig->value_len -= blob_len;
                 if (!decompress_u32(&blob, &blob_len, &constant_type_index)
                     || !decompose_coded_index(constant_type_index, mdtc_idx_coded | InsertCodedIndex(mdci_TypeDefOrRef), &constant_type_table, &constant_type_row))
+                {
                     return mdbpr_InvalidBlob;
+                }
 
                 local_constant_sig->constant_kind = mdck_EnumConstant;
                 local_constant_sig->enum_constant.type_code = (uint8_t)type_code;
                 local_constant_sig->enum_constant.enum_type = CreateTokenType(constant_type_table) | constant_type_row;
             }
             break;
+        default:
+            assert(false);
+            return mdbpr_InvalidArgument;
     }
     return mdbpr_Success;
 }
@@ -560,12 +571,10 @@ md_blob_parse_result_t md_parse_imports(mdhandle_t handle, uint8_t const* blob, 
         return mdbpr_InvalidArgument;
 
     uint32_t num_imports = get_num_imports(blob, blob_len);
-
     if (num_imports == UINT32_MAX)
         return mdbpr_InvalidBlob;
 
     size_t required_size = sizeof(md_imports_t) + num_imports * sizeof(imports->imports[0]);
-
     if (imports == NULL || *buffer_len < required_size)
     {
         *buffer_len = required_size;
