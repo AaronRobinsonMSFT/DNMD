@@ -1,5 +1,5 @@
-#ifndef _SRC_DNMD_DNMD_TOOLS_PLATFORM_HPP_
-#define _SRC_DNMD_DNMD_TOOLS_PLATFORM_HPP_
+#ifndef _SRC_INC_INTERNAL_DNMD_TOOLS_PLATFORM_HPP_
+#define _SRC_INC_INTERNAL_DNMD_TOOLS_PLATFORM_HPP_
 
 #include <cstdlib>
 #include <fstream>
@@ -106,7 +106,7 @@ struct free_deleter final
 template<typename T>
 using malloc_span = owning_span<T, free_deleter>;
 
-bool create_mdhandle(malloc_span<uint8_t> const& buffer, mdhandle_ptr& handle)
+inline bool create_mdhandle(malloc_span<uint8_t> const& buffer, mdhandle_ptr& handle)
 {
     mdhandle_t h;
     if (!md_create_handle(buffer, buffer.size(), &h))
@@ -119,7 +119,7 @@ bool create_mdhandle(malloc_span<uint8_t> const& buffer, mdhandle_ptr& handle)
 // PE File functions
 //
 
-uint32_t get_file_size(char const* path)
+inline uint32_t get_file_size(char const* path)
 {
     uint32_t size_in_uint8_ts = 0;
 #ifdef BUILD_WINDOWS
@@ -139,7 +139,7 @@ uint32_t get_file_size(char const* path)
     return size_in_uint8_ts;
 }
 
-PIMAGE_SECTION_HEADER find_section_header(
+inline PIMAGE_SECTION_HEADER find_section_header(
         span<IMAGE_SECTION_HEADER> section_headers,
         uint32_t rva)
 {
@@ -155,7 +155,7 @@ PIMAGE_SECTION_HEADER find_section_header(
     return nullptr;
 }
 
-bool read_in_file(char const* file, malloc_span<uint8_t>& b)
+inline bool read_in_file(char const* file, malloc_span<uint8_t>& b)
 {
     // Read in the entire file
     std::ifstream fd{ file, std::ios::binary | std::ios::in };
@@ -171,7 +171,7 @@ bool read_in_file(char const* file, malloc_span<uint8_t>& b)
     return true;
 }
 
-bool write_out_file(char const* file, malloc_span<uint8_t> b)
+inline bool write_out_file(char const* file, malloc_span<uint8_t> b)
 {
     // Read in the entire file
     std::ofstream fd{ file, std::ios::binary | std::ios::out };
@@ -182,7 +182,7 @@ bool write_out_file(char const* file, malloc_span<uint8_t> b)
     return true;
 }
 
-bool get_metadata_from_pe(malloc_span<uint8_t>& b)
+inline bool get_metadata_from_pe(malloc_span<uint8_t>& b)
 {
     if (b.size() < sizeof(IMAGE_DOS_HEADER))
         return false;
@@ -287,7 +287,7 @@ bool get_metadata_from_pe(malloc_span<uint8_t>& b)
     return true;
 }
 
-bool get_metadata_from_file(malloc_span<uint8_t>& b)
+inline bool get_metadata_from_file(malloc_span<uint8_t>& b)
 {
     // Defined in II.24.2.1 - defined in physical uint8_t order
     std::array<uint8_t, 4> const metadata_sig = { 0x42, 0x53, 0x4A, 0x42 };
@@ -305,4 +305,4 @@ bool get_metadata_from_file(malloc_span<uint8_t>& b)
     return true;
 }
 
-#endif // _SRC_DNMD_DNMD_TOOLS_PLATFORM_HPP_
+#endif // _SRC_INC_INTERNAL_DNMD_TOOLS_PLATFORM_HPP_
