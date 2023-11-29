@@ -862,34 +862,37 @@ bool md_add_new_row_to_sorted_list(mdcursor_t list_owner, col_index_t list_col, 
     if (!md_cursor_move(&row_to_insert_before, count))
         return false;
 
-    // In most cases we will be inserting at the end of the list,
-    // so start searching there to make this a little faster.
-    for (uint32_t i = count ; i > 0; --i)
+    // The existing list isn't empty, so we need to find the correct place to insert the new row.
+    if (count > 0)
     {
-        mdcursor_t row_to_check = existing_range;
-        if (!md_cursor_move(&row_to_check, i - 1))
-            return false;
+        // In most cases we will be inserting at the end of the list,
+        // so start searching there to make this a little faster.
+        mdcursor_t row_to_check = row_to_insert_before;
 
-        assert(!CursorEnd(&row_to_check)); // We should never be at the end of the table here.
-
-        // If the range is in an indirection table, we need ot normalize to the target table to
-        // get the sort column value.
-        mdcursor_t target_row;
-        if (!md_resolve_indirect_cursor(row_to_check, &target_row))
-            return false;
-        
-        uint32_t current_sort_col_value;
-        if (1 != md_get_column_value_as_constant(target_row, sort_order_col, 1, &current_sort_col_value))
-            return false;
-        
-        if (current_sort_col_value <= sort_col_value)
+        // Move our cursor to the last row in the list.
+        // This can't return false as we got to row_to_insert_before by moving forward at least one row.
+        (void)md_cursor_move(&row_to_check, -1);
+        for (; CursorRow(&row_to_check) >= CursorRow(&existing_range); (void)md_cursor_move(&row_to_check, -1))
         {
-            // row_to_check is the first row with a sort order less than or equal to the new row.
-            // So we want to insert the new row after this row.
-            // Set row_to_insert_before to the next row to ensure we insert the new row after this row.
-            row_to_insert_before = row_to_check;
-            (void)md_cursor_next(&row_to_insert_before); // We've already validated that row_to_insert_before isn't the last row, so this cannot fail.
-            break;
+            // If the range is in an indirection table, we need to normalize to the target table to
+            // get the sort column value.
+            mdcursor_t target_row;
+            if (!md_resolve_indirect_cursor(row_to_check, &target_row))
+                return false;
+            
+            uint32_t current_sort_col_value;
+            if (1 != md_get_column_value_as_constant(target_row, sort_order_col, 1, &current_sort_col_value))
+                return false;
+            
+            if (current_sort_col_value <= sort_col_value)
+            {
+                // row_to_check is the first row with a sort order less than or equal to the new row.
+                // So we want to insert the new row after this row.
+                // Set row_to_insert_before to the next row to ensure we insert the new row after this row.
+                row_to_insert_before = row_to_check;
+                (void)md_cursor_next(&row_to_insert_before); // We got to row_to_insert_before by moving back from an existing row, so there must be a next row.
+                break;
+            }
         }
     }
 
