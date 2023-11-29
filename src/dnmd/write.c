@@ -864,7 +864,7 @@ bool md_add_new_row_to_sorted_list(mdcursor_t list_owner, col_index_t list_col, 
 
     // In most cases we will be inserting at the end of the list,
     // so start searching there to make this a little faster.
-    for (uint32_t i = count ; i > 0; --i)
+    for (uint32_t i = count; i > 0; --i)
     {
         mdcursor_t row_to_check = existing_range;
         if (!md_cursor_move(&row_to_check, i - 1))
