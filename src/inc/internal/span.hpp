@@ -116,12 +116,12 @@ typename std::enable_if<std::is_integral<T>::value, std::tuple<T, span<std::uint
     if (b.size() < sizeof(T))
         throw std::runtime_error{ "Out of bounds access" };
 
-    std::intmax_t val = 0;
+    T val = 0;
     for (size_t i = 0; i < sizeof(T); ++i)
     {
-        val |= (std::intmax_t)b[i] << (i * 8);
+        val |= (T)b[i] << (i * 8);
     }
-    return { (T)val, slice(b, sizeof(T)) };
+    return { val, slice(b, sizeof(T)) };
 }
 
 #endif // _SRC_INC_INTERNAL_SPAN_HPP_
