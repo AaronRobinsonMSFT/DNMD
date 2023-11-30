@@ -1,0 +1,127 @@
+#ifndef _SRC_INC_INTERNAL_SPAN_HPP_
+#define _SRC_INC_INTERNAL_SPAN_HPP_
+
+#include <cstdlib>
+#include <tuple>
+
+template<typename T>
+class span
+{
+protected:
+    T* _ptr;
+    size_t _size;
+public:
+    span()
+        : _ptr{}
+        , _size{}
+    { }
+
+    span(T* ptr, size_t len)
+            : _ptr{ ptr }, _size{ len }
+    { }
+
+    span(span const & other) = default;
+
+    span& operator=(span&& other) noexcept = default;
+
+    size_t size() const noexcept
+    {
+        return _size;
+    }
+
+    operator T* () noexcept
+    {
+        return _ptr;
+    }
+
+    operator T const* () const noexcept
+    {
+        return _ptr;
+    }
+
+    T& operator[](size_t idx)
+    {
+        if (_ptr == nullptr)
+            throw std::runtime_error{ "Deref null" };
+        if (idx >= _size)
+            throw std::out_of_range{ "Out of bounds access" };
+        return _ptr[idx];
+    }
+};
+
+template<typename T, typename Deleter>
+class owning_span final : public span<T>
+{
+public:
+    owning_span() : span<T>{}
+    { }
+
+    owning_span(T* ptr, size_t len)
+        : span<T>{ ptr, len }
+    { }
+
+    owning_span(owning_span&& other) noexcept
+        : span<T>{}
+    {
+        *this = std::move(other);
+    }
+
+    ~owning_span()
+    {
+        Deleter{}(this->_ptr);
+    }
+
+    owning_span& operator=(owning_span&& other) noexcept
+    {
+        if (this->_ptr != nullptr)
+            Deleter{}(this->_ptr);
+
+        this->_ptr = other._ptr;
+        this->_size = other._size;
+        other._ptr = {};
+        other._size = {};
+        return *this;
+    }
+
+    T* release() noexcept
+    {
+        T* tmp = this->_ptr;
+        this->_ptr = {};
+        return tmp;
+    }
+};
+
+struct free_deleter final
+{
+    void operator()(void* ptr)
+    {
+        std::free(ptr);
+    }
+};
+
+template<typename T>
+using malloc_span = owning_span<T, free_deleter>;
+
+template<typename T>
+span<T> slice(span<T> b, size_t offset)
+{
+    if (offset > b.size())
+        throw std::out_of_range{ "Out of bounds access" };
+    return { b + offset, b.size() - offset };
+}
+
+template<typename T>
+typename std::enable_if<std::is_integral<T>::value, std::tuple<T, span<std::uint8_t>>>::type read_le_and_advance(span<std::uint8_t> b)
+{
+    if (b.size() < sizeof(T))
+        throw std::runtime_error{ "Out of bounds access" };
+
+    std::intmax_t val = 0;
+    for (size_t i = 0; i < sizeof(T); ++i)
+    {
+        val |= (std::intmax_t)b[i] << (i * 8);
+    }
+    return { (T)val, slice(b, sizeof(T)) };
+}
+
+#endif // _SRC_INC_INTERNAL_SPAN_HPP_
