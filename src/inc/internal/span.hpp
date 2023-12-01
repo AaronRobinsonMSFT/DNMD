@@ -3,6 +3,7 @@
 
 #include <cstdlib>
 #include <tuple>
+#include <stdexcept>
 
 template<typename T>
 class span
@@ -111,7 +112,7 @@ span<T> slice(span<T> b, size_t offset)
 }
 
 template<typename T>
-typename std::enable_if<std::is_integral<T>::value, std::tuple<T, span<std::uint8_t>>>::type read_le_and_advance(span<std::uint8_t> b)
+typename std::enable_if<std::is_integral<T>::value, std::tuple<T, span<uint8_t>>>::type read_le_and_advance(span<uint8_t> b)
 {
     if (b.size() < sizeof(T))
         throw std::runtime_error{ "Out of bounds access" };
