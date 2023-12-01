@@ -5,6 +5,7 @@ set(SOURCES
   ./hcorenum.cpp
   ./pal.cpp
   ./signatures.cpp
+  ./importhelpers.cpp
 )
 
 set(HEADERS
@@ -17,6 +18,7 @@ set(HEADERS
   ./pal.hpp
   ./dnmdowner.hpp
   ./signatures.hpp
+  ./importhelpers.hpp
 )
 
 if(NOT MSVC)
