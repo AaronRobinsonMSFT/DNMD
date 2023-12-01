@@ -214,6 +214,16 @@ malloc_span<std::uint8_t> GetMethodDefSigFromMethodRefSig(span<uint8_t> methodRe
     const uint8_t callingConvention = signature[0];
     signature = slice(signature, 1);
 
+    // The MethodDefSig is the same as the MethodRefSig if the calling convention is not vararg.
+    // Only in the vararg case does the MethodRefSig have additional data to describe the exact vararg
+    // parameter list.
+    if ((callingConvention & IMAGE_CEE_CS_CALLCONV_MASK) != IMAGE_CEE_CS_CALLCONV_VARARG)
+    {
+        malloc_span<uint8_t> methodDefSig{ (uint8_t*)std::malloc(methodRefSig.size()), methodRefSig.size() };
+        std::memcpy(methodDefSig, methodRefSig, methodRefSig.size());
+        return methodDefSig;
+    }
+
     uint32_t genericParameterCount = 0;
     if ((callingConvention & IMAGE_CEE_CS_CALLCONV_GENERIC) == IMAGE_CEE_CS_CALLCONV_GENERIC)
     {
