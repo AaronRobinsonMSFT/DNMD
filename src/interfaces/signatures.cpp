@@ -1,4 +1,5 @@
 #include "signatures.hpp"
+#include <cassert>
 
 namespace
 {
@@ -198,10 +199,10 @@ malloc_span<std::uint8_t> GetMethodDefSigFromMethodRefSig(span<uint8_t> methodRe
     SkipSignatureElement skipSignatureElement;
     
     span<uint8_t> signature = methodRefSig;
-    uint8_t callingConvention = signature[0];
+    const uint8_t callingConvention = signature[0];
     signature = slice(signature, 1);
 
-    uint32_t genericParameterCount;
+    uint32_t genericParameterCount = 0;
     if ((callingConvention & IMAGE_CEE_CS_CALLCONV_GENERIC) == IMAGE_CEE_CS_CALLCONV_GENERIC)
     {
         std::tie(genericParameterCount, signature) = read_compressed_uint(signature);
@@ -210,6 +211,8 @@ malloc_span<std::uint8_t> GetMethodDefSigFromMethodRefSig(span<uint8_t> methodRe
     uint32_t originalParameterCount;
     std::tie(originalParameterCount, signature) = read_compressed_uint(signature);
 
+    // Save this part of the signature for us to copy later.
+    span<uint8_t> returnTypeAndParameters = signature;
     // Walk the return type
     signature = WalkSignatureElement(signature, skipSignatureElement);
 
@@ -229,5 +232,32 @@ malloc_span<std::uint8_t> GetMethodDefSigFromMethodRefSig(span<uint8_t> methodRe
     // and update the parameter count.
     // We need to account for the fact that the parameter count may be encoded with less bytes
     // as it is emitted using the compressed unsigned integer format.
-    return {};
+    // An ECMA-335 compressed integer will take up no more than 4 bytes.
+    uint8_t buffer[4];
+    ULONG originalParamCountCompressedSize = CorSigCompressData(originalParameterCount, buffer);
+    ULONG newParamCountCompressedSize = CorSigCompressData(i, buffer);
+    span<uint8_t> compressedNewParamCount = { buffer, newParamCountCompressedSize };
+    
+    // The MethodDefSig length will be the length of the original signature up to the ELEMENT_TYPE_SENTINEL value,
+    // minus the difference in the compressed size of the original parameter count and the new parameter count, if any.
+    size_t methodDefSigBufferLength = methodRefSig.size() - signature.size() - originalParamCountCompressedSize + newParamCountCompressedSize;
+    malloc_span<uint8_t> methodDefSigBuffer{ (uint8_t*)std::malloc(methodDefSigBufferLength), methodDefSigBufferLength };
+    
+    // Copy over the signature into the new buffer.
+    // In case the parameter count was encoded with less bytes, we need to account for that
+    // and copy the signature piece by piece.
+    size_t offset = 0;
+    methodDefSigBuffer[offset++] = callingConvention;
+    if ((callingConvention & IMAGE_CEE_CS_CALLCONV_GENERIC) == IMAGE_CEE_CS_CALLCONV_GENERIC)
+    {
+        offset += CorSigCompressData(genericParameterCount, methodDefSigBuffer + offset);
+    }
+    std::memcpy(methodDefSigBuffer + offset, compressedNewParamCount, newParamCountCompressedSize);
+    offset += newParamCountCompressedSize;
+
+    // Now that we've re-written the parameter count, we can copy the rest of the signature directly from the MethodRefSig
+    assert(returnTypeAndParameters.size() >= methodDefSigBufferLength - offset);
+    std::memcpy(methodDefSigBuffer + offset, returnTypeAndParameters, methodDefSigBufferLength - offset);
+
+    return methodDefSigBuffer;
 }
