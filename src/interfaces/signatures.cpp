@@ -237,7 +237,7 @@ malloc_span<std::uint8_t> GetMethodDefSigFromMethodRefSig(span<uint8_t> methodRe
     span<uint8_t> returnTypeAndParameters = signature;
     // Walk the return type
     // Use std::intmax_t here as it can handle all the values of the various parts of the signature.
-    // If we were using C++11, we could use auto here instead.
+    // If we were using C++14, we could use auto here instead.
     signature = WalkSignatureElement(signature, [](std::intmax_t, signature_element_part_tag) { });
 
     // Walk the parameters
