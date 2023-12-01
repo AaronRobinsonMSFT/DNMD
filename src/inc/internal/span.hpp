@@ -111,18 +111,4 @@ span<T> slice(span<T> b, size_t offset)
     return { b + offset, b.size() - offset };
 }
 
-template<typename T>
-typename std::enable_if<std::is_integral<T>::value, std::tuple<T, span<uint8_t>>>::type read_le_and_advance(span<uint8_t> b)
-{
-    if (b.size() < sizeof(T))
-        throw std::runtime_error{ "Out of bounds access" };
-
-    T val = 0;
-    for (size_t i = 0; i < sizeof(T); ++i)
-    {
-        val |= (T)b[i] << (i * 8);
-    }
-    return { val, slice(b, sizeof(T)) };
-}
-
 #endif // _SRC_INC_INTERNAL_SPAN_HPP_
