@@ -34,12 +34,34 @@ namespace
         virtual void OnReadToken(mdToken token) = 0;
     };
 
-    span<uint8_t> WalkSignatureElement(span<uint8_t> signature, SignatureElementCallback& callback)
+
+    struct signature_element_part_tag
+    {
+    };
+    
+    struct raw_byte_tag : signature_element_part_tag
+    {
+    };
+
+    struct compressed_uint_tag : signature_element_part_tag
+    {
+    };
+
+    struct compressed_int_tag : signature_element_part_tag
+    {
+    };
+
+    struct token_tag : signature_element_part_tag
+    {
+    };
+
+    template<typename TCallback>
+    span<uint8_t> WalkSignatureElement(span<uint8_t> signature, TCallback callback)
     {
         uint8_t elementType = signature[0];
         signature = slice(signature, 1);
 
-        callback.OnReadByte(elementType);
+        callback(elementType, raw_byte_tag{});
         switch (elementType)
         {
             case ELEMENT_TYPE_VOID:
@@ -66,18 +88,18 @@ namespace
             {
                 uint8_t callingConvention = signature[0];
                 signature = slice(signature, 1);
-                callback.OnReadByte(callingConvention);
+                callback(callingConvention, raw_byte_tag{});
 
                 uint32_t genericParameterCount;
                 if ((callingConvention & IMAGE_CEE_CS_CALLCONV_GENERIC) == IMAGE_CEE_CS_CALLCONV_GENERIC)
                 {
                     std::tie(genericParameterCount, signature) = read_compressed_uint(signature);
-                    callback.OnReadCompressedUInt(genericParameterCount);
+                    callback(genericParameterCount, compressed_uint_tag{});
                 }
 
                 uint32_t parameterCount;
                 std::tie(parameterCount, signature) = read_compressed_uint(signature);
-                callback.OnReadCompressedUInt(parameterCount);
+                callback(parameterCount, compressed_uint_tag{});
 
                 // Walk the return type
                 signature = WalkSignatureElement(signature, callback);
@@ -88,7 +110,7 @@ namespace
                     if (signature[0] == ELEMENT_TYPE_SENTINEL)
                     {
                         signature = slice(signature, 1);
-                        callback.OnReadByte(ELEMENT_TYPE_SENTINEL);
+                        callback(ELEMENT_TYPE_SENTINEL, raw_byte_tag{});
                     }
 
                     signature = WalkSignatureElement(signature, callback);
@@ -107,7 +129,7 @@ namespace
             {
                 uint32_t genericParameterIndex;
                 std::tie(genericParameterIndex, signature) = read_compressed_uint(signature);
-                callback.OnReadCompressedUInt(genericParameterIndex);
+                callback(genericParameterIndex, compressed_uint_tag{});
                 break;
             }
 
@@ -116,7 +138,7 @@ namespace
             {
                 mdToken token;
                 std::tie(token, signature) = read_compressed_token(signature);
-                callback.OnReadToken(token);
+                callback(token, token_tag{});
                 break;
             }
 
@@ -125,7 +147,7 @@ namespace
             {
                 mdToken token;
                 std::tie(token, signature) = read_compressed_token(signature);
-                callback.OnReadToken(token);
+                callback(token, token_tag{});
                 signature = WalkSignatureElement(signature, callback);
                 break;
             }
@@ -136,28 +158,28 @@ namespace
 
                 uint32_t rank;
                 std::tie(rank, signature) = read_compressed_uint(signature);
-                callback.OnReadCompressedUInt(rank);
+                callback(rank, compressed_uint_tag{});
 
                 uint32_t numSizes;
                 std::tie(numSizes, signature) = read_compressed_uint(signature);
-                callback.OnReadCompressedUInt(numSizes);
+                callback(numSizes, compressed_uint_tag{});
 
                 for (uint32_t i = 0; i < numSizes; i++)
                 {
                     uint32_t size;
                     std::tie(size, signature) = read_compressed_uint(signature);
-                    callback.OnReadCompressedUInt(size);
+                    callback(size, compressed_uint_tag{});
                 }
 
                 uint32_t numLoBounds;
                 std::tie(numLoBounds, signature) = read_compressed_uint(signature);
-                callback.OnReadCompressedUInt(numLoBounds);
+                callback(numLoBounds, compressed_uint_tag{});
 
                 for (uint32_t i = 0; i < numLoBounds; i++)
                 {
                     int32_t loBound;
                     std::tie(loBound, signature) = read_compressed_int(signature);
-                    callback.OnReadCompressedInt(loBound);
+                    callback(loBound, compressed_int_tag{});
                 }
                 break;
             }
@@ -168,7 +190,7 @@ namespace
 
                 uint32_t genericArgumentCount;
                 std::tie(genericArgumentCount, signature) = read_compressed_uint(signature);
-                callback.OnReadCompressedUInt(genericArgumentCount);
+                callback(genericArgumentCount, compressed_uint_tag{});
 
                 for (uint32_t i = 0; i < genericArgumentCount; i++)
                 {
@@ -187,18 +209,7 @@ namespace
 malloc_span<std::uint8_t> GetMethodDefSigFromMethodRefSig(span<uint8_t> methodRefSig)
 {
     // We don't need to do anything with the various elements of the signature,
-    // we just need to know how many parameters are before the sentinel.
-    class SkipSignatureElement final : public SignatureElementCallback
-    {
-    public:
-        void OnReadByte(std::uint8_t) override { }
-        void OnReadCompressedUInt(std::uint32_t) override { }
-        void OnReadCompressedInt(std::int32_t) override { }
-        void OnReadToken(mdToken) override { }
-    };
-
-    SkipSignatureElement skipSignatureElement;
-    
+    // we just need to know how many parameters are before the sentinel.    
     span<uint8_t> signature = methodRefSig;
     const uint8_t callingConvention = signature[0];
     signature = slice(signature, 1);
@@ -215,7 +226,9 @@ malloc_span<std::uint8_t> GetMethodDefSigFromMethodRefSig(span<uint8_t> methodRe
     // Save this part of the signature for us to copy later.
     span<uint8_t> returnTypeAndParameters = signature;
     // Walk the return type
-    signature = WalkSignatureElement(signature, skipSignatureElement);
+    // Use std::intmax_t here as it can handle all the values of the various parts of the signature.
+    // If we were using C++11, we could use auto here instead.
+    signature = WalkSignatureElement(signature, [](std::intmax_t, signature_element_part_tag) { });
 
     // Walk the parameters
     uint32_t i = 0;
@@ -226,7 +239,7 @@ malloc_span<std::uint8_t> GetMethodDefSigFromMethodRefSig(span<uint8_t> methodRe
             break;
         }
 
-        signature = WalkSignatureElement(signature, skipSignatureElement);
+        signature = WalkSignatureElement(signature, [](std::intmax_t, signature_element_part_tag) { });
     }
     
     // Now that we know the number of parameters, we can copy the MethodDefSig portion of the signature
