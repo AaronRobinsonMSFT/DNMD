@@ -2,7 +2,6 @@
 #define _SRC_INC_INTERNAL_SPAN_HPP_
 
 #include <cstdlib>
-#include <tuple>
 #include <stdexcept>
 
 template<typename T>

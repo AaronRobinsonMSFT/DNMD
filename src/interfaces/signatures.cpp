@@ -1,5 +1,6 @@
 #include "signatures.hpp"
 #include <cassert>
+#include <tuple>
 
 namespace
 {
