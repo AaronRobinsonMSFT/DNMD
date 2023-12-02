@@ -1,9 +1,18 @@
 #include "pal.hpp"
 #include <cstring>
 #include <cassert>
+#include <functional>
 
 #if defined(BUILD_MACOS) || defined(BUILD_UNIX)
 #include <unicode/ustring.h>
+#endif
+
+#if defined(BUILD_WINDOWS)
+#include <bcrypt.h>
+#elif defined(BUILD_MACOS)
+#include <CommonCrypto/CommonDigest.h>
+#elif defined(BUILD_UNIX)
+#include <openssl/sha.h>
 #endif
 
 HRESULT pal::ConvertUtf16ToUtf8(
@@ -130,3 +139,77 @@ int strcat_s(char* dest, rsize_t destsz, char const* src)
     return 0;
 }
 #endif // !defined(__STDC_LIB_EXT1__) && !defined(BUILD_WINDOWS)
+
+#if defined(BUILD_WINDOWS)
+namespace
+{
+    struct BCRYPT_ALG_HANDLE_deleter
+    {
+        void operator()(BCRYPT_ALG_HANDLE h) const noexcept
+        {
+            ::BCryptCloseAlgorithmProvider(h, 0);
+        }
+    };
+
+    using bcrypt_alg_handle = std::unique_ptr<void, BCRYPT_ALG_HANDLE_deleter>;
+
+    struct BCRYPT_HASH_HANDLE_deleter
+    {
+        void operator()(BCRYPT_HASH_HANDLE h) const noexcept
+        {
+            ::BCryptDestroyHash(h);
+        }
+    };
+
+    using bcrypt_hash_handle = std::unique_ptr<void, BCRYPT_HASH_HANDLE_deleter>;
+}
+
+bool pal::ComputeSha1Hash(span<const uint8_t> data, std::array<uint8_t, SHA1_HASH_SIZE>& hashDestination)
+{
+    std::array<uint8_t, 20> hash;
+    BCRYPT_ALG_HANDLE hAlg;
+    if (!BCRYPT_SUCCESS(BCryptOpenAlgorithmProvider(&hAlg, BCRYPT_SHA1_ALGORITHM, nullptr, 0)))
+    {
+        return false;
+    }
+    bcrypt_alg_handle algHandle { hAlg };
+
+    BCRYPT_HASH_HANDLE hHash;
+    if (!BCRYPT_SUCCESS(BCryptCreateHash(hAlg, &hHash, nullptr, 0, nullptr, 0, 0)))
+    {
+        return false;
+    }
+    bcrypt_hash_handle hashHandle { hHash };
+    if (!BCRYPT_SUCCESS(BCryptHashData(hHash, (PUCHAR)(uint8_t const*)data, (ULONG)data.size(), 0)))
+    {
+        return false;
+    }
+
+    ULONG cbResult;
+    return BCRYPT_SUCCESS(BCryptFinishHash(hHash, hashDestination.data(), (ULONG)hashDestination.size(), 0));
+}
+#elif defined(BUILD_MACOS)
+#include <CommonCrypto/CommonDigest.h>
+
+bool pal::ComputeSha1Hash(span<const uint8_t> data, std::array<uint8_t, SHA1_HASH_SIZE>& hashDestination)
+{
+    CC_SHA1_CTX ctx;
+    CC_SHA1_Init(&ctx);
+    CC_SHA1_Update(&ctx, data.data(), (CC_LONG)data.size());
+    CC_SHA1_Final(hashDestination.data(), &ctx);
+    return true;
+}
+
+#elif defined(BUILD_UNIX)
+#include <openssl/sha.h>
+
+bool pal::ComputeSha1Hash(span<const uint8_t> data, std::array<uint8_t, SHA1_HASH_SIZE>& hashDestination)
+{
+    SHA_CTX ctx;
+    SHA1_Init(&ctx);
+    SHA1_Update(&ctx, data.data(), data.size());
+    SHA1_Final(hashDestination.data(), &ctx);
+    return true;
+}
+
+#endif // defined(BUILD_WINDOWS)
