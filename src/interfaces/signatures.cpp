@@ -26,15 +26,6 @@ namespace
         return std::make_tuple(value, signature);
     }
 
-    class SignatureElementCallback
-    {
-    public:
-        virtual void OnReadByte(uint8_t byte) = 0;
-        virtual void OnReadCompressedUInt(uint32_t value) = 0;
-        virtual void OnReadCompressedInt(int32_t value) = 0;
-        virtual void OnReadToken(mdToken token) = 0;
-    };
-
 
     struct signature_element_part_tag
     {

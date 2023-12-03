@@ -1118,7 +1118,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::FindMethod(
     {
         methodDefSig = GetMethodDefSigFromMethodRefSig({ (uint8_t*)pvSigBlob, (size_t)cbSigBlob });    
     }
-    catch(const std::exception&)
+    catch (std::exception const&)
     {
         return E_INVALIDARG;
     }
