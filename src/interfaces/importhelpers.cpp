@@ -2,7 +2,19 @@
 #include "pal.hpp"
 #include <cassert>
 #include <stack>
-#include <wincrypt.h>
+#include <algorithm>
+#include <cctype>
+
+// ALG_ID crackers
+#define GET_ALG_CLASS(x)                (x & (7 << 13))
+#define GET_ALG_SID(x)                  (x & (511))
+
+#define ALG_CLASS_SIGNATURE             (1 << 13)
+#define ALG_CLASS_HASH                  (4 << 13)
+
+#define ALG_SID_SHA1                    4
+
+#define PUBLICKEYBLOB           0x6
 
 #define RETURN_IF_FAILED(exp) \
 { \
@@ -17,7 +29,6 @@ namespace
 {
     HRESULT GetMvid(mdhandle_t image, mdguid_t* mvid)
     {
-        mdguid_t mvid;
         mdcursor_t c;
         uint32_t count;
         if (!md_create_cursor(image, mdtid_Module, &c, &count))
@@ -90,10 +101,10 @@ namespace
 
     struct PublicKeyBlob
     {
-    uint32_t SigAlgID;
-    uint32_t HashAlgID;
-    uint32_t PublicKeyLength;
-    uint8_t  PublicKey[];
+        uint32_t SigAlgID;
+        uint32_t HashAlgID;
+        uint32_t PublicKeyLength;
+        uint8_t  PublicKey[];
     };
 
     HRESULT StrongNameTokenFromPublicKey(span<const uint8_t> publicKeyBlob, malloc_span<uint8_t>* strongNameTokenBuffer)
@@ -169,6 +180,244 @@ namespace
     }
 }
 
+namespace
+{
+    bool CaseInsensitiveEquals(char const* a, char const* b)
+    {
+        while (*a != '\0' && *b != '\0')
+        {
+            if (std::tolower(*a) != std::tolower(*b))
+                return false;
+            
+            a++;
+            b++;
+        }
+
+        return *a == '\0' && *b == '\0';
+    }
+
+    HRESULT FindAssemblyRef(
+        mdhandle_t targetModule,
+        uint32_t majorVersion,
+        uint32_t minorVersion,
+        uint32_t buildNumber,
+        uint32_t revisionNumber,
+        uint32_t flags,
+        char const* name,
+        char const* culture,
+        span<uint8_t> publicKeyOrToken,
+        mdcursor_t* assemblyRef)
+    {
+        HRESULT hr;
+        // We will never generate a full public key for an assembly ref, only a token,
+        // so we should never be looking for a full public key here.
+        assert(!IsAfPublicKey(flags));
+
+        // Search the assembly ref table for a matching row.
+        mdcursor_t c;
+        uint32_t count;
+        if (!md_create_cursor(targetModule, mdtid_AssemblyRef, &c, &count))
+            return E_FAIL;
+        
+        // COMPAT: CoreCLR resolves all references to mscorlib and Microsoft.VisualC to the same assembly ref ignoring the build and revision version.
+        bool ignoreBuildRevisionVersion = CaseInsensitiveEquals(name, "mscorlib") || CaseInsensitiveEquals(name, "microsoft.visualc");
+        
+        for (uint32_t i = 0; i < count; i++)
+        {
+            // Search the table linearly my manually reading the columns.
+
+            uint32_t temp;
+            if (1 != md_get_column_value_as_constant(c, mdtAssemblyRef_MajorVersion, 1, &temp))
+                return CLDB_E_FILE_CORRUPT;
+            
+            if (temp != majorVersion)
+                continue;
+            
+            if (1 != md_get_column_value_as_constant(c, mdtAssemblyRef_MinorVersion, 1, &temp))
+                return CLDB_E_FILE_CORRUPT;
+            
+            if (temp != minorVersion)
+                continue;
+            
+            if (!ignoreBuildRevisionVersion)
+            {
+                if (1 != md_get_column_value_as_constant(c, mdtAssemblyRef_BuildNumber, 1, &temp))
+                    return CLDB_E_FILE_CORRUPT;
+                
+                if (temp != buildNumber)
+                    continue;
+                
+                if (1 != md_get_column_value_as_constant(c, mdtAssemblyRef_RevisionNumber, 1, &temp))
+                    return CLDB_E_FILE_CORRUPT;
+                
+                if (temp != revisionNumber)
+                    continue;
+            }
+            
+            char const* tempString;
+            if (1 != md_get_column_value_as_utf8(c, mdtAssemblyRef_Name, 1, &tempString))
+                return CLDB_E_FILE_CORRUPT;
+            
+            if (std::strcmp(tempString, name) != 0)
+                continue;
+            
+            if (1 != md_get_column_value_as_utf8(c, mdtAssemblyRef_Culture, 1, &tempString))
+                return CLDB_E_FILE_CORRUPT;
+            
+            if (std::strcmp(tempString, culture) != 0)
+                continue;
+            
+            uint8_t const* tempBlob;
+            uint32_t tempBlobLength;
+            if (1 != md_get_column_value_as_blob(c, mdtAssemblyRef_PublicKeyOrToken, 1, &tempBlob, &tempBlobLength))
+                return CLDB_E_FILE_CORRUPT;
+            
+            if (tempBlobLength)
+            {
+                // Handle the case when a ref may be using a full public key instead of a token.
+                malloc_ptr<uint8_t> tempPublicKeyTokenBuffer{nullptr};
+                span<uint8_t const> refPublicKeyToken{nullptr, 0};
+
+                uint32_t assemblyRefFlags;
+                if (1 != md_get_column_value_as_constant(c, mdtAssemblyRef_Flags, 1, &assemblyRefFlags))
+                    return CLDB_E_FILE_CORRUPT;
+                
+                if (!IsAfPublicKey(assemblyRefFlags))
+                {
+                    refPublicKeyToken = { tempBlob, tempBlobLength };
+                }
+                else
+                {
+                    // This AssemblyRef row has a full public key. We need to get the token from the key.
+                    malloc_span<uint8_t> tempPublicKeyToken;
+                    RETURN_IF_FAILED(StrongNameTokenFromPublicKey({ tempBlob, tempBlobLength }, &tempPublicKeyToken));
+                    refPublicKeyToken = tempPublicKeyToken;
+                    tempPublicKeyTokenBuffer.reset(tempPublicKeyToken.release());
+                }
+
+                if (publicKeyOrToken.size() != refPublicKeyToken.size() || std::memcmp(publicKeyOrToken, refPublicKeyToken, refPublicKeyToken.size()) != 0)
+                    continue;
+            }
+            
+            *assemblyRef = c;
+            return S_OK;
+        }
+
+        return S_FALSE;
+    }
+
+    HRESULT ImportReferenceToAssembly(
+        mdcursor_t sourceAssembly,
+        span<const uint8_t> sourceAssemblyHash,
+        mdhandle_t targetModule,
+        std::function<void(mdcursor_t)> onRowAdded,
+        mdcursor_t* targetAssembly)
+    {
+        HRESULT hr;
+        uint32_t flags;
+        if (1 != md_get_column_value_as_constant(sourceAssembly, mdtAssembly_Flags, 1, &flags))
+            return E_FAIL;
+
+        uint8_t const* publicKey;
+        uint32_t publicKeyLength;
+        if (1 != md_get_column_value_as_blob(sourceAssembly, mdtAssembly_PublicKey, 1, &publicKey, &publicKeyLength))
+            return E_FAIL;
+        
+        malloc_span<uint8_t> publicKeyToken {nullptr, 0};
+        if (publicKey != nullptr)
+        {
+            assert(IsAfPublicKey(flags));
+            flags &= ~afPublicKey;
+            RETURN_IF_FAILED(StrongNameTokenFromPublicKey({ publicKey, publicKeyLength }, &publicKeyToken));
+        }
+        else
+        {
+            assert(!IsAfPublicKey(flags));
+        }
+
+        uint32_t majorVersion;
+        if (1 != md_get_column_value_as_constant(sourceAssembly, mdtAssembly_MajorVersion, 1, &majorVersion))
+            return E_FAIL;
+        
+        uint32_t minorVersion;
+        if (1 != md_get_column_value_as_constant(sourceAssembly, mdtAssembly_MinorVersion, 1, &minorVersion))
+            return E_FAIL;
+        
+        uint32_t buildNumber;
+        if (1 != md_get_column_value_as_constant(sourceAssembly, mdtAssembly_BuildNumber, 1, &buildNumber))
+            return E_FAIL;
+        
+        uint32_t revisionNumber;
+        if (1 != md_get_column_value_as_constant(sourceAssembly, mdtAssembly_RevisionNumber, 1, &revisionNumber))
+            return E_FAIL;
+        
+        char const* assemblyName;
+        if (1 != md_get_column_value_as_utf8(sourceAssembly, mdtAssembly_Name, 1, &assemblyName))
+            return E_FAIL;
+        
+        char const* assemblyCulture;
+        if (1 != md_get_column_value_as_utf8(sourceAssembly, mdtAssembly_Culture, 1, &assemblyCulture))
+            return E_FAIL;
+
+        RETURN_IF_FAILED(FindAssemblyRef(
+            targetModule,
+            majorVersion,
+            minorVersion,
+            buildNumber,
+            revisionNumber,
+            flags,
+            assemblyName,
+            assemblyCulture,
+            publicKeyToken,
+            targetAssembly));
+
+        if (hr == S_OK)
+        {
+            return S_OK;
+        }
+
+        md_added_row_t assemblyRef;
+        if (!md_append_row(targetModule, mdtid_AssemblyRef, &assemblyRef))
+            return E_FAIL;
+        
+        onRowAdded(assemblyRef);
+  
+        if (1 != md_set_column_value_as_constant(assemblyRef, mdtAssemblyRef_MajorVersion, 1, &majorVersion))
+            return E_FAIL;
+
+        if (1 != md_set_column_value_as_constant(assemblyRef, mdtAssemblyRef_MinorVersion, 1, &minorVersion))
+            return E_FAIL;
+
+        if (1 != md_set_column_value_as_constant(assemblyRef, mdtAssemblyRef_BuildNumber, 1, &buildNumber))
+            return E_FAIL;
+
+        if (md_set_column_value_as_constant(assemblyRef, mdtAssemblyRef_RevisionNumber, 1, &revisionNumber))
+            return E_FAIL;
+
+        if (1 != md_set_column_value_as_constant(assemblyRef, mdtAssemblyRef_Flags, 1, &flags))
+            return E_FAIL;
+        
+        if (1 != md_set_column_value_as_utf8(assemblyRef, mdtAssemblyRef_Name, 1, &assemblyName))
+            return E_FAIL;
+
+        if (1 != md_set_column_value_as_utf8(assemblyRef, mdtAssemblyRef_Culture, 1, &assemblyCulture))
+            return E_FAIL;
+
+        uint8_t const* hash = sourceAssemblyHash;
+        uint32_t hashLength = (uint32_t)sourceAssemblyHash.size();
+        if (1 != md_set_column_value_as_blob(assemblyRef, mdtAssemblyRef_HashValue, 1, &hash, &hashLength))
+            return E_FAIL;
+
+        uint8_t const* publicKeyTokenBlob = publicKeyToken;
+        uint32_t publicKeyTokenLength = (uint32_t)publicKeyToken.size();
+        if (1 != md_set_column_value_as_blob(assemblyRef, mdtAssemblyRef_PublicKeyOrToken, 1, &publicKeyTokenBlob, &publicKeyTokenLength))
+            return E_FAIL;
+        
+        *targetAssembly = assemblyRef;
+        return S_OK;
+    }
+}
+
 HRESULT ImportReferenceToTypeDef(
     mdcursor_t sourceTypeDef,
     mdhandle_t sourceAssembly,
@@ -236,88 +485,18 @@ HRESULT ImportReferenceToTypeDef(
         if (!md_create_cursor(sourceModule, mdtid_Assembly, &importAssembly, &count))
             return E_FAIL;
         
-        uint32_t flags;
-        if (1 != md_get_column_value_as_constant(importAssembly, mdtAssembly_Flags, 1, &flags))
-            return E_FAIL;
+        // Add a reference to the assembly in the target module.
+        RETURN_IF_FAILED(ImportReferenceToAssembly(importAssembly, sourceAssemblyHash, targetModule, onRowAdded, &resolutionScope));
 
-        uint8_t const* publicKey;
-        uint32_t publicKeyLength;
-        if (1 != md_get_column_value_as_blob(importAssembly, mdtAssembly_PublicKey, 1, &publicKey, &publicKeyLength))
-            return E_FAIL;
-        
-        malloc_span<uint8_t> publicKeyToken { nullptr, 0};
-        if (publicKey != nullptr)
+        // Also add a reference to the assembly in the target assembly.
+        // In most cases, the target module will be the same as the target assembly, so this will be a no-op.
+        // However, if the target module is a netmodule, then the target assembly will be the main assembly.
+        // CoreCLR doesn't support multi-module assemblies, but they're still valid in ECMA-335.
+        if (targetModule != targetAssembly)
         {
-            assert(IsAfPublicKey(flags));
-            flags &= ~afPublicKey;
-            RETURN_IF_FAILED(StrongNameTokenFromPublicKey({ publicKey, publicKeyLength }, &publicKeyToken));
+            mdcursor_t ignored;
+            RETURN_IF_FAILED(ImportReferenceToAssembly(importAssembly, sourceAssemblyHash, targetAssembly, onRowAdded, &ignored));
         }
-        else
-        {
-            assert(!IsAfPublicKey(flags));
-        }
-
-        // TODO: Find existing assembly ref
-        // TODO: Add assembly ref to targetAssembly as well.
-        md_added_row_t assemblyRef;
-        if (!md_append_row(targetModule, mdtid_AssemblyRef, &assemblyRef))
-            return E_FAIL;
-        
-        onRowAdded(assemblyRef);
-  
-        uint32_t temp;
-        if (1 != md_get_column_value_as_constant(importAssembly, mdtAssembly_MajorVersion, 1, &temp)
-            || 1 != md_set_column_value_as_constant(assemblyRef, mdtAssemblyRef_MajorVersion, 1, &temp))
-        {
-            return E_FAIL;
-        }
-
-        if (1 != md_get_column_value_as_constant(importAssembly, mdtAssembly_MinorVersion, 1, &temp)
-            || 1 != md_set_column_value_as_constant(assemblyRef, mdtAssemblyRef_MinorVersion, 1, &temp))
-        {
-            return E_FAIL;
-        }
-
-        if (1 != md_get_column_value_as_constant(importAssembly, mdtAssembly_BuildNumber, 1, &temp)
-            || 1 != md_set_column_value_as_constant(assemblyRef, mdtAssemblyRef_BuildNumber, 1, &temp))
-        {
-            return E_FAIL;
-        }
-
-        if (1 != md_get_column_value_as_constant(importAssembly, mdtAssembly_RevisionNumber, 1, &temp)
-            || 1 != md_set_column_value_as_constant(assemblyRef, mdtAssemblyRef_RevisionNumber, 1, &temp))
-        {
-            return E_FAIL;
-        }
-
-        if (1 != md_set_column_value_as_constant(assemblyRef, mdtAssemblyRef_Flags, 1, &flags))
-            return E_FAIL;
-        
-        char const* assemblyName;
-        if (1 != md_get_column_value_as_utf8(importAssembly, mdtAssembly_Name, 1, &assemblyName)
-            || 1 != md_set_column_value_as_utf8(assemblyRef, mdtAssemblyRef_Name, 1, &assemblyName))
-        {
-            return E_FAIL;
-        }
-
-        char const* assemblyCulture;
-        if (1 != md_get_column_value_as_utf8(importAssembly, mdtAssembly_Culture, 1, &assemblyCulture)
-            || 1 != md_set_column_value_as_utf8(assemblyRef, mdtAssemblyRef_Culture, 1, &assemblyCulture))
-        {
-            return E_FAIL;
-        }
-
-        uint8_t const* hash = sourceAssemblyHash;
-        uint32_t hashLength = (uint32_t)sourceAssemblyHash.size();
-        if (1 != md_set_column_value_as_blob(assemblyRef, mdtAssemblyRef_HashValue, 1, &hash, &hashLength))
-            return E_FAIL;
-
-        uint8_t const* publicKeyTokenBlob = publicKeyToken;
-        uint32_t publicKeyTokenLength = (uint32_t)publicKeyToken.size();
-        if (1 != md_set_column_value_as_blob(assemblyRef, mdtAssemblyRef_PublicKeyOrToken, 1, &publicKeyTokenBlob, &publicKeyTokenLength))
-            return E_FAIL;
-        
-        resolutionScope = assemblyRef;
     }
 
     std::stack<mdcursor_t> typesForTypeRefs;

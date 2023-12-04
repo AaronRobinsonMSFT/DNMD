@@ -166,7 +166,6 @@ namespace
 
 bool pal::ComputeSha1Hash(span<const uint8_t> data, std::array<uint8_t, SHA1_HASH_SIZE>& hashDestination)
 {
-    std::array<uint8_t, 20> hash;
     BCRYPT_ALG_HANDLE hAlg;
     if (!BCRYPT_SUCCESS(BCryptOpenAlgorithmProvider(&hAlg, BCRYPT_SHA1_ALGORITHM, nullptr, 0)))
     {
@@ -185,7 +184,6 @@ bool pal::ComputeSha1Hash(span<const uint8_t> data, std::array<uint8_t, SHA1_HAS
         return false;
     }
 
-    ULONG cbResult;
     return BCRYPT_SUCCESS(BCryptFinishHash(hHash, hashDestination.data(), (ULONG)hashDestination.size(), 0));
 }
 #elif defined(BUILD_MACOS)
