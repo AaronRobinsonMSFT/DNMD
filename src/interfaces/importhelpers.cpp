@@ -40,6 +40,15 @@ namespace
         return S_OK;
     }
 
+    CorTokenType GetTokenTypeFromCursor(mdcursor_t cursor)
+    {
+        mdToken token = (mdToken)-1;
+        if (!md_cursor_to_token(cursor, &token))
+            assert(false);
+        
+        return (CorTokenType)TypeFromToken(token);
+    }
+
     namespace StrongNameKeys
     {
         constexpr size_t TokenSize = 8;
@@ -424,27 +433,42 @@ HRESULT ImportReferenceToTypeDef(
     span<const uint8_t> sourceAssemblyHash,
     mdhandle_t targetAssembly,
     mdhandle_t targetModule,
+    bool alwaysImport,
     std::function<void(mdcursor_t)> onRowAdded,
     mdcursor_t* targetTypeDef)
 {
     HRESULT hr;
     mdhandle_t sourceModule = md_extract_handle_from_cursor(sourceTypeDef);
 
-    mdguid_t thisMvid = { 0 };
+    mdguid_t targetModuleMvid = { 0 };
     mdguid_t targetAssemblyMvid = { 0 };
     mdguid_t sourceAssemblyMvid = { 0 };
-    mdguid_t importMvid = { 0 };
-    RETURN_IF_FAILED(GetMvid(targetModule, &thisMvid));
+    mdguid_t sourceModuleMvid = { 0 };
+    RETURN_IF_FAILED(GetMvid(targetModule, &targetModuleMvid));
     RETURN_IF_FAILED(GetMvid(targetAssembly, &targetAssemblyMvid));
     RETURN_IF_FAILED(GetMvid(sourceAssembly, &sourceAssemblyMvid));
-    RETURN_IF_FAILED(GetMvid(sourceModule, &importMvid));
+    RETURN_IF_FAILED(GetMvid(sourceModule, &sourceModuleMvid));
 
-    bool sameModuleMvid = std::memcmp(&thisMvid, &importMvid, sizeof(mdguid_t)) == 0;
+    bool sameModuleMvid = std::memcmp(&targetModuleMvid, &sourceModuleMvid, sizeof(mdguid_t)) == 0;
     bool sameAssemblyMvid = std::memcmp(&targetAssemblyMvid, &sourceAssemblyMvid, sizeof(mdguid_t)) == 0;
 
     mdcursor_t resolutionScope;
     if (sameAssemblyMvid && sameModuleMvid)
     {
+        if (!alwaysImport)
+        {
+            // If we don't need to always import the TypeDef,
+            // we can resolve it to an existing TypeDef.
+            mdToken token;
+            if (!md_cursor_to_token(sourceTypeDef, &token))
+                return E_FAIL;
+
+            // All images with the same MVID should have the same metadata tables.
+            if (!md_token_to_cursor(targetModule, token, targetTypeDef))
+                return CLDB_E_FILE_CORRUPT;
+            
+            return S_OK;
+        }
         uint32_t count;
         if (!md_create_cursor(targetModule, mdtid_Module, &resolutionScope, &count))
             return E_FAIL;
@@ -556,4 +580,180 @@ HRESULT ImportReferenceToTypeDef(
     *targetTypeDef = resolutionScope;
 
     return S_OK;
+}
+
+namespace
+{
+    HRESULT ImportReferenceToTypeRef(
+        mdcursor_t sourceTypeRef,
+        mdhandle_t sourceAssembly,
+        span<const uint8_t> sourceAssemblyHash,
+        mdhandle_t targetAssembly,
+        mdhandle_t targetModule,
+        std::function<void(mdcursor_t)> onRowAdded,
+        mdcursor_t* targetTypeRef)
+    {
+        assert(sourceAssembly != nullptr && targetAssembly != nullptr && targetModule != nullptr);
+
+        HRESULT hr;
+        std::stack<mdcursor_t> typesForTypeRefs;
+        typesForTypeRefs.push(sourceTypeRef);
+        
+        mdcursor_t scope = sourceTypeRef;
+        while (GetTokenTypeFromCursor(scope) == mdtTypeRef)
+        {
+            mdcursor_t resolutionScope;
+            if (1 != md_get_column_value_as_cursor(scope, mdtTypeRef_ResolutionScope, 1, &resolutionScope))
+                return E_FAIL;
+            
+            typesForTypeRefs.push(resolutionScope);
+            scope = resolutionScope;
+        }
+        
+        mdhandle_t sourceModule = md_extract_handle_from_cursor(sourceTypeRef);
+        mdguid_t targetModuleMvid = { 0 };
+        mdguid_t targetAssemblyMvid = { 0 };
+        mdguid_t sourceAssemblyMvid = { 0 };
+        mdguid_t sourceModuleMvid = { 0 };
+        RETURN_IF_FAILED(GetMvid(targetModule, &targetModuleMvid));
+        RETURN_IF_FAILED(GetMvid(targetAssembly, &targetAssemblyMvid));
+        RETURN_IF_FAILED(GetMvid(sourceAssembly, &sourceAssemblyMvid));
+        RETURN_IF_FAILED(GetMvid(sourceModule, &sourceModuleMvid));
+
+        bool sameModuleMvid = std::memcmp(&targetModuleMvid, &sourceModuleMvid, sizeof(mdguid_t)) == 0;
+        bool sameAssemblyMvid = std::memcmp(&targetAssemblyMvid, &sourceAssemblyMvid, sizeof(mdguid_t)) == 0;
+
+        // II.22.38 1. Valid ResolutionScope values
+        // - null
+        // - TypeRef token
+        // - ModuleRef token
+        // - Module token
+        // - AssemblyRef token
+        mdcursor_t targetOutermostScope;
+        if (sameAssemblyMvid && sameModuleMvid)
+        {
+            mdToken token;
+            if (!md_cursor_to_token(sourceTypeRef, &token))
+                return E_FAIL;
+            
+            if (!md_token_to_cursor(targetModule, token, targetTypeRef))
+                return CLDB_E_FILE_CORRUPT;
+            
+            return S_OK;
+        }
+        else if (sameAssemblyMvid && !sameModuleMvid)
+        {
+            mdToken scopeToken;
+            if (!md_cursor_to_token(scope, &scopeToken))
+                return E_FAIL;
+
+            if (IsNilToken(scopeToken))
+            {
+                // A Nil ResolutionScope means a reference to an ExportedType entry
+                // in the assembly.
+                // Since the source and target assemblies have the same identity,
+                // we can use the Nil token and we don't have to resolve the ExportedType
+                // as the target and source assemblies are the same.
+                targetOutermostScope = { 0 };
+            }
+            else if (TypeFromToken(scopeToken) == mdtModule)
+            {
+                // TODO: Create ModuleRef
+            }
+            else if (TypeFromToken(scopeToken) == mdtModuleRef)
+            {
+                // TODO: If target module, resolve to Module
+                // otherwise, create ModuleRef
+            }
+            else if (TypeFromToken(scopeToken) == mdtAssemblyRef)
+            {
+                // TODO: Copy AssemblyRef
+            }
+            else
+            {
+                return E_INVALIDARG;
+            }
+        }
+        else if (!sameAssemblyMvid)
+        {
+            assert(!sameModuleMvid);
+
+            mdToken scopeToken;
+            if (!md_cursor_to_token(scope, &scopeToken))
+                return E_FAIL;
+            
+            if (IsNilToken(scopeToken))
+            {
+                // TODO: Lookup ExportedType entry in the source assembly for this type.
+            }
+            else if (TypeFromToken(scopeToken) == mdtModule)
+            {
+                // TODO: Create an AssemblyRef from the destination assembly to the source assembly.
+            }
+            
+            // The IsNilToken case can resolve to an ExportedType entry who's scope is an AssemblyRef.
+            // We want to catch that case here, so we split this out to a separate if instead of a chained else if.
+
+            if (TypeFromToken(scopeToken) == mdtAssemblyRef)
+            {
+                // TODO: Convert from AssemblyRef to Assembly if the source AssemblyRef points to the target assembly.
+                // If it is defined in this assembly, we need to correctly define its scope.
+                //   If there's an ExportedType row for this type, we can create a ModuleRef to its scope.
+                //   If there's no ExportedType row, then it should be defined in the target assembly (in this case, the ExportedType row can be omitted).
+                //   Otherwise, we are in a failure case as we can't determine which module in the target assembly is providing the type definition.
+                // If it is defined in another assembly, we need to create an AssemblyRef to that assembly.
+            }
+            else if (TypeFromToken(scopeToken) == mdtModuleRef)
+            {
+                // TODO: In this case, the type is from the source assembly, but a different module than the source module.
+                // Since the source assembly and target assembly are different, we can't make a module reference to the type's module
+                // as module references are only within assembly boundaries.
+                // Make an AssemblyRef to the source assembly from the target assembly.
+            }
+        }
+
+        mdToken targetOutermostScopeToken;
+        if (!md_cursor_to_token(targetOutermostScope, &targetOutermostScopeToken))
+            return E_FAIL;
+        
+        if (TypeFromToken(targetOutermostScopeToken) == mdtModule && !IsNilToken(targetOutermostScopeToken))
+        {
+            // Find a nested TypeDef in the target module that matches the name and namespace of the source TypeRef.
+            // We've resolved the TypeRef's outermost scope to be in the target module,
+            // so the TypeDef must be in the target module.
+        }
+
+        mdcursor_t resolutionScope = targetOutermostScope;
+        for (; !typesForTypeRefs.empty(); typesForTypeRefs.pop())
+        {
+            mdcursor_t sourceTypeRef = typesForTypeRefs.top();
+            md_added_row_t targetTypeRef;
+            if (!md_append_row(targetModule, mdtid_TypeRef, &targetTypeRef))
+                return E_FAIL;
+            
+            if (1 != md_set_column_value_as_cursor(targetTypeRef, mdtTypeRef_ResolutionScope, 1, &resolutionScope))
+                return E_FAIL;
+            
+            char const* typeName;
+            if (1 != md_get_column_value_as_utf8(sourceTypeRef, mdtTypeRef_TypeName, 1, &typeName)
+                || 1 != md_set_column_value_as_utf8(targetTypeRef, mdtTypeRef_TypeName, 1, &typeName))
+            {
+                return E_FAIL;
+            }
+            
+            char const* typeNamespace;
+            if (1 != md_get_column_value_as_utf8(sourceTypeRef, mdtTypeRef_TypeNamespace, 1, &typeNamespace)
+                || 1 != md_set_column_value_as_utf8(targetTypeRef, mdtTypeRef_TypeNamespace, 1, &typeNamespace))
+            {
+                return E_FAIL;
+            }
+
+            resolutionScope = targetTypeRef;
+            onRowAdded(targetTypeRef);
+        }
+
+        *targetTypeRef = resolutionScope;
+
+        return S_OK;
+    }
 }
