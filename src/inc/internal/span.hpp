@@ -52,6 +52,26 @@ public:
     {
         return { _ptr, _size };
     }
+
+    T* begin() noexcept
+    {
+        return _ptr;
+    }
+
+    T const* begin() const noexcept
+    {
+        return _ptr;
+    }
+
+    T* end() noexcept
+    {
+        return _ptr + _size;
+    }
+
+    T const* end() const noexcept
+    {
+        return _ptr + _size;
+    }
 };
 
 template<typename T, typename Deleter>
