@@ -15,6 +15,7 @@
 #include <exception>
 #include <string>
 #include <sstream>
+#include <vector>
 
 namespace Assert
 {
