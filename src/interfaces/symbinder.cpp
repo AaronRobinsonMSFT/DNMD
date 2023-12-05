@@ -13,10 +13,10 @@
 #include <external/corhdr.h>
 #include <external/corsym.h>
 
+EXTERN_GUID(IID_ISymUnmanagedBinder, 0xaa544d42, 0x28cb, 0x11d3, 0xbd, 0x22, 0x00, 0x00, 0xf8, 0x08, 0x49, 0xbd);
+
 namespace
 {
-    EXTERN_GUID(IID_ISymUnmanagedBinder, 0xaa544d42, 0x28cb, 0x11d3, 0xbd, 0x22, 0x00, 0x00, 0xf8, 0x08, 0x49, 0xbd);
-
     class SymUnmanagedBinderStateless final : ISymUnmanagedBinder
     {
     public: // ISymUnmanagedBinder
