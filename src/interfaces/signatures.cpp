@@ -204,7 +204,7 @@ malloc_span<std::uint8_t> GetMethodDefSigFromMethodRefSig(span<uint8_t> methodRe
     // We don't need to do anything with the various elements of the signature,
     // we just need to know how many parameters are before the sentinel.    
     span<uint8_t> signature = methodRefSig;
-    const uint8_t callingConvention = signature[0];
+    uint8_t const callingConvention = signature[0];
     signature = slice(signature, 1);
 
     // The MethodDefSig is the same as the MethodRefSig if the calling convention is not vararg.
