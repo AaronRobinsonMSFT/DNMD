@@ -200,6 +200,7 @@ namespace
 
 malloc_span<std::uint8_t> GetMethodDefSigFromMethodRefSig(span<uint8_t> methodRefSig)
 {
+    assert(methodRefSig.size() > 0);
     // We don't need to do anything with the various elements of the signature,
     // we just need to know how many parameters are before the sentinel.    
     span<uint8_t> signature = methodRefSig;
