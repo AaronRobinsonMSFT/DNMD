@@ -1,8 +1,9 @@
 set(SOURCES
-  dispenser.cpp
-  metadataimport.cpp
-  hcorenum.cpp
-  pal.cpp
+  ./dispenser.cpp
+  ./symbinder.cpp
+  ./metadataimport.cpp
+  ./hcorenum.cpp
+  ./pal.cpp
 )
 
 set(HEADERS
@@ -42,7 +43,8 @@ add_library(dnmd::interfaces ALIAS dnmd_interfaces)
 target_include_directories(dnmd_interfaces_static PUBLIC $<INSTALL_INTERFACE:include>)
 target_include_directories(dnmd_interfaces PUBLIC $<INSTALL_INTERFACE:include>)
 
-target_compile_definitions(dnmd_interfaces PRIVATE DNMD_BUILD_SHARED)
+target_compile_definitions(dnmd_interfaces_static PRIVATE COM_NO_WINDOWS_H)
+target_compile_definitions(dnmd_interfaces PRIVATE DNMD_BUILD_SHARED COM_NO_WINDOWS_H)
 
 target_link_libraries(dnmd_interfaces_static
   PUBLIC
