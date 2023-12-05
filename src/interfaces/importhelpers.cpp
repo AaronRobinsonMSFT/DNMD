@@ -777,30 +777,30 @@ namespace
         mdcursor_t resolutionScope = targetOutermostScope;
         for (; !typesForTypeRefs.empty(); typesForTypeRefs.pop())
         {
-            mdcursor_t sourceTypeRef = typesForTypeRefs.top();
-            md_added_row_t targetTypeRef;
-            if (!md_append_row(targetModule, mdtid_TypeRef, &targetTypeRef))
+            mdcursor_t sourceEnclosingTypeRef = typesForTypeRefs.top();
+            md_added_row_t targetEnclosingTypeRef;
+            if (!md_append_row(targetModule, mdtid_TypeRef, &targetEnclosingTypeRef))
                 return E_FAIL;
             
-            if (1 != md_set_column_value_as_cursor(targetTypeRef, mdtTypeRef_ResolutionScope, 1, &resolutionScope))
+            if (1 != md_set_column_value_as_cursor(targetEnclosingTypeRef, mdtTypeRef_ResolutionScope, 1, &resolutionScope))
                 return E_FAIL;
             
             char const* typeName;
-            if (1 != md_get_column_value_as_utf8(sourceTypeRef, mdtTypeRef_TypeName, 1, &typeName)
-                || 1 != md_set_column_value_as_utf8(targetTypeRef, mdtTypeRef_TypeName, 1, &typeName))
+            if (1 != md_get_column_value_as_utf8(sourceEnclosingTypeRef, mdtTypeRef_TypeName, 1, &typeName)
+                || 1 != md_set_column_value_as_utf8(targetEnclosingTypeRef, mdtTypeRef_TypeName, 1, &typeName))
             {
                 return E_FAIL;
             }
             
             char const* typeNamespace;
-            if (1 != md_get_column_value_as_utf8(sourceTypeRef, mdtTypeRef_TypeNamespace, 1, &typeNamespace)
-                || 1 != md_set_column_value_as_utf8(targetTypeRef, mdtTypeRef_TypeNamespace, 1, &typeNamespace))
+            if (1 != md_get_column_value_as_utf8(sourceEnclosingTypeRef, mdtTypeRef_TypeNamespace, 1, &typeNamespace)
+                || 1 != md_set_column_value_as_utf8(targetEnclosingTypeRef, mdtTypeRef_TypeNamespace, 1, &typeNamespace))
             {
                 return E_FAIL;
             }
 
-            resolutionScope = targetTypeRef;
-            onRowAdded(targetTypeRef);
+            resolutionScope = targetEnclosingTypeRef;
+            onRowAdded(targetEnclosingTypeRef);
         }
 
         *targetTypeRef = resolutionScope;
