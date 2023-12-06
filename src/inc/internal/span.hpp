@@ -58,7 +58,7 @@ public:
         return _ptr;
     }
 
-    T const* begin() const noexcept
+    T* begin() const noexcept
     {
         return _ptr;
     }
@@ -68,7 +68,7 @@ public:
         return _ptr + _size;
     }
 
-    T const* end() const noexcept
+    T* end() const noexcept
     {
         return _ptr + _size;
     }

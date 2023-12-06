@@ -268,13 +268,18 @@ namespace
         uint32_t flags,
         char const* name,
         char const* culture,
-        span<uint8_t> publicKeyOrToken,
+        span<const uint8_t> publicKeyOrToken,
         mdcursor_t* assemblyRef)
     {
         HRESULT hr;
-        // We will never generate a full public key for an assembly ref, only a token,
-        // so we should never be looking for a full public key here.
-        assert(!IsAfPublicKey(flags));
+    
+        bool calculatedPublicKeyToken = false;
+        StrongNameToken publicKeyToken{};
+        if (IsAfPublicKeyToken(flags) && publicKeyOrToken.size() == StrongNameTokenSize)
+        {
+            std::copy(publicKeyOrToken.begin(), publicKeyOrToken.end(), publicKeyToken.begin());
+            calculatedPublicKeyToken = true;
+        }
 
         // Search the assembly ref table for a matching row.
         mdcursor_t c;
@@ -285,7 +290,7 @@ namespace
         // COMPAT: CoreCLR resolves all references to mscorlib and Microsoft.VisualC to the same assembly ref ignoring the build and revision version.
         bool ignoreBuildRevisionVersion = CaseInsensitiveEquals(name, "mscorlib") || CaseInsensitiveEquals(name, "microsoft.visualc");
         
-        for (uint32_t i = 0; i < count; i++)
+        for (uint32_t i = 0; i < count; i++, md_cursor_next(&c))
         {
             // Search the table linearly my manually reading the columns.
 
@@ -335,7 +340,12 @@ namespace
             if (1 != md_get_column_value_as_blob(c, mdtAssemblyRef_PublicKeyOrToken, 1, &tempBlob, &tempBlobLength))
                 return CLDB_E_FILE_CORRUPT;
             
-            if (tempBlobLength)
+            // If our source has a public key or token, we can only match against an AssemblyRef that has a public key or token.
+            // If our source doesn't have a public key or token, we can only match against an AssemblyRef that doesn't have a public key or token.
+            if ((publicKeyOrToken.size() == 0) != (tempBlobLength == 0))
+                continue;
+
+            if (tempBlobLength != 0)
             {
                 // Handle the case when a ref may be using a full public key instead of a token.
                 StrongNameToken refPublicKeyToken;
@@ -344,18 +354,37 @@ namespace
                 if (1 != md_get_column_value_as_constant(c, mdtAssemblyRef_Flags, 1, &assemblyRefFlags))
                     return CLDB_E_FILE_CORRUPT;
                 
-                if (!IsAfPublicKey(assemblyRefFlags))
+                if (IsAfPublicKey(flags) == IsAfPublicKey(assemblyRefFlags))
                 {
-                    // This AssemblyRef has a public key token. We can compare it directly.
-                    std::copy(tempBlob, tempBlob + tempBlobLength, refPublicKeyToken.begin());
+                    // If both the source and destination either have a full key or a token, we can compare them directly.
+                    if (tempBlobLength != publicKeyOrToken.size() || !std::equal(publicKeyOrToken.begin(), publicKeyOrToken.end(), tempBlob))
+                        continue;
+                }
+                else if (IsAfPublicKey(assemblyRefFlags))
+                {
+                    // This AssemblyRef row has a full public key. And our source has a token.
+                    // We need to get the token from the key.
+                    RETURN_IF_FAILED(StrongNameTokenFromPublicKey({ tempBlob, tempBlobLength }, refPublicKeyToken));
                 }
                 else
                 {
-                    // This AssemblyRef row has a full public key. We need to get the token from the key.
-                    RETURN_IF_FAILED(StrongNameTokenFromPublicKey({ tempBlob, tempBlobLength }, refPublicKeyToken));
+                    // This AssemblyRef row has a token. And our source has a full public key.
+                    // We need to get the token from the key.
+                    if (!calculatedPublicKeyToken)
+                    {
+                        RETURN_IF_FAILED(StrongNameTokenFromPublicKey(publicKeyOrToken, publicKeyToken));
+                        calculatedPublicKeyToken = true;
+                    }
                 }
 
-                if (publicKeyOrToken.size() != refPublicKeyToken.size() || !std::equal(publicKeyOrToken.begin(), publicKeyOrToken.end(), refPublicKeyToken.begin()))
+                // At this point, we have a token for both our source and the AssemblyRef we are checking against.
+
+                // If our source started with a public key token, we should have initialized publicKeyToken to it
+                // and set calculatedPublicKeyToken to true.
+                // If our source started with a public key, then we should have calculated the token above and
+                // set calculatedPublicKeyToken to true.
+                assert(calculatedPublicKeyToken);
+                if (publicKeyToken != refPublicKeyToken)
                     continue;
             }
             
@@ -364,6 +393,98 @@ namespace
         }
 
         return S_FALSE;
+    }
+
+    HRESULT ImportReferenceToAssemblyRef(
+        mdcursor_t sourceAssemblyRef,
+        mdhandle_t targetModule,
+        std::function<void(mdcursor_t)> onRowAdded,
+        mdcursor_t* targetAssembly
+    )
+    {
+        HRESULT hr;
+        uint32_t flags;
+        if (1 != md_get_column_value_as_constant(sourceAssemblyRef, mdtAssemblyRef_Flags, 1, &flags))
+            return E_FAIL;
+
+        uint8_t const* publicKey;
+        uint32_t publicKeyLength;
+        if (1 != md_get_column_value_as_blob(sourceAssemblyRef, mdtAssemblyRef_PublicKeyOrToken, 1, &publicKey, &publicKeyLength))
+            return E_FAIL;
+
+        uint32_t majorVersion;
+        if (1 != md_get_column_value_as_constant(sourceAssemblyRef, mdtAssemblyRef_MajorVersion, 1, &majorVersion))
+            return E_FAIL;
+        
+        uint32_t minorVersion;
+        if (1 != md_get_column_value_as_constant(sourceAssemblyRef, mdtAssemblyRef_MinorVersion, 1, &minorVersion))
+            return E_FAIL;
+        
+        uint32_t buildNumber;
+        if (1 != md_get_column_value_as_constant(sourceAssemblyRef, mdtAssemblyRef_BuildNumber, 1, &buildNumber))
+            return E_FAIL;
+        
+        uint32_t revisionNumber;
+        if (1 != md_get_column_value_as_constant(sourceAssemblyRef, mdtAssemblyRef_RevisionNumber, 1, &revisionNumber))
+            return E_FAIL;
+        
+        char const* assemblyName;
+        if (1 != md_get_column_value_as_utf8(sourceAssemblyRef, mdtAssemblyRef_Name, 1, &assemblyName))
+            return E_FAIL;
+        
+        char const* assemblyCulture;
+        if (1 != md_get_column_value_as_utf8(sourceAssemblyRef, mdtAssemblyRef_Culture, 1, &assemblyCulture))
+            return E_FAIL;
+
+        RETURN_IF_FAILED(FindAssemblyRef(
+            targetModule,
+            majorVersion,
+            minorVersion,
+            buildNumber,
+            revisionNumber,
+            flags,
+            assemblyName,
+            assemblyCulture,
+            { publicKey, publicKeyLength },
+            targetAssembly));
+
+        if (hr == S_OK)
+        {
+            return S_OK;
+        }
+
+        md_added_row_t assemblyRef;
+        if (!md_append_row(targetModule, mdtid_AssemblyRef, &assemblyRef))
+            return E_FAIL;
+        
+        onRowAdded(assemblyRef);
+  
+        if (1 != md_set_column_value_as_constant(assemblyRef, mdtAssemblyRef_MajorVersion, 1, &majorVersion))
+            return E_FAIL;
+
+        if (1 != md_set_column_value_as_constant(assemblyRef, mdtAssemblyRef_MinorVersion, 1, &minorVersion))
+            return E_FAIL;
+
+        if (1 != md_set_column_value_as_constant(assemblyRef, mdtAssemblyRef_BuildNumber, 1, &buildNumber))
+            return E_FAIL;
+
+        if (md_set_column_value_as_constant(assemblyRef, mdtAssemblyRef_RevisionNumber, 1, &revisionNumber))
+            return E_FAIL;
+
+        if (1 != md_set_column_value_as_constant(assemblyRef, mdtAssemblyRef_Flags, 1, &flags))
+            return E_FAIL;
+        
+        if (1 != md_set_column_value_as_utf8(assemblyRef, mdtAssemblyRef_Name, 1, &assemblyName))
+            return E_FAIL;
+
+        if (1 != md_set_column_value_as_utf8(assemblyRef, mdtAssemblyRef_Culture, 1, &assemblyCulture))
+            return E_FAIL;
+
+        if (1 != md_set_column_value_as_blob(assemblyRef, mdtAssemblyRef_PublicKeyOrToken, 1, &publicKey, &publicKeyLength))
+            return E_FAIL;
+        
+        *targetAssembly = assemblyRef;
+        return S_OK;
     }
 
     HRESULT ImportReferenceToAssembly(
@@ -635,6 +756,168 @@ HRESULT ImportReferenceToTypeDef(
 
 namespace
 {
+    bool FindModuleRef(mdhandle_t image, char const* moduleName, mdcursor_t* existingModuleRef)
+    {
+        mdcursor_t c;
+        uint32_t count;
+        if (!md_create_cursor(image, mdtid_ModuleRef, &c, &count))
+            return false;
+        
+        for (uint32_t i = 0; i < count; i++, md_cursor_next(&c))
+        {
+            char const* name;
+            if (1 != md_get_column_value_as_utf8(c, mdtModuleRef_Name, 1, &name))
+                return false;
+            
+            if (std::strcmp(name, moduleName) == 0)
+            {
+                *existingModuleRef = c;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    // Given a type name and type namespace for a type in a (possibly multi-module) assembly,
+    // import a reference to the type into the target module.
+    // This function also handles type forwards into the target assembly.
+    HRESULT ImportScopeForTypeByNameInAssembly(
+        char const* typeName,
+        char const* typeNamespace,
+        mdhandle_t module,
+        mdhandle_t assembly,
+        std::function<void(mdcursor_t)> onRowAdded,
+        mdcursor_t* importedScope
+    )
+    {
+        // Search the ExportedType table in the targetAssembly for a type with the given name or namespace.
+        // An empty ExportedType table is okay
+        mdcursor_t exportedType;
+        uint32_t count;
+        bool foundExportedType = false;
+        if (md_create_cursor(assembly, mdtid_ExportedType, &exportedType, &count))
+        {
+            for (uint32_t i = 0; i < count; ++i, md_cursor_next(&exportedType))
+            {
+                char const* exportedTypeName;
+                if (1 != md_get_column_value_as_utf8(exportedType, mdtExportedType_TypeName, 1, &exportedTypeName))
+                    return E_FAIL;
+                
+                char const* exportedTypeNamespace;
+                if (1 != md_get_column_value_as_utf8(exportedType, mdtExportedType_TypeNamespace, 1, &exportedTypeNamespace))
+                    return E_FAIL;
+                
+                if (std::strcmp(typeName, exportedTypeName) == 0 && std::strcmp(typeNamespace, exportedTypeNamespace) == 0)
+                {
+                    foundExportedType = true;
+                    break;
+                }
+            }
+        }
+
+        if (foundExportedType)
+        {
+            // If we found an ExportedType, then we can import a reference to it.
+            mdcursor_t implementation;
+            if (1 != md_get_column_value_as_cursor(exportedType, mdtExportedType_Implementation, 1, &implementation))
+                return E_FAIL;
+            
+            switch (GetTokenTypeFromCursor(implementation))
+            {
+                // If the ExportedType.Implementation is a File:
+                // - If the File refers to module's module, then we can use the module cursor in module as the imported scope. 
+                // - If the File refers to another module, then we'll create a ModuleRef to that module.
+                case mdtFile:
+                {
+                    char const* fileName;
+                    if (1 != md_get_column_value_as_utf8(implementation, mdtFile_Name, 1, &fileName))
+                        return E_FAIL;
+                    
+                    mdcursor_t moduleCursor;
+                    uint32_t count;
+                    if (!md_create_cursor(module, mdtid_Module, &moduleCursor, &count))
+                        return E_FAIL;
+
+                    char const* moduleName;
+                    if (1 != md_get_column_value_as_utf8(moduleCursor, mdtModule_Name, 1, &moduleName))
+                        return E_FAIL;
+                    
+                    if (std::strcmp(fileName, moduleName) == 0)
+                    {
+                        *importedScope = moduleCursor;
+                    }
+                    else
+                    {
+                        if (!FindModuleRef(module, fileName, importedScope))
+                        {
+                            md_added_row_t moduleRef;
+                            if (!md_append_row(module, mdtid_ModuleRef, &moduleRef))
+                                return E_FAIL;
+                            
+                            if (1 != md_set_column_value_as_utf8(moduleRef, mdtModuleRef_Name, 1, &fileName))
+                                return E_FAIL;
+                            
+                            *importedScope = moduleRef;
+                            onRowAdded(moduleRef);
+                        }
+                    }
+                    return S_OK;
+                }
+                // If the ExportedType.Implementation is an AssemblyRef, then we'll use that as the imported scope.
+                case mdtAssemblyRef:
+                    HRESULT hr;
+                    RETURN_IF_FAILED(ImportReferenceToAssemblyRef(implementation, module, onRowAdded, importedScope));
+                    mdcursor_t ignored;
+                    return ImportReferenceToAssemblyRef(implementation, assembly, onRowAdded, &ignored);
+
+                // If the ExportedType.Implementation is an ExportedType, then we're in an error scenario.
+                case mdtExportedType:
+                    return E_FAIL;
+                default:
+                    assert(false);
+                    return E_UNEXPECTED;
+            }
+        }
+
+        // If we couldn't find an ExportedType, then we need to search the TypeDef table in the assembly.
+        // We must be able to find the type here, otherwise the metadata is invalid as we can't make a reference to a type we can't find.
+        mdcursor_t typeDef;
+        uint32_t count;
+        if (!md_create_cursor(assembly, mdtid_TypeDef, &typeDef, &count))
+            return E_FAIL;
+        
+        for (uint32_t i = 0; i < count; ++i, md_cursor_next(&typeDef))
+        {
+            char const* typeDefName;
+            if (1 != md_get_column_value_as_utf8(typeDef, mdtTypeDef_TypeName, 1, &typeDefName))
+                return E_FAIL;
+            
+            char const* typeDefNamespace;
+            if (1 != md_get_column_value_as_utf8(typeDef, mdtTypeDef_TypeNamespace, 1, &typeDefNamespace))
+                return E_FAIL;
+
+            if (std::strcmp(typeName, typeDefName) == 0 && std::strcmp(typeNamespace, typeDefNamespace) == 0)
+            {
+                // TODO: Make sure that this type is not nested.
+
+                // If we found the type defined in the assembly, then the correct imported scope is the assembly.
+                if (!md_token_to_cursor(module, TokenFromRid(1, mdtModule), importedScope))
+                    return CLDB_E_FILE_CORRUPT;
+                return S_OK;
+            }
+        }
+        return CLDB_E_RECORD_NOTFOUND;
+    }
+
+    HRESULT AssemblyRefPointsToAssembly(
+        mdcursor_t assemblyRef,
+        mdcursor_t assembly)
+    {
+        // TODO: Compare version, Name, Locale, and PublicKeyOrToken (possibly creating token from def if needed)
+        return E_NOTIMPL;
+    }
+
     HRESULT ImportReferenceToTypeRef(
         mdcursor_t sourceTypeRef,
         mdhandle_t sourceAssembly,
@@ -709,16 +992,63 @@ namespace
             }
             else if (TypeFromToken(scopeToken) == mdtModule)
             {
-                // TODO: Create ModuleRef
+                // Create a ModuleRef from the target module to the source module.
+                char const* moduleName;
+                if (1 != md_get_column_value_as_utf8(scope, mdtModule_Name, 1, &moduleName))
+                    return CLDB_E_FILE_CORRUPT;
+
+                if (!FindModuleRef(targetModule, moduleName, &targetOutermostScope))
+                {
+                    md_added_row_t moduleRef;
+                    if (!md_append_row(targetModule, mdtid_ModuleRef, &moduleRef))
+                        return E_FAIL;
+                    
+                    if (1 != md_set_column_value_as_utf8(moduleRef, mdtModuleRef_Name, 1, &moduleName))
+                        return E_FAIL;
+                    
+                    targetOutermostScope = moduleRef;
+                    onRowAdded(moduleRef);
+                }
             }
             else if (TypeFromToken(scopeToken) == mdtModuleRef)
             {
-                // TODO: If target module, resolve to Module
-                // otherwise, create ModuleRef
+                // If this ModuleRef points from the source module into the target module,
+                // then we can use the Module token as the outermost scope.
+                // otherwise, create ModuleRef to the module that the source ModuleRef points to.
+                char const* moduleName;
+                if (1 != md_get_column_value_as_utf8(scope, mdtModuleRef_Name, 1, &moduleName))
+                    return CLDB_E_FILE_CORRUPT;
+                
+                mdcursor_t targetModuleCursor;
+                uint32_t count;
+                if (!md_create_cursor(targetModule, mdtid_Module, &targetModuleCursor, &count))
+                    return E_FAIL;
+                
+                char const* targetModuleName;
+                if (1 != md_get_column_value_as_utf8(targetModuleCursor, mdtModule_Name, 1, &targetModuleName))
+                    return E_FAIL;
+                
+                if (std::strcmp(moduleName, targetModuleName) == 0)
+                {
+                    targetOutermostScope = targetModuleCursor;
+                }
+                else if (!FindModuleRef(targetModule, moduleName, &targetOutermostScope))
+                {
+                    md_added_row_t moduleRef;
+                    if (!md_append_row(targetModule, mdtid_ModuleRef, &moduleRef))
+                        return E_FAIL;
+                    
+                    if (1 != md_set_column_value_as_utf8(moduleRef, mdtModuleRef_Name, 1, &moduleName))
+                        return E_FAIL;
+                    
+                    targetOutermostScope = moduleRef;
+                    onRowAdded(moduleRef);
+                }
             }
             else if (TypeFromToken(scopeToken) == mdtAssemblyRef)
             {
-                // TODO: Copy AssemblyRef
+                // Copy the AssemblyRef from the source module to the target module.
+                RETURN_IF_FAILED(ImportReferenceToAssemblyRef(scope, targetModule, onRowAdded, &targetOutermostScope));
             }
             else
             {
@@ -735,16 +1065,118 @@ namespace
             
             if (IsNilToken(scopeToken))
             {
-                // TODO: Lookup ExportedType entry in the source assembly for this type.
+                // Lookup ExportedType entry in the source assembly for this type.
+                mdcursor_t exportedType;
+                uint32_t count;
+                bool foundExportedType = false;
+                mdcursor_t implementation = { 0 };
+                if (md_create_cursor(sourceAssembly, mdtid_ExportedType, &exportedType, &count))
+                {
+                    mdcursor_t outermostTypeRef = typesForTypeRefs.top();
+                    char const* typeName;
+                    if (1 != md_get_column_value_as_utf8(outermostTypeRef, mdtTypeRef_TypeName, 1, &typeName))
+                        return E_FAIL;
+                    
+                    char const* typeNamespace;
+                    if (1 != md_get_column_value_as_utf8(outermostTypeRef, mdtTypeRef_TypeNamespace, 1, &typeNamespace))
+                        return E_FAIL;
+                    
+                    // If we can't find an ExportedType entry for this type, we'll just move over the TypeRef with a Nil ResolutionScope.
+                    for (uint32_t i = 0; i < count; ++i, md_cursor_next(&exportedType))
+                    {
+                        char const* exportedTypeName;
+                        if (1 != md_get_column_value_as_utf8(exportedType, mdtExportedType_TypeName, 1, &exportedTypeName))
+                            return E_FAIL;
+                        
+                        char const* exportedTypeNamespace;
+                        if (1 != md_get_column_value_as_utf8(exportedType, mdtExportedType_TypeNamespace, 1, &exportedTypeNamespace))
+                            return E_FAIL;
+                        
+                        if (std::strcmp(typeName, exportedTypeName) == 0 && std::strcmp(typeNamespace, exportedTypeNamespace) == 0)
+                        {
+                            if (1 != md_get_column_value_as_cursor(exportedType, mdtExportedType_Implementation, 1, &implementation))
+                                return E_FAIL;
+                            
+                            foundExportedType = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (foundExportedType)
+                {
+                    switch (GetTokenTypeFromCursor(implementation))
+                    {
+                        case mdtFile:
+                        {
+                            // This type is from a file in the source assembly, so we need to create an AssemblyRef to the source assembly.
+                            mdcursor_t importAssembly;
+                            uint32_t count;
+                            if (!md_create_cursor(sourceAssembly, mdtid_Assembly, &importAssembly, &count))
+                                return E_FAIL;
+                            
+                            // Add a reference to the assembly in the target module.
+                            RETURN_IF_FAILED(ImportReferenceToAssembly(importAssembly, sourceAssemblyHash, targetModule, onRowAdded, &targetOutermostScope));
+
+                            // Also add a reference to the assembly in the target assembly.
+                            // In most cases, the target module will be the same as the target assembly, so this will be a no-op.
+                            // However, if the target module is a netmodule, then the target assembly will be the main assembly.
+                            // CoreCLR doesn't support multi-module assemblies, but they're still valid in ECMA-335.
+                            if (targetModule != targetAssembly)
+                            {
+                                mdcursor_t ignored;
+                                RETURN_IF_FAILED(ImportReferenceToAssembly(importAssembly, sourceAssemblyHash, targetAssembly, onRowAdded, &ignored));
+                            }
+                            break;
+                        }
+                        case mdtAssemblyRef:
+                        {
+                            // This type is a type-forward from another assembly.
+                            // Reset the scope and scopeToken variables to this AssemblyRef.
+                            // If this is a type forward from the target assembly, we want to resolve it to the target assembly to avoid a self-referential
+                            // AssemblyRef.
+                            scope = implementation;
+                            if (!md_cursor_to_token(scope, &scopeToken))
+                                return CLDB_E_FILE_CORRUPT;
+                            break;
+                        }
+                        case mdtExportedType:
+                        {
+                            assert(false && "We should be looking at the outermost type already. Therefore, the ExportedType entry for this type should not be enclosed in another type.");
+                            break;
+                        }
+                        default:
+                        {
+                            assert(false && "Unexpected token type for ExportedType.Implementation");
+                            break;
+                        }
+                    }
+                }
             }
             else if (TypeFromToken(scopeToken) == mdtModule)
             {
-                // TODO: Create an AssemblyRef from the destination assembly to the source assembly.
+                // Create an AssemblyRef from the destination assembly to the source assembly.
+                mdcursor_t importAssembly;
+                uint32_t count;
+                if (!md_create_cursor(sourceModule, mdtid_Assembly, &importAssembly, &count))
+                    return E_FAIL;
+                
+                // Add a reference to the assembly in the target module.
+                RETURN_IF_FAILED(ImportReferenceToAssembly(importAssembly, sourceAssemblyHash, targetModule, onRowAdded, &targetOutermostScope));
+
+                // Also add a reference to the assembly in the target assembly.
+                // In most cases, the target module will be the same as the target assembly, so this will be a no-op.
+                // However, if the target module is a netmodule, then the target assembly will be the main assembly.
+                // CoreCLR doesn't support multi-module assemblies, but they're still valid in ECMA-335.
+                if (targetModule != targetAssembly)
+                {
+                    mdcursor_t ignored;
+                    RETURN_IF_FAILED(ImportReferenceToAssembly(importAssembly, sourceAssemblyHash, targetAssembly, onRowAdded, &ignored));
+                }
             }
             
-            // The IsNilToken case can resolve to an ExportedType entry who's scope is an AssemblyRef.
+            // The IsNilToken case can resolve to an ExportedType entry whose scope is an AssemblyRef.
             // We want to catch that case here, so we split this out to a separate if instead of a chained else if.
-
             if (TypeFromToken(scopeToken) == mdtAssemblyRef)
             {
                 // TODO: Convert from AssemblyRef to Assembly if the source AssemblyRef points to the target assembly.
@@ -753,15 +1185,64 @@ namespace
                 //   If there's no ExportedType row, then it should be defined in the target assembly (in this case, the ExportedType row can be omitted).
                 //   Otherwise, we are in a failure case as we can't determine which module in the target assembly is providing the type definition.
                 // If it is defined in another assembly, we need to create an AssemblyRef to that assembly.
+                mdcursor_t targetAssemblyCursor;
+                uint32_t count;
+                if (!md_create_cursor(targetModule, mdtid_Assembly, &targetAssemblyCursor, &count))
+                    return E_FAIL;
+
+                RETURN_IF_FAILED(AssemblyRefPointsToAssembly(scope, targetAssemblyCursor));
+                if (hr == S_OK)
+                {
+                    mdcursor_t outermostTypeRef = typesForTypeRefs.top();
+                    char const* typeName;
+                    if (1 != md_get_column_value_as_utf8(outermostTypeRef, mdtTypeRef_TypeName, 1, &typeName))
+                        return E_FAIL;
+                    
+                    char const* typeNamespace;
+                    if (1 != md_get_column_value_as_utf8(outermostTypeRef, mdtTypeRef_TypeNamespace, 1, &typeNamespace))
+                        return E_FAIL;
+
+                    RETURN_IF_FAILED(ImportScopeForTypeByNameInAssembly(
+                        typeName,
+                        typeNamespace,
+                        targetModule,
+                        targetAssembly,
+                        onRowAdded,
+                        &targetOutermostScope));
+                }
+                else
+                {
+                    assert(hr == S_FALSE);
+                    RETURN_IF_FAILED(ImportReferenceToAssemblyRef(scope, targetModule, onRowAdded, &targetOutermostScope));
+                }
             }
             else if (TypeFromToken(scopeToken) == mdtModuleRef)
             {
-                // TODO: In this case, the type is from the source assembly, but a different module than the source module.
+                // In this case, the type is from the source assembly, but a different module than the source module.
                 // Since the source assembly and target assembly are different, we can't make a module reference to the type's module
                 // as module references are only within assembly boundaries.
                 // Make an AssemblyRef to the source assembly from the target assembly.
+                mdcursor_t importAssembly;
+                uint32_t count;
+                if (!md_create_cursor(sourceModule, mdtid_Assembly, &importAssembly, &count))
+                    return E_FAIL;
+                
+                // Add a reference to the assembly in the target module.
+                RETURN_IF_FAILED(ImportReferenceToAssembly(importAssembly, sourceAssemblyHash, targetModule, onRowAdded, &targetOutermostScope));
+
+                // Also add a reference to the assembly in the target assembly.
+                // In most cases, the target module will be the same as the target assembly, so this will be a no-op.
+                // However, if the target module is a netmodule, then the target assembly will be the main assembly.
+                // CoreCLR doesn't support multi-module assemblies, but they're still valid in ECMA-335.
+                if (targetModule != targetAssembly)
+                {
+                    mdcursor_t ignored;
+                    RETURN_IF_FAILED(ImportReferenceToAssembly(importAssembly, sourceAssemblyHash, targetAssembly, onRowAdded, &ignored));
+                }
             }
         }
+
+        assert(md_extract_handle_from_cursor(targetOutermostScope) == targetModule);
 
         mdToken targetOutermostScopeToken;
         if (!md_cursor_to_token(targetOutermostScope, &targetOutermostScopeToken))
