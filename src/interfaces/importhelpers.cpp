@@ -1,4 +1,5 @@
 #include "importhelpers.hpp"
+#include "signatures.hpp"
 #include "pal.hpp"
 #include <cassert>
 #include <stack>
@@ -902,8 +903,8 @@ namespace
                 // Make sure that this type is not nested.
                 // For this to be the same type, it must not be a nested type.
                 mdcursor_t nestedType;
-                uint32_t count;
-                if (!md_create_cursor(assembly, mdtid_NestedClass, &nestedType, &count))
+                uint32_t nestedTypeCount;
+                if (!md_create_cursor(assembly, mdtid_NestedClass, &nestedType, &nestedTypeCount))
                     return E_FAIL;
                 
                 mdToken typeDefToken;
@@ -1114,7 +1115,7 @@ namespace
         // - ModuleRef token
         // - Module token
         // - AssemblyRef token
-        mdcursor_t targetOutermostScope;
+        mdcursor_t targetOutermostScope = { 0 };
         if (sameAssemblyMvid && sameModuleMvid)
         {
             mdToken token;
@@ -1293,14 +1294,19 @@ namespace
                         case mdtExportedType:
                         {
                             assert(false && "We should be looking at the outermost type already. Therefore, the ExportedType entry for this type should not be enclosed in another type.");
-                            break;
+                            return E_UNEXPECTED;
                         }
                         default:
                         {
                             assert(false && "Unexpected token type for ExportedType.Implementation");
-                            break;
+                            return E_UNEXPECTED;
                         }
                     }
+                }
+                else
+                {
+                    // If we couldn't find an ExportedType entry for this type, we'll just move over the TypeRef with a Nil ResolutionScope.
+                    targetOutermostScope = { 0 };
                 }
             }
             else if (TypeFromToken(scopeToken) == mdtModule)
@@ -1387,6 +1393,10 @@ namespace
                     RETURN_IF_FAILED(ImportReferenceToAssembly(importAssembly, sourceAssemblyHash, targetAssembly, onRowAdded, &ignored));
                 }
             }
+            else
+            {
+                return E_UNEXPECTED;
+            }
         }
 
         assert(md_extract_handle_from_cursor(targetOutermostScope) == targetModule);
@@ -1434,5 +1444,66 @@ namespace
         *targetTypeRef = resolutionScope;
 
         return S_OK;
+    }
+}
+
+HRESULT ImportReferenceToTypeDefOrRefOrSpec(
+    mdhandle_t sourceAssembly,
+    mdhandle_t sourceModule,
+    span<const uint8_t> sourceAssemblyHash,
+    mdhandle_t targetAssembly,
+    mdhandle_t targetModule,
+    std::function<void(mdcursor_t)> onRowAdded,
+    mdToken* importedToken)
+{
+    HRESULT hr;
+    mdcursor_t sourceCursor;
+    if (!md_token_to_cursor(sourceModule, *importedToken, &sourceCursor))
+        return CLDB_E_FILE_CORRUPT;
+    
+    switch (GetTokenTypeFromCursor(sourceCursor))
+    {
+        case mdtTypeDef:
+        {
+            mdcursor_t targetCursor;
+            RETURN_IF_FAILED(ImportReferenceToTypeDef(sourceCursor, sourceAssembly, sourceAssemblyHash, targetAssembly, targetModule, true, onRowAdded, &targetCursor));
+            if (!md_cursor_to_token(targetCursor, importedToken))
+                return E_UNEXPECTED;
+            
+            return S_OK;
+        }
+        case mdtTypeRef:
+        {
+            mdcursor_t targetCursor;
+            RETURN_IF_FAILED(ImportReferenceToTypeRef(sourceCursor, sourceAssembly, sourceAssemblyHash, targetAssembly, targetModule, onRowAdded, &targetCursor));
+            if (!md_cursor_to_token(targetCursor, importedToken))
+                return E_UNEXPECTED;
+            
+            return S_OK;
+        }
+        case mdtTypeSpec:
+        {
+            uint8_t const* signature;
+            uint32_t signatureLength;
+            if (1 != md_get_column_value_as_blob(sourceCursor, mdtTypeSpec_Signature, 1, &signature, &signatureLength))
+                return E_FAIL;
+            
+            malloc_span<uint8_t> importedSignature;
+            RETURN_IF_FAILED(ImportTypeSpecBlob(sourceAssembly, sourceModule, sourceAssemblyHash, targetAssembly, targetModule, {signature, signatureLength}, onRowAdded, &importedSignature));
+
+            md_added_row_t typeSpec;
+            if (!md_append_row(targetModule, mdtid_TypeSpec, &typeSpec))
+                return E_FAIL;
+            
+            uint8_t const* importedSignatureData = importedSignature;
+            uint32_t importedSignatureLength = (uint32_t)importedSignature.size();
+            if (1 != md_set_column_value_as_blob(typeSpec, mdtTypeSpec_Signature, 1, &importedSignatureData, &importedSignatureLength))
+                return E_FAIL;
+            
+            if (!md_cursor_to_token(typeSpec, importedToken))
+                return E_UNEXPECTED;
+        }
+        default:
+            return E_INVALIDARG;
     }
 }
