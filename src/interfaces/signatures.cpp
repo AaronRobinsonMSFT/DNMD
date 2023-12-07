@@ -18,7 +18,7 @@ namespace
     template<typename T, typename = typename std::enable_if<std::is_same<typename std::remove_const<T>::type, uint8_t>::value>::type>
     std::tuple<int32_t, span<T>> read_compressed_int(span<T> signature)
     {
-        int value;
+        int value = 0;
         signature = slice(signature, CorSigUncompressSignedInt(signature, &value));
         return std::make_tuple(value, signature);
     }
