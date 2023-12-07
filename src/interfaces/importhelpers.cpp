@@ -6,6 +6,7 @@
 #include <cctype>
 #include <array>
 #include <algorithm>
+#include <cstring>
 
 // ALG_ID crackers
 #define GET_ALG_CLASS(x)                (x & (7 << 13))
@@ -878,7 +879,7 @@ namespace
                     return E_FAIL;
                 default:
                     assert(false);
-                    return E_UNEXPECTED;
+                    return E_FAIL;
             }
         }
 
@@ -1294,12 +1295,12 @@ namespace
                         case mdtExportedType:
                         {
                             assert(false && "We should be looking at the outermost type already. Therefore, the ExportedType entry for this type should not be enclosed in another type.");
-                            return E_UNEXPECTED;
+                            return E_FAIL;
                         }
                         default:
                         {
                             assert(false && "Unexpected token type for ExportedType.Implementation");
-                            return E_UNEXPECTED;
+                            return E_FAIL;
                         }
                     }
                 }
@@ -1395,7 +1396,7 @@ namespace
             }
             else
             {
-                return E_UNEXPECTED;
+                return E_FAIL;
             }
         }
 
@@ -1468,7 +1469,7 @@ HRESULT ImportReferenceToTypeDefOrRefOrSpec(
             mdcursor_t targetCursor;
             RETURN_IF_FAILED(ImportReferenceToTypeDef(sourceCursor, sourceAssembly, sourceAssemblyHash, targetAssembly, targetModule, true, onRowAdded, &targetCursor));
             if (!md_cursor_to_token(targetCursor, importedToken))
-                return E_UNEXPECTED;
+                return E_FAIL;
             
             return S_OK;
         }
@@ -1477,7 +1478,7 @@ HRESULT ImportReferenceToTypeDefOrRefOrSpec(
             mdcursor_t targetCursor;
             RETURN_IF_FAILED(ImportReferenceToTypeRef(sourceCursor, sourceAssembly, sourceAssemblyHash, targetAssembly, targetModule, onRowAdded, &targetCursor));
             if (!md_cursor_to_token(targetCursor, importedToken))
-                return E_UNEXPECTED;
+                return E_FAIL;
             
             return S_OK;
         }
@@ -1501,7 +1502,7 @@ HRESULT ImportReferenceToTypeDefOrRefOrSpec(
                 return E_FAIL;
             
             if (!md_cursor_to_token(typeSpec, importedToken))
-                return E_UNEXPECTED;
+                return E_FAIL;
         }
         default:
             return E_INVALIDARG;
