@@ -45,8 +45,9 @@ namespace
                 return E_UNEXPECTED;
             
             mdguid_t mvid;
-            if (!PAL_CoCreateGuid(reinterpret_cast<GUID*>(&mvid)))
-                return E_UNEXPECTED;
+            HRESULT hr = PAL_CoCreateGuid(reinterpret_cast<GUID*>(&mvid));
+            if (FAILED(hr))
+                return hr;
             
             if (1 != md_set_column_value_as_guid(moduleCursor, mdtModule_Mvid, 1, &mvid))
                 return E_OUTOFMEMORY;
