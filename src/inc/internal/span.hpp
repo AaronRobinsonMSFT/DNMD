@@ -117,7 +117,7 @@ public:
 
     operator owning_span<const T, Deleter>() const
     {
-        return { _ptr, _size };
+        return { this->_ptr, this->_size };
     }
 };
 
