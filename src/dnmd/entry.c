@@ -284,8 +284,8 @@ static bool initialize_minimal_table_rows(mdcxt_t* cxt)
     if (1 != md_set_column_value_as_constant(global_type_cursor, mdtTypeDef_Flags, 1, &flags))
         return false;
     
-    const char* name = "<Module>";
-    if (1 != md_set_column_value_as_utf8(global_type_cursor, mdtTypeDef_TypeName, 1, &name))
+    const char* global_type_name = "<Module>";
+    if (1 != md_set_column_value_as_utf8(global_type_cursor, mdtTypeDef_TypeName, 1, &global_type_name))
         return false;
     
     char const* namespace = "";
