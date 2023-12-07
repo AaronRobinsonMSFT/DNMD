@@ -193,7 +193,7 @@ bool pal::ComputeSha1Hash(span<const uint8_t> data, std::array<uint8_t, SHA1_HAS
 {
     CC_SHA1_CTX ctx;
     CC_SHA1_Init(&ctx);
-    CC_SHA1_Update(&ctx, data.data(), (CC_LONG)data.size());
+    CC_SHA1_Update(&ctx, data, (CC_LONG)data.size());
     CC_SHA1_Final(hashDestination.data(), &ctx);
     return true;
 }
@@ -201,13 +201,18 @@ bool pal::ComputeSha1Hash(span<const uint8_t> data, std::array<uint8_t, SHA1_HAS
 #elif defined(BUILD_UNIX)
 #include <openssl/sha.h>
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+// The direct SHA1 APIs are deprecated in OpenSSL 3.0, but I don't want to write a separate PAL
+// for OpenSSL 3.0 and 1.1, so just suppress the warning.
 bool pal::ComputeSha1Hash(span<const uint8_t> data, std::array<uint8_t, SHA1_HASH_SIZE>& hashDestination)
 {
     SHA_CTX ctx;
     SHA1_Init(&ctx);
-    SHA1_Update(&ctx, data.data(), data.size());
+    SHA1_Update(&ctx, data, data.size());
     SHA1_Final(hashDestination.data(), &ctx);
     return true;
 }
+#pragma GCC diagnostic pop
 
 #endif // defined(BUILD_WINDOWS)
