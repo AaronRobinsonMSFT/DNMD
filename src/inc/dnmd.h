@@ -38,6 +38,13 @@ typedef void* mdhandle_t;
 // If modifications are made, the data will not be updated in place.
 bool md_create_handle(void const* data, size_t data_len, mdhandle_t* handle);
 
+// Create a new metadata handle for a new image.
+// Returns a handle for the new image, or NULL if the handle could not be created.
+// The image will always be in the v2.0 metadata format,
+// use the "v4.0.30319" version string,
+// and have an MVID of all zeros.
+mdhandle_t md_create_new_handle();
+
 // Apply delta data to the current metadata.
 bool md_apply_delta(mdhandle_t handle, void const* data, size_t data_len);
 
