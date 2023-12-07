@@ -507,7 +507,7 @@ HRESULT ImportTypeSpecBlob(
     if (FAILED(hr))
         return hr;
 
-    if (!remaining.size() == 0)
+    if (remaining.size() != 0)
     {
         // If we have any bytes remaining, then the TypeSpecBlob was invalid.
         return E_INVALIDARG;
