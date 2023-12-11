@@ -1306,8 +1306,75 @@ namespace
                 }
                 else
                 {
-                    // If we couldn't find an ExportedType entry for this type, we'll just move over the TypeRef with a Nil ResolutionScope.
-                    targetOutermostScope = { 0 };
+                    // COMPAT-BREAK: CoreCLR and CLR treat a type that is not found in the ExportedType table as though it is an imported type from the target assembly.
+                    // This is incorrect per the spec as the type is not defined in the target assembly.
+                    // Early .NET compilers wouldn't always have an AssemblyRef to the core library (mscorlib), so we could end up in a situation where we'd be importing
+                    // a TypeRef to mscorlib from a module that doesn't have a reference to mscorlib.
+                    // In this case, this branch would treat the ResolutionScope as the Nil token.
+                    // Nowadays, all of the managed code compilers correctly emit references to all types, including the core library (which in many cases now is not mscorlib).
+                    // Additionally, multimodule assemblies aren't supported by CoreCLR, so we won't even reach this branch anyway (the whole IsNilToken(scopeToken) branch will only happen in multimodule scenarios).
+
+                    // If we can't find the type in the source assembly, then we can't import it as we can't find the definition anywhere.
+                    mdcursor_t sourceAssemblyTypeDef;
+                    uint32_t sourceAssemblyTypeDefCount;
+                    if (!md_create_cursor(sourceAssembly, mdtid_TypeDef, &sourceAssemblyTypeDef, &sourceAssemblyTypeDefCount))
+                        return E_FAIL;
+                    
+                    mdcursor_t outermostTypeRef = typesForTypeRefs.top();
+                    char const* typeName;
+                    if (1 != md_get_column_value_as_utf8(outermostTypeRef, mdtTypeRef_TypeName, 1, &typeName))
+                        return E_FAIL;
+                    
+                    char const* typeNamespace;
+                    if (1 != md_get_column_value_as_utf8(outermostTypeRef, mdtTypeRef_TypeNamespace, 1, &typeNamespace))
+                        return E_FAIL;
+
+                    bool found = false;
+                    for (uint32_t i = 0; i < sourceAssemblyTypeDefCount; ++i, md_cursor_next(&sourceAssemblyTypeDef))
+                    {
+                        char const* sourceAssemblyTypeDefName;
+                        if (1 != md_get_column_value_as_utf8(sourceAssemblyTypeDef, mdtTypeDef_TypeName, 1, &sourceAssemblyTypeDefName))
+                            return E_FAIL;
+                        
+                        char const* sourceAssemblyTypeDefNamespace;
+                        if (1 != md_get_column_value_as_utf8(sourceAssemblyTypeDef, mdtTypeDef_TypeNamespace, 1, &sourceAssemblyTypeDefNamespace))
+                            return E_FAIL;
+                        
+                        if (std::strcmp(typeName, sourceAssemblyTypeDefName) != 0 && std::strcmp(typeNamespace, sourceAssemblyTypeDefNamespace) != 0)
+                            continue;
+                        
+                        mdcursor_t sourceAssemblyTypeDefEnclosingClass;
+                        uint32_t ignored;
+                        if (md_create_cursor(sourceAssembly, mdtid_NestedClass, &sourceAssemblyTypeDefEnclosingClass, &ignored)
+                            && md_find_row_from_cursor(sourceAssemblyTypeDefEnclosingClass, mdtNestedClass_NestedClass, TokenFromRid(i + 1, mdtTypeDef), &sourceAssemblyTypeDefEnclosingClass))
+                        {
+                            // If the type is nested, then it can't be the right type as we're already at the outermost scope.
+                            continue;
+                        }
+                        
+                        // If we found the type defined in the source assembly, then the correct imported scope is the assembly module.
+                        mdcursor_t importAssembly;
+                        if (!md_token_to_cursor(sourceAssembly, TokenFromRid(1, mdtAssembly), &importAssembly))
+                            return E_FAIL;
+                        
+                        // Add a reference to the assembly in the target module.
+                        RETURN_IF_FAILED(ImportReferenceToAssembly(importAssembly, sourceAssemblyHash, targetModule, onRowAdded, &targetOutermostScope));
+
+                        // Also add a reference to the assembly in the target assembly.
+                        // In most cases, the target module will be the same as the target assembly, so this will be a no-op.
+                        // However, if the target module is a netmodule, then the target assembly will be the main assembly.
+                        // CoreCLR doesn't support multi-module assemblies, but they're still valid in ECMA-335.
+                        if (targetModule != targetAssembly)
+                        {
+                            mdcursor_t ignoredCursor;
+                            RETURN_IF_FAILED(ImportReferenceToAssembly(importAssembly, sourceAssemblyHash, targetAssembly, onRowAdded, &ignoredCursor));
+                        }
+                        found = true;
+                        break;
+                    }
+
+                    if (!found)
+                        return CLDB_E_RECORD_NOTFOUND;
                 }
             }
             else if (TypeFromToken(scopeToken) == mdtModule)
