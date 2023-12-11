@@ -489,6 +489,34 @@ namespace
         return S_OK;
     }
 
+    // Add a reference to sourceAssembly
+    // in the AssemblyRef tables in targetModule and targetAssembly.
+    // Returns the resulting cursor into targetModule's AssemblyRef table.
+    HRESULT ImportReferenceToAssemblyRef(
+        mdcursor_t sourceAssemblyRef,
+        mdhandle_t targetModule,
+        mdhandle_t targetAssembly,
+        std::function<void(mdcursor_t)> onRowAdded,
+        mdcursor_t* assemblyRefInTargetModule)
+    {
+        HRESULT hr;
+        
+        // Add a reference to the assembly in the target module.
+        RETURN_IF_FAILED(ImportReferenceToAssemblyRef(sourceAssemblyRef, targetModule, onRowAdded, assemblyRefInTargetModule));
+
+        // Also add a reference to the assembly in the target assembly.
+        // In most cases, the target module will be the same as the target assembly, so this will be a no-op.
+        // However, if the target module is a netmodule, then the target assembly will be the main assembly.
+        // CoreCLR doesn't support multi-module assemblies, but they're still valid in ECMA-335.
+        if (targetModule != targetAssembly)
+        {
+            mdcursor_t ignored;
+            RETURN_IF_FAILED(ImportReferenceToAssemblyRef(sourceAssemblyRef, targetAssembly, onRowAdded, &ignored));
+        }
+
+        return S_OK;
+    }
+
     HRESULT ImportReferenceToAssembly(
         mdcursor_t sourceAssembly,
         span<const uint8_t> sourceAssemblyHash,
@@ -599,6 +627,38 @@ namespace
         *targetAssembly = assemblyRef;
         return S_OK;
     }
+
+    // Add a reference to sourceAssembly
+    // in the AssemblyRef tables in targetModule and targetAssembly.
+    // Returns the resulting cursor into targetModule's AssemblyRef table.
+    HRESULT ImportReferenceToAssembly(
+        mdhandle_t sourceAssembly,
+        span<const uint8_t> sourceAssemblyHash,
+        mdhandle_t targetModule,
+        mdhandle_t targetAssembly,
+        std::function<void(mdcursor_t)> onRowAdded,
+        mdcursor_t* assemblyRefInTargetModule)
+    {
+        HRESULT hr;
+        mdcursor_t importAssembly;
+        if (!md_token_to_cursor(sourceAssembly, TokenFromRid(1, mdtAssembly), &importAssembly))
+            return E_FAIL;
+        
+        // Add a reference to the assembly in the target module.
+        RETURN_IF_FAILED(ImportReferenceToAssembly(importAssembly, sourceAssemblyHash, targetModule, onRowAdded, assemblyRefInTargetModule));
+
+        // Also add a reference to the assembly in the target assembly.
+        // In most cases, the target module will be the same as the target assembly, so this will be a no-op.
+        // However, if the target module is a netmodule, then the target assembly will be the main assembly.
+        // CoreCLR doesn't support multi-module assemblies, but they're still valid in ECMA-335.
+        if (targetModule != targetAssembly)
+        {
+            mdcursor_t ignored;
+            RETURN_IF_FAILED(ImportReferenceToAssembly(importAssembly, sourceAssemblyHash, targetAssembly, onRowAdded, &ignored));
+        }
+
+        return S_OK;
+    }
 }
 
 HRESULT ImportReferenceToTypeDef(
@@ -678,23 +738,7 @@ HRESULT ImportReferenceToTypeDef(
     }
     else
     {
-        mdcursor_t importAssembly;
-        uint32_t count;
-        if (!md_create_cursor(sourceModule, mdtid_Assembly, &importAssembly, &count))
-            return E_FAIL;
-        
-        // Add a reference to the assembly in the target module.
-        RETURN_IF_FAILED(ImportReferenceToAssembly(importAssembly, sourceAssemblyHash, targetModule, onRowAdded, &resolutionScope));
-
-        // Also add a reference to the assembly in the target assembly.
-        // In most cases, the target module will be the same as the target assembly, so this will be a no-op.
-        // However, if the target module is a netmodule, then the target assembly will be the main assembly.
-        // CoreCLR doesn't support multi-module assemblies, but they're still valid in ECMA-335.
-        if (targetModule != targetAssembly)
-        {
-            mdcursor_t ignored;
-            RETURN_IF_FAILED(ImportReferenceToAssembly(importAssembly, sourceAssemblyHash, targetAssembly, onRowAdded, &ignored));
-        }
+        RETURN_IF_FAILED(ImportReferenceToAssembly(sourceAssembly, sourceAssemblyHash, targetModule, targetAssembly, onRowAdded, &resolutionScope));
     }
 
     std::stack<mdcursor_t> typesForTypeRefs;
@@ -869,10 +913,7 @@ namespace
                 // If the ExportedType.Implementation is an AssemblyRef, then we'll use that as the imported scope.
                 // COMPAT-BREAK: CoreCLR does not support this case (it assumes that this ExportedType entry is never a type forwarder).
                 case mdtAssemblyRef:
-                    HRESULT hr;
-                    RETURN_IF_FAILED(ImportReferenceToAssemblyRef(implementation, module, onRowAdded, importedScope));
-                    mdcursor_t ignored;
-                    return ImportReferenceToAssemblyRef(implementation, assembly, onRowAdded, &ignored);
+                    return ImportReferenceToAssemblyRef(implementation, module, assembly, onRowAdded, importedScope);
 
                 // If the ExportedType.Implementation is an ExportedType, then we're in an error scenario.
                 case mdtExportedType:
@@ -1201,7 +1242,7 @@ namespace
             else if (TypeFromToken(scopeToken) == mdtAssemblyRef)
             {
                 // Copy the AssemblyRef from the source module to the target module.
-                RETURN_IF_FAILED(ImportReferenceToAssemblyRef(scope, targetModule, onRowAdded, &targetOutermostScope));
+                RETURN_IF_FAILED(ImportReferenceToAssemblyRef(scope, targetModule, targetAssembly, onRowAdded, &targetOutermostScope));
             }
             else
             {
@@ -1263,23 +1304,7 @@ namespace
                         case mdtFile:
                         {
                             // This type is from a file in the source assembly, so we need to create an AssemblyRef to the source assembly.
-                            mdcursor_t importAssembly;
-                            if (!md_token_to_cursor(sourceAssembly, TokenFromRid(1, mdtAssembly), &importAssembly))
-                                return E_FAIL;
-                            
-                            // Add a reference to the assembly in the target module.
-                            RETURN_IF_FAILED(ImportReferenceToAssembly(importAssembly, sourceAssemblyHash, targetModule, onRowAdded, &targetOutermostScope));
-
-                            // Also add a reference to the assembly in the target assembly.
-                            // In most cases, the target module will be the same as the target assembly, so this will be a no-op.
-                            // However, if the target module is a netmodule, then the target assembly will be the main assembly.
-                            // CoreCLR doesn't support multi-module assemblies, but they're still valid in ECMA-335.
-                            if (targetModule != targetAssembly)
-                            {
-                                mdcursor_t ignored;
-                                RETURN_IF_FAILED(ImportReferenceToAssembly(importAssembly, sourceAssemblyHash, targetAssembly, onRowAdded, &ignored));
-                            }
-                            break;
+                            RETURN_IF_FAILED(ImportReferenceToAssembly(sourceAssembly, sourceAssemblyHash, targetModule, targetAssembly, onRowAdded, &targetOutermostScope));
                         }
                         case mdtAssemblyRef:
                         {
@@ -1357,18 +1382,8 @@ namespace
                         if (!md_token_to_cursor(sourceAssembly, TokenFromRid(1, mdtAssembly), &importAssembly))
                             return E_FAIL;
                         
-                        // Add a reference to the assembly in the target module.
-                        RETURN_IF_FAILED(ImportReferenceToAssembly(importAssembly, sourceAssemblyHash, targetModule, onRowAdded, &targetOutermostScope));
-
-                        // Also add a reference to the assembly in the target assembly.
-                        // In most cases, the target module will be the same as the target assembly, so this will be a no-op.
-                        // However, if the target module is a netmodule, then the target assembly will be the main assembly.
-                        // CoreCLR doesn't support multi-module assemblies, but they're still valid in ECMA-335.
-                        if (targetModule != targetAssembly)
-                        {
-                            mdcursor_t ignoredCursor;
-                            RETURN_IF_FAILED(ImportReferenceToAssembly(importAssembly, sourceAssemblyHash, targetAssembly, onRowAdded, &ignoredCursor));
-                        }
+                        // Add a reference to the assembly in the target module and assembly.
+                        RETURN_IF_FAILED(ImportReferenceToAssembly(sourceAssembly, sourceAssemblyHash, targetModule, targetAssembly, onRowAdded, &targetOutermostScope));
                         found = true;
                         break;
                     }
@@ -1380,23 +1395,7 @@ namespace
             else if (TypeFromToken(scopeToken) == mdtModule)
             {
                 // Create an AssemblyRef from the destination assembly to the source assembly.
-                mdcursor_t importAssembly;
-                uint32_t count;
-                if (!md_create_cursor(sourceModule, mdtid_Assembly, &importAssembly, &count))
-                    return E_FAIL;
-                
-                // Add a reference to the assembly in the target module.
-                RETURN_IF_FAILED(ImportReferenceToAssembly(importAssembly, sourceAssemblyHash, targetModule, onRowAdded, &targetOutermostScope));
-
-                // Also add a reference to the assembly in the target assembly.
-                // In most cases, the target module will be the same as the target assembly, so this will be a no-op.
-                // However, if the target module is a netmodule, then the target assembly will be the main assembly.
-                // CoreCLR doesn't support multi-module assemblies, but they're still valid in ECMA-335.
-                if (targetModule != targetAssembly)
-                {
-                    mdcursor_t ignored;
-                    RETURN_IF_FAILED(ImportReferenceToAssembly(importAssembly, sourceAssemblyHash, targetAssembly, onRowAdded, &ignored));
-                }
+                RETURN_IF_FAILED(ImportReferenceToAssembly(sourceAssembly, sourceAssemblyHash, targetModule, targetAssembly, onRowAdded, &targetOutermostScope));
             }
             
             // The IsNilToken case can resolve to an ExportedType entry whose scope is an AssemblyRef.
@@ -1434,7 +1433,7 @@ namespace
                 {
                     // The type is defined in another assembly. We need to create an AssemblyRef to that assembly.
                     assert(hr == S_FALSE);
-                    RETURN_IF_FAILED(ImportReferenceToAssemblyRef(scope, targetModule, onRowAdded, &targetOutermostScope));
+                    RETURN_IF_FAILED(ImportReferenceToAssemblyRef(scope, targetModule, targetAssembly, onRowAdded, &targetOutermostScope));
                 }
             }
             else if (TypeFromToken(scopeToken) == mdtModuleRef)
@@ -1443,23 +1442,7 @@ namespace
                 // Since the source assembly and target assembly are different, we can't make a module reference to the type's module
                 // as module references are only within assembly boundaries.
                 // Make an AssemblyRef to the source assembly from the target assembly.
-                mdcursor_t importAssembly;
-                uint32_t count;
-                if (!md_create_cursor(sourceModule, mdtid_Assembly, &importAssembly, &count))
-                    return E_FAIL;
-                
-                // Add a reference to the assembly in the target module.
-                RETURN_IF_FAILED(ImportReferenceToAssembly(importAssembly, sourceAssemblyHash, targetModule, onRowAdded, &targetOutermostScope));
-
-                // Also add a reference to the assembly in the target assembly.
-                // In most cases, the target module will be the same as the target assembly, so this will be a no-op.
-                // However, if the target module is a netmodule, then the target assembly will be the main assembly.
-                // CoreCLR doesn't support multi-module assemblies, but they're still valid in ECMA-335.
-                if (targetModule != targetAssembly)
-                {
-                    mdcursor_t ignored;
-                    RETURN_IF_FAILED(ImportReferenceToAssembly(importAssembly, sourceAssemblyHash, targetAssembly, onRowAdded, &ignored));
-                }
+                RETURN_IF_FAILED(ImportReferenceToAssembly(sourceAssembly, sourceAssemblyHash, targetModule, targetAssembly, onRowAdded, &targetOutermostScope));
             }
             else
             {
