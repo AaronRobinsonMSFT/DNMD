@@ -1411,6 +1411,85 @@ namespace
             // Find a nested TypeDef in the target module that matches the name and namespace of the source TypeRef.
             // We've resolved the TypeRef's outermost scope to be in the target module,
             // so the TypeDef must be in the target module.
+            mdcursor_t enclosingScope = targetOutermostScope;
+
+            mdcursor_t targetTypeDef;
+            uint32_t targetTypeDefCount;
+            if (!md_create_cursor(targetModule, mdtid_TypeDef, &targetTypeDef, &targetTypeDefCount))
+                return E_FAIL;
+            for (; !typesForTypeRefs.empty(); typesForTypeRefs.pop())
+            {
+                mdcursor_t sourceEnclosingTypeRef = typesForTypeRefs.top();
+
+                char const* typeName;
+                if (1 != md_get_column_value_as_utf8(sourceEnclosingTypeRef, mdtTypeRef_TypeName, 1, &typeName))
+                    return E_FAIL;
+                
+                char const* typeNamespace;
+                if (1 != md_get_column_value_as_utf8(sourceEnclosingTypeRef, mdtTypeRef_TypeNamespace, 1, &typeNamespace))
+                    return E_FAIL;
+                
+                mdToken enclosingScopeToken;
+                if (!md_cursor_to_token(enclosingScope, &enclosingScopeToken))
+                    return E_FAIL;
+                
+                bool shouldHaveEnclosingType = !IsNilToken(enclosingScopeToken) && TypeFromToken(enclosingScopeToken) == mdtTypeDef;
+                // The TypeDef table must be sorted such that enclosing types are defined before nesting types.
+                // Therefore, we can search the table linearly.
+                // See the commentary in II.22 before II.22.1 for more information.
+                bool found = false;
+                do
+                {
+                    char const* targetTypeName;
+                    if (1 != md_get_column_value_as_utf8(targetTypeDef, mdtTypeDef_TypeName, 1, &targetTypeName))
+                        return E_FAIL;
+                    
+                    char const* targetTypeNamespace;
+                    if (1 != md_get_column_value_as_utf8(targetTypeDef, mdtTypeDef_TypeNamespace, 1, &targetTypeNamespace))
+                        return E_FAIL;
+                    
+                    // Check the name of the type.
+                    if (std::strcmp(typeName, targetTypeName) != 0 || std::strcmp(typeNamespace, targetTypeNamespace) != 0)
+                        continue;
+
+                    // Now that we've validated that the target TypeDef has an enclosing type,
+                    // we need to validate that the enclosing type matches the source TypeRef's enclosing type.
+                    mdToken targetTypeDefToken;
+                    if (!md_cursor_to_token(targetTypeDef, &targetTypeDefToken))
+                        return E_FAIL;
+
+                    mdcursor_t targetNestedClass;
+                    uint32_t targetNestedClassCount;
+                    if (shouldHaveEnclosingType != 
+                        (md_create_cursor(targetModule, mdtid_NestedClass, &targetNestedClass, &targetNestedClassCount)
+                            && md_find_row_from_cursor(targetNestedClass, mdtNestedClass_NestedClass, RidFromToken(targetTypeDefToken), &targetNestedClass)))
+                    {
+                        // If the source TypeRef has an enclosing type, then the target TypeDef must have an enclosing type and vice versa.
+                        continue;
+                    }
+
+                    if (shouldHaveEnclosingType)
+                    {
+                        mdToken targetEnclosingType;
+                        if (1 != md_get_column_value_as_token(targetNestedClass, mdtNestedClass_EnclosingClass, 1, &targetEnclosingType))
+                            return E_FAIL;
+
+                        // If the enclosing type doesn't match, then we are in a failure state.
+                        if (enclosingScopeToken != targetTypeDefToken)
+                            return CLDB_E_RECORD_NOTFOUND;
+                    }
+
+                    found = true;
+                    break;
+                } while (md_cursor_next(&targetTypeDef));
+
+                if (!found)
+                    return CLDB_E_RECORD_NOTFOUND;
+
+                enclosingScope = targetTypeDef;
+            }
+            *targetTypeRef = enclosingScope;
+            return S_OK;
         }
 
         mdcursor_t resolutionScope = targetOutermostScope;
