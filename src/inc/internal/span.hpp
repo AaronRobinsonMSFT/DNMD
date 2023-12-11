@@ -48,7 +48,7 @@ public:
         return _ptr[idx];
     }
 
-    operator span<const T>() const
+    operator span<T const>() const
     {
         return { _ptr, _size };
     }
@@ -58,7 +58,7 @@ public:
         return _ptr;
     }
 
-    T* begin() const noexcept
+    T const* cbegin() const noexcept
     {
         return _ptr;
     }
@@ -68,7 +68,7 @@ public:
         return _ptr + _size;
     }
 
-    T* end() const noexcept
+    T const* cend() const noexcept
     {
         return _ptr + _size;
     }
@@ -115,7 +115,7 @@ public:
         return tmp;
     }
 
-    operator owning_span<const T, Deleter>() const
+    operator owning_span<T const, Deleter>() const
     {
         return { this->_ptr, this->_size };
     }

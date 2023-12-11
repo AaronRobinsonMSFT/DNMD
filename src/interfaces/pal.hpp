@@ -112,7 +112,7 @@ namespace pal
 
     constexpr size_t SHA1_HASH_SIZE = 20;
 
-    bool ComputeSha1Hash(span<const uint8_t> data, std::array<uint8_t, SHA1_HASH_SIZE>& hashDestination);
+    bool ComputeSha1Hash(span<uint8_t const> data, std::array<uint8_t, SHA1_HASH_SIZE>& hashDestination);
 }
 
 // Implementations for missing bounds checking APIs.

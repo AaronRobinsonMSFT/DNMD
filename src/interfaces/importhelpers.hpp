@@ -8,7 +8,7 @@
 HRESULT ImportReferenceToTypeDef(
     mdcursor_t sourceTypeDef,
     mdhandle_t sourceAssembly,
-    span<const uint8_t> sourceAssemblyHash,
+    span<uint8_t const> sourceAssemblyHash,
     mdhandle_t targetAssembly,
     mdhandle_t targetModule,
     bool alwaysImport,
@@ -18,7 +18,7 @@ HRESULT ImportReferenceToTypeDef(
 HRESULT ImportReferenceToTypeDefOrRefOrSpec(
     mdhandle_t sourceAssembly,
     mdhandle_t sourceModule,
-    span<const uint8_t> sourceAssemblyHash,
+    span<uint8_t const> sourceAssemblyHash,
     mdhandle_t targetAssembly,
     mdhandle_t targetModule,
     std::function<void(mdcursor_t)> onRowAdded,

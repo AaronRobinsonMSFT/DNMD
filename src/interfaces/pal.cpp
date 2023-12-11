@@ -143,7 +143,7 @@ int strcat_s(char* dest, rsize_t destsz, char const* src)
 #if defined(BUILD_WINDOWS)
 namespace
 {
-    struct BCRYPT_ALG_HANDLE_deleter
+    struct BCRYPT_ALG_HANDLE_deleter final
     {
         void operator()(BCRYPT_ALG_HANDLE h) const noexcept
         {
@@ -153,7 +153,7 @@ namespace
 
     using bcrypt_alg_handle = std::unique_ptr<void, BCRYPT_ALG_HANDLE_deleter>;
 
-    struct BCRYPT_HASH_HANDLE_deleter
+    struct BCRYPT_HASH_HANDLE_deleter final
     {
         void operator()(BCRYPT_HASH_HANDLE h) const noexcept
         {

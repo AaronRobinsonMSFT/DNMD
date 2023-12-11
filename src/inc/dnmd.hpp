@@ -16,13 +16,13 @@ struct mdhandle_deleter_t final
 // C++ lifetime wrapper for mdhandle_t type
 using mdhandle_ptr = std::unique_ptr<mdhandle_t, mdhandle_deleter_t>;
 
-struct md_added_row_t
+struct md_added_row_t final
 {
 private:
     mdcursor_t new_row;
 public:
     md_added_row_t() = default;
-    md_added_row_t(mdcursor_t row) : new_row(row) {}
+    md_added_row_t(mdcursor_t row) : new_row{ row } {}
     md_added_row_t(md_added_row_t const& other) = delete;
     md_added_row_t(md_added_row_t&& other)
     {
@@ -33,7 +33,7 @@ public:
     md_added_row_t& operator=(md_added_row_t&& other)
     {
         new_row = other.new_row;
-        new (&other.new_row) mdcursor_t(); // Clear the other's row so we don't double-commit.
+        other.new_row = {}; // Clear the other's row so we don't double-commit.
         return *this;
     }
 
