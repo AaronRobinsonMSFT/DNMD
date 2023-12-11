@@ -18,6 +18,9 @@ namespace
     template<typename T, typename = typename std::enable_if<std::is_same<typename std::remove_const<T>::type, uint8_t>::value>::type>
     std::tuple<int32_t, span<T>> read_compressed_int(span<T> signature)
     {
+        // Explicitly initialized as CorSigUncompressSignedInt does not initialize the value if the compressed value is invalid.
+        // We don't need to explicitly initialize in read_compressed_uint or read_compressed_token as CorSigUncompressData and CorSigUncompressToken
+        // will initialize the out parameter to 0 even if the compressed value is invalid.
         int value = 0;
         signature = slice(signature, CorSigUncompressSignedInt(signature, &value));
         return std::make_tuple(value, signature);
@@ -36,19 +39,19 @@ namespace
     {
     };
     
-    struct raw_byte_tag : signature_element_part_tag
+    struct raw_byte_tag final : signature_element_part_tag
     {
     };
 
-    struct compressed_uint_tag : signature_element_part_tag
+    struct compressed_uint_tag final : signature_element_part_tag
     {
     };
 
-    struct compressed_int_tag : signature_element_part_tag
+    struct compressed_int_tag final : signature_element_part_tag
     {
     };
 
-    struct token_tag : signature_element_part_tag
+    struct token_tag final : signature_element_part_tag
     {
     };
 
