@@ -257,6 +257,7 @@ HRESULT MetadataEmit::SetHandler(
     // The this implementation of MetadataEmit doesn't ever remap tokens,
     // so this method (which is for registering a callback for when tokens are remapped)
     // is a no-op.
+    UNREFERENCED_PARAMETER(pUnk);
     return S_OK;
 }
 
@@ -2217,6 +2218,14 @@ HRESULT MetadataEmit::SetParamProps(
     if (!md_token_to_cursor(MetaData(), pd, &c))
         return CLDB_E_FILE_CORRUPT;
     
+    pal::StringConvert<WCHAR, char> cvt(szName);
+    if (!cvt.Success())
+        return E_INVALIDARG;
+    
+    const char* name = cvt;
+    if (1 != md_set_column_value_as_utf8(c, mdtParam_Name, 1, &name))
+        return E_FAIL;
+    
     bool hasConstant = false;
     // See if there is a Constant.
     if ((dwCPlusTypeFlag != ELEMENT_TYPE_VOID && dwCPlusTypeFlag != ELEMENT_TYPE_END &&
@@ -2256,6 +2265,8 @@ HRESULT MetadataEmit::SetParamProps(
             return S_OK;
         });
     }
+
+    return S_OK;
 }
 
 
