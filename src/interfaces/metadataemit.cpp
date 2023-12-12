@@ -254,8 +254,10 @@ HRESULT MetadataEmit::DefineNestedType(
 HRESULT MetadataEmit::SetHandler(
         IUnknown    *pUnk)
 {
-    UNREFERENCED_PARAMETER(pUnk);
-    return E_NOTIMPL;
+    // The this implementation of MetadataEmit doesn't ever remap tokens,
+    // so this method (which is for registering a callback for when tokens are remapped)
+    // is a no-op.
+    return S_OK;
 }
 
 HRESULT MetadataEmit::DefineMethod(
