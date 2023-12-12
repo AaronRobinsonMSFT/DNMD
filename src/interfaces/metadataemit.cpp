@@ -1994,15 +1994,71 @@ HRESULT MetadataEmit::DefineParam(
         ULONG       cchValue,
         mdParamDef  *ppd)
 {
-    UNREFERENCED_PARAMETER(md);
-    UNREFERENCED_PARAMETER(ulParamSeq);
-    UNREFERENCED_PARAMETER(szName);
-    UNREFERENCED_PARAMETER(dwParamFlags);
-    UNREFERENCED_PARAMETER(dwCPlusTypeFlag);
-    UNREFERENCED_PARAMETER(pValue);
-    UNREFERENCED_PARAMETER(cchValue);
-    UNREFERENCED_PARAMETER(ppd);
-    return E_NOTIMPL;
+    pal::StringConvert<WCHAR, char> cvt(szName);
+    if (!cvt.Success())
+        return E_INVALIDARG;
+    
+    const char* name = cvt;
+
+    md_added_row_t c;
+    mdcursor_t method;
+    if (!md_token_to_cursor(MetaData(), md, &method))
+        return CLDB_E_FILE_CORRUPT;
+    
+    if (!md_add_new_row_to_sorted_list(method, mdtMethodDef_ParamList, mdtParam_Sequence, (uint32_t)ulParamSeq, &c))
+        return E_FAIL;
+    
+    if (1 != md_set_column_value_as_utf8(c, mdtParam_Name, 1, &name))
+        return E_FAIL;
+    
+    bool hasConstant = false;
+    // See if there is a Constant.
+    if ((dwCPlusTypeFlag != ELEMENT_TYPE_VOID && dwCPlusTypeFlag != ELEMENT_TYPE_END &&
+         dwCPlusTypeFlag != UINT32_MAX) &&
+        (pValue || (pValue == 0 && (dwCPlusTypeFlag == ELEMENT_TYPE_STRING ||
+                                    dwCPlusTypeFlag == ELEMENT_TYPE_CLASS))))
+    {
+        hasConstant = true;
+    }
+
+    if (dwParamFlags != std::numeric_limits<UINT32>::max())
+    {
+        // TODO: Handle reserved flags
+        uint32_t flags = dwParamFlags;
+
+        if (1 != md_set_column_value_as_constant(c, mdtParam_Flags, 1, &flags))
+            return E_FAIL;
+    }
+
+    if (hasConstant)
+    {
+        md_added_row_t constant;
+        if (!md_append_row(MetaData(), mdtid_Constant, &constant))
+            return E_FAIL;
+        
+        if (1 != md_set_column_value_as_cursor(constant, mdtConstant_Parent, 1, &c))
+            return E_FAIL;
+        
+        uint32_t type = dwCPlusTypeFlag;
+        if (1 != md_set_column_value_as_constant(constant, mdtConstant_Type, 1, &type))
+            return E_FAIL;
+        
+        uint64_t defaultConstantValue = 0;
+        uint8_t const* pConstantValue = (uint8_t const*)pValue;
+        if (pConstantValue == nullptr)
+            pConstantValue = (uint8_t const*)&defaultConstantValue;
+        
+        uint32_t constantSize = GetSizeOfConstantBlob(dwCPlusTypeFlag, pConstantValue, cchValue);
+        if (1 != md_set_column_value_as_blob(constant, mdtConstant_Value, 1, &pConstantValue, &constantSize))
+            return E_FAIL;
+    
+    }
+
+    if (!md_cursor_to_token(c, ppd))
+        return CLDB_E_FILE_CORRUPT;
+    
+    // TODO: Update EncLog
+    return S_OK;
 }
 
 HRESULT MetadataEmit::SetFieldProps(
@@ -2155,13 +2211,49 @@ HRESULT MetadataEmit::SetParamProps(
         void const  *pValue,
         ULONG       cchValue)
 {
-    UNREFERENCED_PARAMETER(pd);
-    UNREFERENCED_PARAMETER(szName);
-    UNREFERENCED_PARAMETER(dwParamFlags);
-    UNREFERENCED_PARAMETER(dwCPlusTypeFlag);
-    UNREFERENCED_PARAMETER(pValue);
-    UNREFERENCED_PARAMETER(cchValue);
-    return E_NOTIMPL;
+    mdcursor_t c;
+    if (!md_token_to_cursor(MetaData(), pd, &c))
+        return CLDB_E_FILE_CORRUPT;
+    
+    bool hasConstant = false;
+    // See if there is a Constant.
+    if ((dwCPlusTypeFlag != ELEMENT_TYPE_VOID && dwCPlusTypeFlag != ELEMENT_TYPE_END &&
+         dwCPlusTypeFlag != UINT32_MAX) &&
+        (pValue || (pValue == 0 && (dwCPlusTypeFlag == ELEMENT_TYPE_STRING ||
+                                    dwCPlusTypeFlag == ELEMENT_TYPE_CLASS))))
+    {
+        hasConstant = true;
+    }
+
+    if (dwParamFlags != std::numeric_limits<UINT32>::max())
+    {
+        // TODO: Handle reserved flags
+        uint32_t flags = dwParamFlags;
+        if (1 != md_set_column_value_as_constant(c, mdtParam_Flags, 1, &flags))
+            return E_FAIL;
+    }
+
+    if (hasConstant)
+    {
+        // Create or update the Constant record that points to this field.
+        return FindOrCreateParentedRow(MetaData(), pd, mdtid_Constant, mdtConstant_Parent, [=](mdcursor_t constant)
+        {        
+            uint32_t type = dwCPlusTypeFlag;
+            if (1 != md_set_column_value_as_constant(constant, mdtConstant_Type, 1, &type))
+                return E_FAIL;
+            
+            uint64_t defaultConstantValue = 0;
+            uint8_t const* pConstantValue = (uint8_t const*)pValue;
+            if (pConstantValue == nullptr)
+                pConstantValue = (uint8_t const*)&defaultConstantValue;
+            
+            uint32_t constantSize = GetSizeOfConstantBlob(dwCPlusTypeFlag, pConstantValue, cchValue);
+            if (1 != md_set_column_value_as_blob(constant, mdtConstant_Value, 1, &pConstantValue, &constantSize))
+                return E_FAIL;
+
+            return S_OK;
+        });
+    }
 }
 
 
