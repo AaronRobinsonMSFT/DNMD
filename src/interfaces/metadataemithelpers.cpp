@@ -72,7 +72,7 @@ HRESULT DefineImportMember(
 
     std::unique_ptr<uint8_t[]> translatedSig { new uint8_t[cbSig * 3] }; // Set translated signature buffer size conservatively.
 
-    RETURN_IF_FAILED(TranslateSigWithScope(
+    RETURN_IF_FAILED(emit->TranslateSigWithScope(
         pAssemImport,
         pbHashValue,
         cbHashValue,

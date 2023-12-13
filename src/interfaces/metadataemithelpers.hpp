@@ -15,17 +15,4 @@ HRESULT DefineImportMember(
     mdToken     tkImport,               // [IN] Classref or classdef in emit scope.
     mdMemberRef *pmr);                  // [OUT] Put member ref here.
 
-HRESULT TranslateSigWithScope(
-    IMetaDataAssemblyImport *pAssemImport, // [IN] importing assembly interface
-    const void  *pbHashValue,           // [IN] Hash Blob for Assembly.
-    ULONG       cbHashValue,            // [IN] Count of bytes.
-    IMetaDataImport *pImport,           // [IN] importing interface
-    PCCOR_SIGNATURE pbSigBlob,          // [IN] signature in the importing scope
-    ULONG       cbSigBlob,              // [IN] count of bytes of signature
-    IMetaDataAssemblyEmit   *pAssemEmit,// [IN] emit assembly interface
-    IMetaDataEmit *pEmit,               // [IN] emit interface
-    PCOR_SIGNATURE pvTranslatedSig,     // [OUT] buffer to hold translated signature
-    ULONG       cbTranslatedSigMax,
-    ULONG       *pcbTranslatedSig);     // [OUT] count of bytes in the translated signature
-
 #endif // _SRC_INTERFACES_METADATAEMITHELPERS_HPP
