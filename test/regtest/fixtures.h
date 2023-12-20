@@ -14,24 +14,22 @@
 
 #include <vector>
 
+#include <internal/span.hpp>
+
 
 // TODO: Can't pre-create here as dncp::com_ptr is non-copyable, need to create in the test I guess. Change discovery to be a function that returns a vector of spans of the metadata in PE.
-template<typename TInterface>
-struct Regression
+struct FileBlob
 {
-    using ParamType = Regression;
-
-    std::string modulePath;
-    dncp::com_ptr<TInterface> baseline;
-    dncp::com_ptr<TInterface> test;
+    std::string path;
+    std::vector<uint8_t> blob;
 };
 
-using MetadataRegresssion = Regression<IMetaDataImport2>;
+inline std::string PrintFileBlob(testing::TestParamInfo<FileBlob> info)
+{
+    return info.param.path;
+}
 
-using SymbolRegression = Regression<ISymUnmanagedReader>;
-
-std::vector<MetadataRegresssion> ReadOnlyMetadataInDirectory(std::string directory);
-std::vector<MetadataRegresssion> ReadWriteMetadataInDirectory(std::string directory);
+std::vector<FileBlob> MetadataInDirectory(std::string directory);
 
 std::string FindFrameworkInstall(std::string version);
 
@@ -39,11 +37,7 @@ std::string GetBaselineDirectory();
 
 void SetBaselineModulePath(std::string path);
 
-class MetaDataRegressionTest : public ::testing::TestWithParam<MetadataRegresssion>
-{
-};
-
-class SymbolRegressionTest : public ::testing::TestWithParam<SymbolRegression>
+class RegressionTest : public ::testing::TestWithParam<FileBlob>
 {
 };
 

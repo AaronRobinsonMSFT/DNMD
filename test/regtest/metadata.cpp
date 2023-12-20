@@ -1,14 +1,42 @@
 #include "asserts.h"
 #include "fixtures.h"
+#include "baseline.h"
+
+#include <dnmd_interfaces.hpp>
 
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
 
 #include <array>
 #include <utility>
-
 namespace
 {
+    IMetaDataDispenser* g_baselineDisp;
+    IMetaDataDispenser* g_deltaImageBuilder;
+    IMetaDataDispenser* g_currentDisp;
+
+    HRESULT CreateImport(IMetaDataDispenser* disp, void const* data, uint32_t dataLen, IMetaDataImport2** import)
+    {
+        assert(disp != nullptr && data != nullptr && dataLen > 0 && import != nullptr);
+        return disp->OpenScopeOnMemory(
+            data,
+            dataLen,
+            CorOpenFlags::ofReadOnly,
+            IID_IMetaDataImport2,
+            reinterpret_cast<IUnknown**>(import));
+    }
+
+    HRESULT CreateEmit(IMetaDataDispenser* disp, void const* data, uint32_t dataLen, IMetaDataEmit2** emit)
+    {
+        assert(disp != nullptr && data != nullptr && dataLen > 0 && emit != nullptr);
+        return disp->OpenScopeOnMemory(
+            data,
+            dataLen,
+            CorOpenFlags::ofWrite,
+            IID_IMetaDataEmit2,
+            reinterpret_cast<IUnknown**>(emit));
+    }
+
     template<typename T>
     using static_enum_buffer = std::array<T, 32>;
 
@@ -1597,12 +1625,19 @@ namespace
     }
 }
 
-TEST_P(MetaDataRegressionTest, FindAPIs)
+TEST_P(RegressionTest, FindAPIs)
 {
     auto& param = GetParam();
+
+    dncp::com_ptr<IMetaDataImport2> baselineImport;
+    ASSERT_HRESULT_SUCCEEDED(CreateImport(TestBaseline::Metadata, param.blob.data(), (uint32_t)param.blob.size(), &baselineImport));
     // Load metadata
-    dncp::com_ptr<IMetaDataImport2> baselineImport { param.baseline.p };
-    dncp::com_ptr<IMetaDataImport2> currentImport { param.test.p };
+    dncp::com_ptr<IMetaDataImport2> currentImport;
+
+    dncp::com_ptr<IMetaDataDispenser> dispenser;
+    ASSERT_HRESULT_SUCCEEDED(GetDispenser(IID_IMetaDataDispenser, (void**)&dispenser));
+
+    ASSERT_HRESULT_SUCCEEDED(CreateImport(dispenser, param.blob.data(), (uint32_t)param.blob.size(), &baselineImport));
 
     static auto FindTokenByName = [](IMetaDataImport2* import, LPCWSTR name, mdToken enclosing = mdTokenNil) -> mdToken
     {
@@ -1666,22 +1701,22 @@ TEST_P(MetaDataRegressionTest, FindAPIs)
     auto baseTypeDef = W("B1");
     auto tkB1 = EXPECT_THAT_AND_RETURN(FindTokenByName(baselineImport, baseTypeDef), testing::Eq(FindTokenByName(currentImport, baseTypeDef)));
     auto tkB1Base = EXPECT_THAT_AND_RETURN(GetTypeDefBaseToken(baselineImport, tkB1), testing::Eq(GetTypeDefBaseToken(currentImport, tkB1)));
-    EXPECT_EQ(FindTypeDefByName(baselineImport, tgt, tkB1Base), FindTypeDefByName(currentImport, tgt, tkB1Base));
+    ASSERT_EQ(FindTypeDefByName(baselineImport, tgt, tkB1Base), FindTypeDefByName(currentImport, tgt, tkB1Base));
 
     auto baseTypeRef = W("B2");
     auto tkB2 = EXPECT_THAT_AND_RETURN(FindTokenByName(baselineImport, baseTypeRef), testing::Eq(FindTokenByName(currentImport, baseTypeRef)));
     auto tkB2Base = EXPECT_THAT_AND_RETURN(GetTypeDefBaseToken(baselineImport, tkB2), testing::Eq(GetTypeDefBaseToken(currentImport, tkB2)));
-    EXPECT_THAT(FindTypeDefByName(baselineImport, tgt, tkB2Base), testing::Eq(FindTypeDefByName(currentImport, tgt, tkB2Base)));
+    ASSERT_THAT(FindTypeDefByName(baselineImport, tgt, tkB2Base), testing::Eq(FindTypeDefByName(currentImport, tgt, tkB2Base)));
 
     auto methodDefName = W("MethodDef");
     auto tkMethodDef = EXPECT_THAT_AND_RETURN(FindMethodDef(baselineImport, tkB1Base, methodDefName), testing::Eq(FindMethodDef(currentImport, tkB1Base, methodDefName)));
 
     void const* defSigBlob;
     ULONG defSigBlobLength;
-    EXPECT_EQ(
+    ASSERT_EQ(
         GetMethodProps(baselineImport, tkMethodDef),
         GetMethodProps(currentImport, tkMethodDef, &defSigBlob, &defSigBlobLength));
-    EXPECT_EQ(
+    ASSERT_EQ(
         FindMethod(baselineImport, tkB1Base, methodDefName, defSigBlob, defSigBlobLength),
         FindMethod(currentImport, tkB1Base, methodDefName, defSigBlob, defSigBlobLength));
 
@@ -1692,10 +1727,10 @@ TEST_P(MetaDataRegressionTest, FindAPIs)
 
     PCCOR_SIGNATURE ref1Blob;
     ULONG ref1BlobLength;
-    EXPECT_EQ(
+    ASSERT_EQ(
         GetMemberRefProps(baselineImport, tkMemberRefNoVarArgsBase),
         GetMemberRefProps(currentImport, tkMemberRefNoVarArgsBase, &ref1Blob, &ref1BlobLength));
-    EXPECT_EQ(
+    ASSERT_EQ(
         FindMethod(baselineImport, tkB1Base, methodRef1Name, ref1Blob, ref1BlobLength),
         FindMethod(currentImport, tkB1Base, methodRef1Name, ref1Blob, ref1BlobLength));
 
@@ -1706,10 +1741,10 @@ TEST_P(MetaDataRegressionTest, FindAPIs)
 
     PCCOR_SIGNATURE ref2Blob;
     ULONG ref2BlobLength;
-    EXPECT_EQ(
+    ASSERT_EQ(
         GetMemberRefProps(baselineImport, tkMemberRefVarArgsBase),
         GetMemberRefProps(currentImport, tkMemberRefVarArgsBase, &ref2Blob, &ref2BlobLength));
-    EXPECT_EQ(
+    ASSERT_EQ(
         FindMethod(baselineImport, tkB1Base, methodRef2Name, ref2Blob, ref2BlobLength),
         FindMethod(currentImport, tkB1Base, methodRef2Name, ref2Blob, ref2BlobLength));
 
@@ -1722,13 +1757,13 @@ TEST_P(MetaDataRegressionTest, FindAPIs)
 
     void const* sigBlob;
     ULONG sigBlobLength;
-    EXPECT_EQ(
+    ASSERT_EQ(
         GetFieldProps(baselineImport, tkField),
         GetFieldProps(currentImport, tkField, &sigBlob, &sigBlobLength));
-    EXPECT_EQ(
+    ASSERT_EQ(
         FindField(baselineImport, tkB2, fieldName, sigBlob, sigBlobLength),
         FindField(currentImport, tkB2, fieldName, sigBlob, sigBlobLength));
 
 }
 
-INSTANTIATE_TEST_SUITE_P(MetaDataRegressionTestNetCore, MetaDataRegressionTest, testing::ValuesIn(std::move(ReadOnlyMetadataInDirectory(GetBaselineDirectory()))));
+INSTANTIATE_TEST_SUITE_P(MetaDataRegressionTestNetCore, RegressionTest, testing::ValuesIn(MetadataInDirectory(GetBaselineDirectory())), PrintFileBlob);
