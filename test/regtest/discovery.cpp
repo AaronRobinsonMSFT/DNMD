@@ -37,10 +37,12 @@ namespace
 
                     THROW_IF_FAILED(dnmdDispenser->OpenScope(u16path.c_str(), flags, IID_IMetaDataImport2, (IUnknown**)&scenario.test));
 
-                    scenarios.push_back(scenario);
+                    scenarios.push_back(std::move(scenario));
                 }
             }
         }
+
+        return scenarios;
     }
 }
 
@@ -52,4 +54,19 @@ std::vector<MetadataRegresssion> ReadOnlyMetadataInDirectory(std::string directo
 std::vector<MetadataRegresssion> ReadWriteMetadataInDirectory(std::string directory)
 {
     return MetadataInDirectory(directory, ofWrite);
+}
+
+namespace
+{
+    std::string baselinePath;
+}
+
+std::string GetBaselineDirectory()
+{
+    return std::filesystem::path(baselinePath).parent_path().string();
+}
+
+void SetBaselineModulePath(std::string path)
+{
+    baselinePath = path;
 }
