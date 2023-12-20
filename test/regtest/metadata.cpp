@@ -1625,19 +1625,19 @@ namespace
     }
 }
 
-TEST_P(RegressionTest, FindAPIs)
+TEST(FindTest, FindAPIs)
 {
-    auto& param = GetParam();
+    malloc_span<uint8_t> metadata = GetRegressionAssemblyMetadata();
 
     dncp::com_ptr<IMetaDataImport2> baselineImport;
-    ASSERT_HRESULT_SUCCEEDED(CreateImport(TestBaseline::Metadata, param.blob.data(), (uint32_t)param.blob.size(), &baselineImport));
+    ASSERT_HRESULT_SUCCEEDED(CreateImport(TestBaseline::Metadata, metadata, (uint32_t)metadata.size(), &baselineImport));
     // Load metadata
     dncp::com_ptr<IMetaDataImport2> currentImport;
 
     dncp::com_ptr<IMetaDataDispenser> dispenser;
     ASSERT_HRESULT_SUCCEEDED(GetDispenser(IID_IMetaDataDispenser, (void**)&dispenser));
 
-    ASSERT_HRESULT_SUCCEEDED(CreateImport(dispenser, param.blob.data(), (uint32_t)param.blob.size(), &baselineImport));
+    ASSERT_HRESULT_SUCCEEDED(CreateImport(dispenser, metadata, (uint32_t)metadata.size(), &currentImport));
 
     static auto FindTokenByName = [](IMetaDataImport2* import, LPCWSTR name, mdToken enclosing = mdTokenNil) -> mdToken
     {
@@ -1744,7 +1744,7 @@ TEST_P(RegressionTest, FindAPIs)
     ASSERT_EQ(
         GetMemberRefProps(baselineImport, tkMemberRefVarArgsBase),
         GetMemberRefProps(currentImport, tkMemberRefVarArgsBase, &ref2Blob, &ref2BlobLength));
-    ASSERT_EQ(
+    EXPECT_EQ(
         FindMethod(baselineImport, tkB1Base, methodRef2Name, ref2Blob, ref2BlobLength),
         FindMethod(currentImport, tkB1Base, methodRef2Name, ref2Blob, ref2BlobLength));
 
@@ -1752,7 +1752,7 @@ TEST_P(RegressionTest, FindAPIs)
     auto tkFields = EXPECT_THAT_AND_RETURN(
         EnumFieldsWithName(baselineImport, tkB2, fieldName),
         testing::ElementsAreArray(EnumFieldsWithName(currentImport, tkB2, fieldName)));
-    EXPECT_TRUE(!tkFields.empty());
+    ASSERT_FALSE(tkFields.empty());
     mdToken tkField = tkFields[0];
 
     void const* sigBlob;
@@ -1760,10 +1760,8 @@ TEST_P(RegressionTest, FindAPIs)
     ASSERT_EQ(
         GetFieldProps(baselineImport, tkField),
         GetFieldProps(currentImport, tkField, &sigBlob, &sigBlobLength));
-    ASSERT_EQ(
+    EXPECT_EQ(
         FindField(baselineImport, tkB2, fieldName, sigBlob, sigBlobLength),
         FindField(currentImport, tkB2, fieldName, sigBlob, sigBlobLength));
 
 }
-
-INSTANTIATE_TEST_SUITE_P(MetaDataRegressionTestNetCore, RegressionTest, testing::ValuesIn(MetadataInDirectory(GetBaselineDirectory())), PrintFileBlob);

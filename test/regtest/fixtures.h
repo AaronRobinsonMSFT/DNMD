@@ -31,11 +31,15 @@ inline std::string PrintFileBlob(testing::TestParamInfo<FileBlob> info)
 
 std::vector<FileBlob> MetadataInDirectory(std::string directory);
 
+malloc_span<uint8_t> GetRegressionAssemblyMetadata();
+
 std::string FindFrameworkInstall(std::string version);
 
 std::string GetBaselineDirectory();
 
 void SetBaselineModulePath(std::string path);
+
+void SetRegressionAssemblyPath(std::string path);
 
 class RegressionTest : public ::testing::TestWithParam<FileBlob>
 {
