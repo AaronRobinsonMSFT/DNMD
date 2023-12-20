@@ -8,6 +8,5 @@
         <NativeOutputPath Condition="!$([MSBuild]::IsOSPlatform('Windows'))">$(BaseArtifactsPath)/lib</NativeOutputPath>
 
         <TargetFramework>net8.0</TargetFramework>
-        <ArtifactsPivots>$(Configuration)</ArtifactsPivots> <!-- Use the capitalized name of the configuration to match CMake -->
     </PropertyGroup>
 </Project>

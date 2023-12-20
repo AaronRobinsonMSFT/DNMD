@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.10)
 project(dnmd
     LANGUAGES C CXX)
 
+set(CMAKE_CONFIGURATION_TYPES Debug;Release)
 option(INCLUDE_VENDORED_LIBS "Include vendored libraries (submodules) instead of discovering dependencies through packages." ON)
 
 set(CMAKE_INSTALL_PREFIX ${CMAKE_BINARY_DIR})
@@ -16,5 +17,8 @@ include_directories(src/inc)
 include_directories(src/inc/external) # Hiding the "external" subdirectory due to uses of <...> in cor.h.
 
 add_subdirectory(src/)
+
+enable_testing()
+
 add_subdirectory(test/)
 
