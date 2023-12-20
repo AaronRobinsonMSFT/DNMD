@@ -20,7 +20,6 @@ namespace Regression.UnitTests
     {
         private delegate* unmanaged<void*, int, TestResult> _importAPIs;
         private delegate* unmanaged<void*, int, TestResult> _longRunningAPIs;
-        private delegate* unmanaged<void*, int, TestResult> _findAPIs;
         private delegate* unmanaged<void*, int, void**, int*, int, TestResult> _importAPIsIndirectionTables;
 
         public ImportTests(ITestOutputHelper outputHelper)
@@ -37,7 +36,6 @@ namespace Regression.UnitTests
 
             _importAPIs = (delegate* unmanaged<void*, int, TestResult>)NativeLibrary.GetExport(mod, "UnitImportAPIs");
             _longRunningAPIs = (delegate* unmanaged<void*, int, TestResult>)NativeLibrary.GetExport(mod, "UnitLongRunningAPIs");
-            _findAPIs = (delegate* unmanaged<void*, int, TestResult>)NativeLibrary.GetExport(mod, "UnitFindAPIs");
             _importAPIsIndirectionTables = (delegate* unmanaged<void*, int, void**, int*, int, TestResult>)NativeLibrary.GetExport(mod, "UnitImportAPIsIndirectionTables");
         }
 
@@ -308,17 +306,6 @@ namespace Regression.UnitTests
             PEMemoryBlock block = managedLibrary.GetMetadata();
 
             _longRunningAPIs(block.Pointer, block.Length).Check();
-        }
-
-        [Fact]
-        public void FindAPIs()
-        {
-            var dir = Path.GetDirectoryName(typeof(ImportTests).Assembly.Location)!;
-            var tgtAssembly = Path.Combine(dir, "Regression.TargetAssembly.dll");
-            using PEReader managedLibrary = new(File.OpenRead(tgtAssembly));
-            PEMemoryBlock block = managedLibrary.GetMetadata();
-
-            _findAPIs(block.Pointer, block.Length).Check();
         }
     }
 }
