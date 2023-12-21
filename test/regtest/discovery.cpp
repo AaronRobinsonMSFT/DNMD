@@ -12,10 +12,27 @@
 
 namespace
 {
+    bool read_in_file(std::filesystem::path path, malloc_span<uint8_t>& b)
+    {
+        // Read in the entire file
+        std::ifstream fd{ path, std::ios::binary };
+        if (!fd)
+            return false;
+
+        size_t size = std::filesystem::file_size(path);
+        if (size == 0)
+            return false;
+
+        b = { (uint8_t*)std::malloc(size), size };
+
+        fd.read((char*)(uint8_t*)b, b.size());
+        return true;
+    }
+
     malloc_span<uint8_t> ReadMetadataFromFile(std::filesystem::path path)
     {
         malloc_span<uint8_t> b;
-        if (!read_in_file(path.generic_string().c_str(), b))
+        if (!read_in_file(path, b))
         {
             std::cerr << "Failed to read in '" << path << "'\n";
             return {};
@@ -73,6 +90,45 @@ namespace
 {
     std::string baselinePath;
     std::string regressionAssemblyPath;
+}
+
+std::vector<FileBlob> CoreLibs()
+{
+    std::vector<FileBlob> scenarios;
+
+    auto coreclrSystemPrivateCoreLib = std::filesystem::path(baselinePath).parent_path() / "System.Private.CoreLib.dll";
+    auto b = ReadMetadataFromFile(coreclrSystemPrivateCoreLib);
+    if (b.size() == 0)
+    {
+        std::cerr << "Failed to read in '" << coreclrSystemPrivateCoreLib << "'\n";
+        return scenarios;
+    }
+
+    scenarios.push_back({ "netcoreapp", std::vector<uint8_t>{ (uint8_t*)b, b + b.size() } });
+
+    auto fx4mscorlib = std::filesystem::path(FindFrameworkInstall("v4.0.30319")) / "mscorlib.dll";
+    b = ReadMetadataFromFile(coreclrSystemPrivateCoreLib);
+    if (b.size() == 0)
+    {
+        std::cerr << "Failed to read in '" << coreclrSystemPrivateCoreLib << "'\n";
+        return scenarios;
+    }
+
+    scenarios.push_back({ "fx4", std::vector<uint8_t>{ (uint8_t*)b, b + b.size() } });
+    auto fx2mscorlib = std::filesystem::path(FindFrameworkInstall("v2.0.50727")) / "mscorlib.dll";
+    if (std::filesystem::exists(fx2mscorlib))
+    {
+        b = ReadMetadataFromFile(coreclrSystemPrivateCoreLib);
+        if (b.size() == 0)
+        {
+            std::cerr << "Failed to read in '" << coreclrSystemPrivateCoreLib << "'\n";
+            return scenarios;
+        }
+
+        scenarios.push_back({ "fx2", std::vector<uint8_t>{ (uint8_t*)b, b + b.size() } });
+    }
+
+    return scenarios;
 }
 
 std::string GetBaselineDirectory()

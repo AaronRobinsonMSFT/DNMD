@@ -34,6 +34,8 @@ inline std::string PrintFileBlob(testing::TestParamInfo<FileBlob> info)
 
 std::vector<FileBlob> MetadataInDirectory(std::string directory);
 
+std::vector<FileBlob> CoreLibs();
+
 malloc_span<uint8_t> GetRegressionAssemblyMetadata();
 
 std::string FindFrameworkInstall(std::string version);
@@ -46,6 +48,8 @@ void SetRegressionAssemblyPath(std::string path);
 
 class RegressionTest : public ::testing::TestWithParam<FileBlob>
 {
+protected:
+    using TokenList = std::vector<uint32_t>;
 };
 
 #endif // !_TEST_REGTEST_FIXTURES_H_

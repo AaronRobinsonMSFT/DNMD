@@ -1767,8 +1767,6 @@ TEST(FindTest, FindAPIs)
 
 class MetadataImportTest : public RegressionTest
 {
-protected:
-    using TokenList = std::vector<uint32_t>;
 };
 
 TEST_P(MetadataImportTest, ImportAPIs)
@@ -2000,3 +1998,103 @@ INSTANTIATE_TEST_SUITE_P(MetaDataImportTestCore, MetadataImportTest, testing::Va
 
 INSTANTIATE_TEST_SUITE_P(MetaDataImportTestFx4_0, MetadataImportTest, testing::ValuesIn(MetadataInDirectory(FindFrameworkInstall("v4.0.30319"))), PrintFileBlob);
 INSTANTIATE_TEST_SUITE_P(MetaDataImportTestFx2_0, MetadataImportTest, testing::ValuesIn(MetadataInDirectory(FindFrameworkInstall("v2.0.50727"))), PrintFileBlob);
+
+class MetaDataLongRunningTest : public RegressionTest
+{
+};
+
+TEST_P(MetaDataLongRunningTest, ImportAPIs)
+{
+    auto param = GetParam();
+    void const* data = param.blob.data();
+    uint32_t dataLen = (uint32_t)param.blob.size();
+
+    // Load metadata
+    dncp::com_ptr<IMetaDataImport2> baselineImport;
+    ASSERT_HRESULT_SUCCEEDED(CreateImport(TestBaseline::Metadata, data, dataLen, &baselineImport));
+
+    dncp::com_ptr<IMetaDataDispenser> dispenser;
+    ASSERT_HRESULT_SUCCEEDED(GetDispenser(IID_IMetaDataDispenser, (void**)&dispenser));
+    dncp::com_ptr<IMetaDataImport2> currentImport;
+    ASSERT_HRESULT_SUCCEEDED(CreateImport(dispenser, data, dataLen, &currentImport));
+
+    static auto VerifyFindMemberRef = [](IMetaDataImport2 * import, mdToken memberRef) -> std::vector<uint32_t>
+        {
+            std::vector<uint32_t> values;
+
+            mdToken ptk;
+            static_char_buffer<WCHAR> name{};
+            ULONG pchMember;
+            PCCOR_SIGNATURE ppvSigBlob;
+            ULONG pcbSigBlob;
+            HRESULT hr = import->GetMemberRefProps(memberRef,
+                & ptk,
+                name.data(),
+                (ULONG)name.size(),
+                & pchMember,
+                & ppvSigBlob,
+                & pcbSigBlob);
+            values.push_back(hr);
+            if (hr == S_OK)
+            {
+                // We were able to get the name, now try looking up a memberRef by name and by sig
+                mdMemberRef lookup = mdTokenNil;
+                hr = import->FindMemberRef(ptk, name.data(), ppvSigBlob, pcbSigBlob, & lookup);
+                values.push_back(hr);
+                values.push_back(lookup);
+                lookup = mdTokenNil;
+                hr = import->FindMemberRef(ptk, name.data(), nullptr, 0, & lookup);
+                values.push_back(hr);
+                values.push_back(lookup);
+                lookup = mdTokenNil;
+                hr = import->FindMemberRef(ptk, nullptr, ppvSigBlob, pcbSigBlob, & lookup);
+                values.push_back(hr);
+                values.push_back(lookup);
+            }
+            return values;
+        };
+
+    size_t stride;
+    size_t count;
+
+    TokenList typedefs;
+    ASSERT_EQUAL_AND_SET(typedefs, EnumTypeDefs(baselineImport), EnumTypeDefs(currentImport));
+    count = 0;
+    stride = std::max(typedefs.size() / 128, (size_t)16);
+    for (auto typdef : typedefs)
+    {
+        if (count++ % stride != 0)
+            continue;
+
+        EXPECT_THAT(EnumMemberRefs(currentImport, typdef), testing::ElementsAreArray(EnumMemberRefs(baselineImport, typdef)));
+
+        TokenList methoddefs;
+        ASSERT_EQUAL_AND_SET(methoddefs, EnumMethods(baselineImport, typdef), EnumMethods(currentImport, typdef));
+        for (auto methoddef : methoddefs)
+        {
+            EXPECT_THAT(EnumMethodSemantics(currentImport, methoddef), testing::ElementsAreArray(EnumMethodSemantics(baselineImport, methoddef)));
+        }
+
+        EXPECT_THAT(EnumCustomAttributes(currentImport, typdef), testing::ElementsAreArray(EnumCustomAttributes(baselineImport, typdef)));
+    }
+
+    TokenList typespecs;
+    ASSERT_EQUAL_AND_SET(typespecs, EnumTypeSpecs(baselineImport), EnumTypeSpecs(currentImport));
+    count = 0;
+    stride = std::max(typespecs.size() / 128, (size_t)16);
+    for (auto typespec : typespecs)
+    {
+        if (count++ % stride != 0)
+            continue;
+
+        TokenList memberrefs;
+        ASSERT_EQUAL_AND_SET(memberrefs, EnumMemberRefs(baselineImport, typespec), EnumMemberRefs(currentImport, typespec));
+        for (auto memberref : memberrefs)
+        {
+            EXPECT_THAT(GetMemberRefProps(currentImport, memberref), testing::ElementsAreArray(GetMemberRefProps(baselineImport, memberref)));
+            EXPECT_THAT(VerifyFindMemberRef(currentImport, memberref), testing::ElementsAreArray(VerifyFindMemberRef(baselineImport, memberref)));
+        }
+    }
+}
+
+INSTANTIATE_TEST_SUITE_P(MetaDataLongRunningTest_CoreLibs, MetaDataLongRunningTest, testing::ValuesIn(CoreLibs()));
