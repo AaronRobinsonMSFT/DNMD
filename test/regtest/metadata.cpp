@@ -1529,7 +1529,7 @@ namespace
         {
             values.push_back(HashCharArray(name, nameLength));
             values.push_back((size_t)nameLength);
-            values.push_back(hashLength != 0 ? (size_t)hash : 0);
+            values.push_back(HashByteArray(hash, hashLength));
             values.push_back(hashLength);
             values.push_back(flags);
         }
