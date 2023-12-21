@@ -2,6 +2,7 @@
 #define _TEST_REGTEST_ASSERTS_H_
 
 #include <gtest/gtest.h>
+#include <gmock/gmock.h>
 
 #define EXPECT_THAT_AND_RETURN(a, match) ([&](){ auto&& _actual = (a); EXPECT_THAT(_actual, match); return _actual; }())
 
@@ -19,6 +20,6 @@ void AssertEqualAndSet(std::vector<T>& result, std::vector<T>&& expected, std::v
     result = std::move(actual);
 }
 
-#define ASSERT_EQUAL_AND_SET(a, b, result) ASSERT_NO_FATAL_FAILURE(AssertEqualAndSet(a, b, result))
+#define ASSERT_EQUAL_AND_SET(result, expected, actual) ASSERT_NO_FATAL_FAILURE(AssertEqualAndSet(result, expected, actual))
 
 #endif // !_TEST_REGTEST_ASSERTS_H_

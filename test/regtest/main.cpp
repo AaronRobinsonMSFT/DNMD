@@ -32,8 +32,6 @@ class ThrowListener final : public testing::EmptyTestEventListener {
 
 int main(int argc, char** argv)
 {
-    ::testing::InitGoogleTest(&argc, argv);
-
     dncp::cotaskmem_ptr<char> coreClrPath{ (char*)GetCoreClrPath() };
     if (coreClrPath == nullptr)
     {
@@ -57,6 +55,8 @@ int main(int argc, char** argv)
 
     RETURN_IF_FAILED(getDispenser(CLSID_CorMetaDataDispenser, IID_IMetaDataDispenser, (void**)&TestBaseline::Metadata));
 
+    SetBaselineModulePath(coreClrPath.get());
+
     std::cout << "Loaded metadata baseline module: " << coreClrPath.get() << std::endl;
 
     dncp::cotaskmem_ptr<char> regressionAssemblyPath{ (char*)GetRegressionTargetAssemblyPath() };
@@ -70,6 +70,7 @@ int main(int argc, char** argv)
 
     std::cout << "Regression assembly path: " << regressionAssemblyPath.get() << std::endl;
 
+    ::testing::InitGoogleTest(&argc, argv);
     testing::UnitTest::GetInstance()->listeners().Append(new ThrowListener);
 
     return RUN_ALL_TESTS();

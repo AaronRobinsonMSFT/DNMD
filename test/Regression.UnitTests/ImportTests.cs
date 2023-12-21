@@ -18,7 +18,6 @@ namespace Regression.UnitTests
 {
     public unsafe class ImportTests
     {
-        private delegate* unmanaged<void*, int, TestResult> _importAPIs;
         private delegate* unmanaged<void*, int, TestResult> _longRunningAPIs;
         private delegate* unmanaged<void*, int, void**, int*, int, TestResult> _importAPIsIndirectionTables;
 
@@ -34,7 +33,6 @@ namespace Regression.UnitTests
                 throw new Exception($"Initialization failed: 0x{hr:x}");
             }
 
-            _importAPIs = (delegate* unmanaged<void*, int, TestResult>)NativeLibrary.GetExport(mod, "UnitImportAPIs");
             _longRunningAPIs = (delegate* unmanaged<void*, int, TestResult>)NativeLibrary.GetExport(mod, "UnitLongRunningAPIs");
             _importAPIsIndirectionTables = (delegate* unmanaged<void*, int, void**, int*, int, TestResult>)NativeLibrary.GetExport(mod, "UnitImportAPIsIndirectionTables");
         }
@@ -227,18 +225,6 @@ namespace Regression.UnitTests
         }
 
         [Theory]
-        [MemberData(nameof(CoreFrameworkLibraries))]
-        public void ImportAPIs_Core(string filename, PEReader managedLibrary) => ImportAPIs(filename, managedLibrary);
-
-        [WindowsOnlyTheory]
-        [MemberData(nameof(Net20FrameworkLibraries))]
-        public void ImportAPIs_Net20(string filename, PEReader managedLibrary) => ImportAPIs(filename, managedLibrary);
-
-        [WindowsOnlyTheory]
-        [MemberData(nameof(Net40FrameworkLibraries))]
-        public void ImportAPIs_Net40(string filename, PEReader managedLibrary) => ImportAPIs(filename, managedLibrary);
-
-        [Theory]
         [MemberData(nameof(AssembliesWithDelta))]
         public unsafe void ImportAPIs_AssembliesWithAppliedDeltas(string filename, PEReader deltaBaseline, IList<Memory<byte>> diffs)
         {
@@ -277,20 +263,6 @@ namespace Regression.UnitTests
                     handles[i].Dispose();
                 }
             }
-        }
-
-        private void ImportAPIs(string filename, PEReader managedLibrary)
-        {
-            Debug.WriteLine($"{nameof(ImportAPIs)} - {filename}");
-            using var _ = managedLibrary;
-            PEMemoryBlock block = managedLibrary.GetMetadata();
-            _importAPIs(block.Pointer, block.Length).Check();
-        }
-
-        private void ImportAPIs(string filename, MetadataReader managedLibrary)
-        {
-            Debug.WriteLine($"{nameof(ImportAPIs)} - {filename}");
-            _importAPIs(managedLibrary.MetadataPointer, managedLibrary.MetadataLength).Check();
         }
 
         /// <summary>

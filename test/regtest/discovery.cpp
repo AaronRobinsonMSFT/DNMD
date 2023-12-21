@@ -5,6 +5,11 @@
 
 #include <internal/dnmd_tools_platform.hpp>
 
+#ifdef _WIN32
+#define DNNE_API_OVERRIDE __declspec(dllimport)
+#endif
+#include <Regression.LocatorNE.h>
+
 namespace
 {
     malloc_span<uint8_t> ReadMetadataFromFile(std::filesystem::path path)
@@ -18,7 +23,7 @@ namespace
 
         if (!get_metadata_from_pe(b))
         {
-            std::cerr << "Failed to '" << path << "' << as PE\n";
+            std::cerr << "Failed to read '" << path << "' as PE\n";
             return {};
         }
 
@@ -26,10 +31,16 @@ namespace
     }
 }
 
-
 std::vector<FileBlob> MetadataInDirectory(std::string directory)
 {
     std::vector<FileBlob> scenarios;
+    
+    if (!std::filesystem::exists(directory))
+    {
+        std::cerr << "Directory '" << directory << "' does not exist\n";
+        return scenarios;
+    }
+
     for (auto& entry : std::filesystem::directory_iterator(directory))
     {
         if (entry.is_regular_file())
@@ -43,7 +54,14 @@ std::vector<FileBlob> MetadataInDirectory(std::string directory)
 
                 malloc_span<uint8_t> b = ReadMetadataFromFile(path);
 
+                if (b.size() == 0)
+                {
+                    // Some DLLs don't have metadata, so skip them.
+                    continue;
+                }
+
                 scenario.blob = std::vector<uint8_t>{ (uint8_t*)b, b + b.size() };
+                scenarios.push_back(std::move(scenario));
             }
         }
     }
@@ -75,4 +93,19 @@ void SetRegressionAssemblyPath(std::string path)
 malloc_span<uint8_t> GetRegressionAssemblyMetadata()
 {
     return ReadMetadataFromFile(regressionAssemblyPath);
+}
+
+std::string FindFrameworkInstall(std::string version)
+{
+#ifdef _WIN32
+    dncp::cotaskmem_ptr<char> installPath { (char*)GetFrameworkPath(version.c_str()) };
+    if (installPath == nullptr)
+    {
+        std::cerr << "Failed to find framework install for version: " << version << "\n";
+        return {};
+    }
+    return installPath.get();
+#else
+    return {};
+#endif
 }

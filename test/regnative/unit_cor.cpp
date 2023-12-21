@@ -1658,7 +1658,6 @@ namespace
     }
 }
 
-EXPORT
 TestResult UnitImportAPIs(void const* data, uint32_t dataLen)
 {
     BEGIN_TEST();

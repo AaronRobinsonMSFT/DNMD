@@ -13,6 +13,7 @@
 #include <corsym.h>
 
 #include <vector>
+#include <algorithm>
 
 #include <internal/span.hpp>
 
@@ -26,7 +27,9 @@ struct FileBlob
 
 inline std::string PrintFileBlob(testing::TestParamInfo<FileBlob> info)
 {
-    return info.param.path;
+    std::string name = info.param.path;
+    std::replace(name.begin(), name.end(), '.', '_');
+    return name;
 }
 
 std::vector<FileBlob> MetadataInDirectory(std::string directory);
