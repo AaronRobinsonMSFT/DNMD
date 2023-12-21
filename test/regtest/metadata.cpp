@@ -11,9 +11,7 @@
 #include <utility>
 namespace
 {
-    IMetaDataDispenser* g_baselineDisp;
     IMetaDataDispenser* g_deltaImageBuilder;
-    IMetaDataDispenser* g_currentDisp;
 
     HRESULT CreateImport(IMetaDataDispenser* disp, void const* data, uint32_t dataLen, IMetaDataImport2** import)
     {
@@ -21,7 +19,7 @@ namespace
         return disp->OpenScopeOnMemory(
             data,
             dataLen,
-            CorOpenFlags::ofReadOnly,
+            CorOpenFlags::ofReadOnly | CorOpenFlags::ofCopyMemory,
             IID_IMetaDataImport2,
             reinterpret_cast<IUnknown**>(import));
     }
@@ -32,9 +30,24 @@ namespace
         return disp->OpenScopeOnMemory(
             data,
             dataLen,
-            CorOpenFlags::ofWrite,
+            CorOpenFlags::ofWrite | CorOpenFlags::ofCopyMemory,
             IID_IMetaDataEmit2,
             reinterpret_cast<IUnknown**>(emit));
+    }
+
+    void GetImports(span<uint8_t> metadata, dncp::com_ptr<IMetaDataImport2>& baseline, dncp::com_ptr<IMetaDataImport2>& current)
+    {
+        ASSERT_HRESULT_SUCCEEDED(CreateImport(TestBaseline::Metadata, metadata, (uint32_t)metadata.size(), &baseline));
+
+        dncp::com_ptr<IMetaDataDispenser> dispenser;
+        ASSERT_HRESULT_SUCCEEDED(GetDispenser(IID_IMetaDataDispenser, (void**)&dispenser));
+        ASSERT_HRESULT_SUCCEEDED(CreateImport(dispenser, metadata, (uint32_t)metadata.size(), &current));
+
+    }
+
+    void GetImports(FileBlob blob, dncp::com_ptr<IMetaDataImport2>& baseline, dncp::com_ptr<IMetaDataImport2>& current)
+    {
+        GetImports({ blob.blob.data(), blob.blob.size() }, baseline, current);
     }
 
     template<typename T>
@@ -1630,14 +1643,8 @@ TEST(FindTest, FindAPIs)
     malloc_span<uint8_t> metadata = GetRegressionAssemblyMetadata();
 
     dncp::com_ptr<IMetaDataImport2> baselineImport;
-    ASSERT_HRESULT_SUCCEEDED(CreateImport(TestBaseline::Metadata, metadata, (uint32_t)metadata.size(), &baselineImport));
-    // Load metadata
     dncp::com_ptr<IMetaDataImport2> currentImport;
-
-    dncp::com_ptr<IMetaDataDispenser> dispenser;
-    ASSERT_HRESULT_SUCCEEDED(GetDispenser(IID_IMetaDataDispenser, (void**)&dispenser));
-
-    ASSERT_HRESULT_SUCCEEDED(CreateImport(dispenser, metadata, (uint32_t)metadata.size(), &currentImport));
+    ASSERT_NO_FATAL_FAILURE(GetImports(metadata, baselineImport, currentImport));
 
     static auto FindTokenByName = [](IMetaDataImport2* import, LPCWSTR name, mdToken enclosing = mdTokenNil) -> mdToken
     {
@@ -1769,89 +1776,128 @@ class MetadataImportTest : public RegressionTest
 {
 };
 
-TEST_P(MetadataImportTest, ImportAPIs)
+TEST_P(MetadataImportTest, BasicApis)
 {
-    auto param = GetParam();
-    void const* data = param.blob.data();
-    uint32_t dataLen = (uint32_t)param.blob.size();
-
-    // Load metadata
     dncp::com_ptr<IMetaDataImport2> baselineImport;
-    ASSERT_HRESULT_SUCCEEDED(CreateImport(TestBaseline::Metadata, data, dataLen, &baselineImport));
-    
-    dncp::com_ptr<IMetaDataDispenser> dispenser;
-    ASSERT_HRESULT_SUCCEEDED(GetDispenser(IID_IMetaDataDispenser, (void**)&dispenser));
     dncp::com_ptr<IMetaDataImport2> currentImport;
-    ASSERT_HRESULT_SUCCEEDED(CreateImport(dispenser, data, dataLen, &currentImport));
+    ASSERT_NO_FATAL_FAILURE(GetImports(GetParam(), baselineImport, currentImport));
 
-    // Verify APIs
-    ASSERT_THAT(ResetEnum(currentImport), testing::ElementsAreArray(ResetEnum(baselineImport)));
-    ASSERT_THAT(GetScopeProps(currentImport), testing::ElementsAreArray(GetScopeProps(baselineImport)));
-    ASSERT_THAT(GetVersionString(currentImport), testing::ElementsAreArray(GetVersionString(baselineImport)));
+    EXPECT_THAT(ResetEnum(currentImport), testing::ElementsAreArray(ResetEnum(baselineImport)));
+    EXPECT_THAT(GetScopeProps(currentImport), testing::ElementsAreArray(GetScopeProps(baselineImport)));
+    EXPECT_THAT(GetVersionString(currentImport), testing::ElementsAreArray(GetVersionString(baselineImport)));
+}
+
+TEST_P(MetadataImportTest, Signature)
+{
+    dncp::com_ptr<IMetaDataImport2> baselineImport;
+    dncp::com_ptr<IMetaDataImport2> currentImport;
+    ASSERT_NO_FATAL_FAILURE(GetImports(GetParam(), baselineImport, currentImport));
 
     TokenList sigs;
     ASSERT_EQUAL_AND_SET(sigs, EnumSignatures(baselineImport), EnumSignatures(currentImport));
     for (auto sig : sigs)
     {
-        ASSERT_THAT(GetSigFromToken(currentImport, sig), testing::ElementsAreArray(GetSigFromToken(baselineImport, sig)));
+        EXPECT_THAT(GetSigFromToken(currentImport, sig), testing::ElementsAreArray(GetSigFromToken(baselineImport, sig)));
     }
+}
+
+TEST_P(MetadataImportTest, UserStrings)
+{
+    dncp::com_ptr<IMetaDataImport2> baselineImport;
+    dncp::com_ptr<IMetaDataImport2> currentImport;
+    ASSERT_NO_FATAL_FAILURE(GetImports(GetParam(), baselineImport, currentImport));
 
     TokenList userStrings;
     ASSERT_EQUAL_AND_SET(userStrings, EnumUserStrings(baselineImport), EnumUserStrings(currentImport));
     for (auto us : userStrings)
     {
-        ASSERT_THAT(GetUserString(currentImport, us), testing::ElementsAreArray(GetUserString(baselineImport, us)));
+        EXPECT_THAT(GetUserString(currentImport, us), testing::ElementsAreArray(GetUserString(baselineImport, us)));
     }
+}
+
+TEST_P(MetadataImportTest, CustomAttribute)
+{
+    dncp::com_ptr<IMetaDataImport2> baselineImport;
+    dncp::com_ptr<IMetaDataImport2> currentImport;
+    ASSERT_NO_FATAL_FAILURE(GetImports(GetParam(), baselineImport, currentImport));
 
     TokenList custAttrs;
     ASSERT_EQUAL_AND_SET(custAttrs, EnumCustomAttributes(baselineImport), EnumCustomAttributes(currentImport));
     for (auto ca : custAttrs)
     {
-        ASSERT_THAT(GetCustomAttributeProps(currentImport, ca), testing::ElementsAreArray(GetCustomAttributeProps(baselineImport, ca)));
+        EXPECT_THAT(GetCustomAttributeProps(currentImport, ca), testing::ElementsAreArray(GetCustomAttributeProps(baselineImport, ca)));
     }
+}
+
+TEST_P(MetadataImportTest, ModuleRef)
+{
+    dncp::com_ptr<IMetaDataImport2> baselineImport;
+    dncp::com_ptr<IMetaDataImport2> currentImport;
+    ASSERT_NO_FATAL_FAILURE(GetImports(GetParam(), baselineImport, currentImport));
 
     TokenList modulerefs;
     ASSERT_EQUAL_AND_SET(modulerefs, EnumModuleRefs(baselineImport), EnumModuleRefs(currentImport));
     for (auto moduleref : modulerefs)
     {
-        ASSERT_THAT(GetModuleRefProps(currentImport, moduleref), testing::ElementsAreArray(GetModuleRefProps(baselineImport, moduleref)));
-        ASSERT_THAT(GetNameFromToken(currentImport, moduleref), testing::ElementsAreArray(GetNameFromToken(baselineImport, moduleref)));
+        EXPECT_THAT(GetModuleRefProps(currentImport, moduleref), testing::ElementsAreArray(GetModuleRefProps(baselineImport, moduleref)));
+        EXPECT_THAT(GetNameFromToken(currentImport, moduleref), testing::ElementsAreArray(GetNameFromToken(baselineImport, moduleref)));
     }
+}
+
+TEST_P(MetadataImportTest, TypeRef)
+{
+    dncp::com_ptr<IMetaDataImport2> baselineImport;
+    dncp::com_ptr<IMetaDataImport2> currentImport;
+    ASSERT_NO_FATAL_FAILURE(GetImports(GetParam(), baselineImport, currentImport));
 
     ASSERT_THAT(FindTypeRef(currentImport), testing::ElementsAreArray(FindTypeRef(baselineImport)));
     TokenList typerefs;
     ASSERT_EQUAL_AND_SET(typerefs, EnumTypeRefs(baselineImport), EnumTypeRefs(currentImport));
     for (auto typeref : typerefs)
     {
-        ASSERT_THAT(GetTypeRefProps(currentImport, typeref), testing::ElementsAreArray(GetTypeRefProps(baselineImport, typeref)));
-        ASSERT_THAT(GetCustomAttribute_CompilerGenerated(currentImport, typeref), testing::ElementsAreArray(GetCustomAttribute_CompilerGenerated(baselineImport, typeref)));
-        ASSERT_THAT(GetNameFromToken(currentImport, typeref), testing::ElementsAreArray(GetNameFromToken(baselineImport, typeref)));
+        EXPECT_THAT(GetTypeRefProps(currentImport, typeref), testing::ElementsAreArray(GetTypeRefProps(baselineImport, typeref)));
+        EXPECT_THAT(GetCustomAttribute_CompilerGenerated(currentImport, typeref), testing::ElementsAreArray(GetCustomAttribute_CompilerGenerated(baselineImport, typeref)));
+        EXPECT_THAT(GetNameFromToken(currentImport, typeref), testing::ElementsAreArray(GetNameFromToken(baselineImport, typeref)));
     }
+}
+
+TEST_P(MetadataImportTest, TypeSpec)
+{
+    dncp::com_ptr<IMetaDataImport2> baselineImport;
+    dncp::com_ptr<IMetaDataImport2> currentImport;
+    ASSERT_NO_FATAL_FAILURE(GetImports(GetParam(), baselineImport, currentImport));
 
     TokenList typespecs;
     ASSERT_EQUAL_AND_SET(typespecs, EnumTypeSpecs(baselineImport), EnumTypeSpecs(currentImport));
     for (auto typespec : typespecs)
     {
-        ASSERT_THAT(GetTypeSpecFromToken(currentImport, typespec), testing::ElementsAreArray(GetTypeSpecFromToken(baselineImport, typespec)));
-        ASSERT_THAT(GetCustomAttribute_CompilerGenerated(currentImport, typespec), testing::ElementsAreArray(GetCustomAttribute_CompilerGenerated(baselineImport, typespec)));
+        EXPECT_THAT(GetTypeSpecFromToken(currentImport, typespec), testing::ElementsAreArray(GetTypeSpecFromToken(baselineImport, typespec)));
+        EXPECT_THAT(GetCustomAttribute_CompilerGenerated(currentImport, typespec), testing::ElementsAreArray(GetCustomAttribute_CompilerGenerated(baselineImport, typespec)));
     }
+}
+
+TEST_P(MetadataImportTest, TypeDefAndMembers)
+{
+    dncp::com_ptr<IMetaDataImport2> baselineImport;
+    dncp::com_ptr<IMetaDataImport2> currentImport;
+    ASSERT_NO_FATAL_FAILURE(GetImports(GetParam(), baselineImport, currentImport));
 
     TokenList typedefs;
     ASSERT_EQUAL_AND_SET(typedefs, EnumTypeDefs(baselineImport), EnumTypeDefs(currentImport));
     for (auto typdef : typedefs)
     {
-        ASSERT_THAT(GetTypeDefProps(currentImport, typdef), testing::ElementsAreArray(GetTypeDefProps(baselineImport, typdef)));
-        ASSERT_THAT(GetNameFromToken(currentImport, typdef), testing::ElementsAreArray(GetNameFromToken(baselineImport, typdef)));
-        ASSERT_THAT(IsGlobal(currentImport, typdef), testing::Eq(IsGlobal(baselineImport, typdef)));
-        ASSERT_THAT(EnumInterfaceImpls(currentImport, typdef), testing::ElementsAreArray(EnumInterfaceImpls(baselineImport, typdef)));
-        ASSERT_THAT(EnumPermissionSetsAndGetProps(currentImport, typdef), testing::ElementsAreArray(EnumPermissionSetsAndGetProps(baselineImport, typdef)));
-        ASSERT_THAT(EnumMembers(currentImport, typdef), testing::ElementsAreArray(EnumMembers(baselineImport, typdef)));
-        ASSERT_THAT(EnumMembersWithName(currentImport, typdef), testing::ElementsAreArray(EnumMembersWithName(baselineImport, typdef)));
-        ASSERT_THAT(EnumMethodsWithName(currentImport, typdef), testing::ElementsAreArray(EnumMethodsWithName(baselineImport, typdef)));
-        ASSERT_THAT(EnumMethodImpls(currentImport, typdef), testing::ElementsAreArray(EnumMethodImpls(baselineImport, typdef)));
-        ASSERT_THAT(GetNestedClassProps(currentImport, typdef), testing::ElementsAreArray(GetNestedClassProps(baselineImport, typdef)));
-        ASSERT_THAT(GetClassLayout(currentImport, typdef), testing::ElementsAreArray(GetClassLayout(baselineImport, typdef)));
-        ASSERT_THAT(GetCustomAttribute_CompilerGenerated(currentImport, typdef), testing::ElementsAreArray(GetCustomAttribute_CompilerGenerated(baselineImport, typdef)));
+        EXPECT_THAT(GetTypeDefProps(currentImport, typdef), testing::ElementsAreArray(GetTypeDefProps(baselineImport, typdef)));
+        EXPECT_THAT(GetNameFromToken(currentImport, typdef), testing::ElementsAreArray(GetNameFromToken(baselineImport, typdef)));
+        EXPECT_THAT(IsGlobal(currentImport, typdef), testing::Eq(IsGlobal(baselineImport, typdef)));
+        EXPECT_THAT(EnumInterfaceImpls(currentImport, typdef), testing::ElementsAreArray(EnumInterfaceImpls(baselineImport, typdef)));
+        EXPECT_THAT(EnumPermissionSetsAndGetProps(currentImport, typdef), testing::ElementsAreArray(EnumPermissionSetsAndGetProps(baselineImport, typdef)));
+        EXPECT_THAT(EnumMembers(currentImport, typdef), testing::ElementsAreArray(EnumMembers(baselineImport, typdef)));
+        EXPECT_THAT(EnumMembersWithName(currentImport, typdef), testing::ElementsAreArray(EnumMembersWithName(baselineImport, typdef)));
+        EXPECT_THAT(EnumMethodsWithName(currentImport, typdef), testing::ElementsAreArray(EnumMethodsWithName(baselineImport, typdef)));
+        EXPECT_THAT(EnumMethodImpls(currentImport, typdef), testing::ElementsAreArray(EnumMethodImpls(baselineImport, typdef)));
+        EXPECT_THAT(GetNestedClassProps(currentImport, typdef), testing::ElementsAreArray(GetNestedClassProps(baselineImport, typdef)));
+        EXPECT_THAT(GetClassLayout(currentImport, typdef), testing::ElementsAreArray(GetClassLayout(baselineImport, typdef)));
+        EXPECT_THAT(GetCustomAttribute_CompilerGenerated(currentImport, typdef), testing::ElementsAreArray(GetCustomAttribute_CompilerGenerated(baselineImport, typdef)));
 
         TokenList methoddefs;
         ASSERT_EQUAL_AND_SET(methoddefs, EnumMethods(baselineImport, typdef), EnumMethods(currentImport, typdef));
@@ -1859,32 +1905,32 @@ TEST_P(MetadataImportTest, ImportAPIs)
         {
             void const* sig = nullptr;
             ULONG sigLen = 0;
-            ASSERT_THAT(GetMethodProps(currentImport, methoddef, &sig, &sigLen), testing::ElementsAreArray(GetMethodProps(baselineImport, methoddef)));
-            ASSERT_THAT(GetNativeCallConvFromSig(currentImport, sig, sigLen), testing::ElementsAreArray(GetNativeCallConvFromSig(baselineImport, sig, sigLen)));
-            ASSERT_THAT(GetNameFromToken(currentImport, methoddef), testing::ElementsAreArray(GetNameFromToken(baselineImport, methoddef)));
-            ASSERT_THAT(IsGlobal(currentImport, methoddef), testing::Eq(IsGlobal(baselineImport, methoddef)));
-            ASSERT_THAT(GetCustomAttribute_CompilerGenerated(currentImport, methoddef), testing::ElementsAreArray(GetCustomAttribute_CompilerGenerated(baselineImport, methoddef)));
+            EXPECT_THAT(GetMethodProps(currentImport, methoddef, &sig, &sigLen), testing::ElementsAreArray(GetMethodProps(baselineImport, methoddef)));
+            EXPECT_THAT(GetNativeCallConvFromSig(currentImport, sig, sigLen), testing::ElementsAreArray(GetNativeCallConvFromSig(baselineImport, sig, sigLen)));
+            EXPECT_THAT(GetNameFromToken(currentImport, methoddef), testing::ElementsAreArray(GetNameFromToken(baselineImport, methoddef)));
+            EXPECT_THAT(IsGlobal(currentImport, methoddef), testing::Eq(IsGlobal(baselineImport, methoddef)));
+            EXPECT_THAT(GetCustomAttribute_CompilerGenerated(currentImport, methoddef), testing::ElementsAreArray(GetCustomAttribute_CompilerGenerated(baselineImport, methoddef)));
 
             TokenList paramdefs;
             ASSERT_EQUAL_AND_SET(paramdefs, EnumParams(baselineImport, methoddef), EnumParams(currentImport, methoddef));
             for (auto paramdef : paramdefs)
             {
-                ASSERT_THAT(GetParamProps(currentImport, paramdef), testing::ElementsAreArray(GetParamProps(baselineImport, paramdef)));
-                ASSERT_THAT(GetFieldMarshal(currentImport, paramdef), testing::ElementsAreArray(GetFieldMarshal(baselineImport, paramdef)));
-                ASSERT_THAT(GetCustomAttribute_Nullable(currentImport, paramdef), testing::ElementsAreArray(GetCustomAttribute_Nullable(baselineImport, paramdef)));
-                ASSERT_THAT(GetNameFromToken(currentImport, paramdef), testing::ElementsAreArray(GetNameFromToken(baselineImport, paramdef)));
+                EXPECT_THAT(GetParamProps(currentImport, paramdef), testing::ElementsAreArray(GetParamProps(baselineImport, paramdef)));
+                EXPECT_THAT(GetFieldMarshal(currentImport, paramdef), testing::ElementsAreArray(GetFieldMarshal(baselineImport, paramdef)));
+                EXPECT_THAT(GetCustomAttribute_Nullable(currentImport, paramdef), testing::ElementsAreArray(GetCustomAttribute_Nullable(baselineImport, paramdef)));
+                EXPECT_THAT(GetNameFromToken(currentImport, paramdef), testing::ElementsAreArray(GetNameFromToken(baselineImport, paramdef)));
             }
 
-            ASSERT_THAT(GetParamForMethodIndex(currentImport, methoddef), testing::ElementsAreArray(GetParamForMethodIndex(baselineImport, methoddef)));
-            ASSERT_THAT(EnumPermissionSetsAndGetProps(currentImport, methoddef), testing::ElementsAreArray(EnumPermissionSetsAndGetProps(baselineImport, methoddef)));
-            ASSERT_THAT(GetPinvokeMap(currentImport, methoddef), testing::ElementsAreArray(GetPinvokeMap(baselineImport, methoddef)));
-            ASSERT_THAT(GetRVA(currentImport, methoddef), testing::ElementsAreArray(GetRVA(baselineImport, methoddef)));
+            EXPECT_THAT(GetParamForMethodIndex(currentImport, methoddef), testing::ElementsAreArray(GetParamForMethodIndex(baselineImport, methoddef)));
+            EXPECT_THAT(EnumPermissionSetsAndGetProps(currentImport, methoddef), testing::ElementsAreArray(EnumPermissionSetsAndGetProps(baselineImport, methoddef)));
+            EXPECT_THAT(GetPinvokeMap(currentImport, methoddef), testing::ElementsAreArray(GetPinvokeMap(baselineImport, methoddef)));
+            EXPECT_THAT(GetRVA(currentImport, methoddef), testing::ElementsAreArray(GetRVA(baselineImport, methoddef)));
 
             TokenList methodspecs;
             ASSERT_EQUAL_AND_SET(methodspecs, EnumMethodSpecs(baselineImport, methoddef), EnumMethodSpecs(currentImport, methoddef));
             for (auto methodspec : methodspecs)
             {
-                ASSERT_THAT(GetMethodSpecProps(currentImport, methodspec), testing::ElementsAreArray(GetMethodSpecProps(baselineImport, methodspec)));
+                EXPECT_THAT(GetMethodSpecProps(currentImport, methodspec), testing::ElementsAreArray(GetMethodSpecProps(baselineImport, methodspec)));
             }
         }
 
@@ -1896,11 +1942,11 @@ TEST_P(MetadataImportTest, ImportAPIs)
             ASSERT_THAT(GetEventProps(currentImport, eventdef, &mds), testing::ElementsAreArray(GetEventProps(baselineImport, eventdef)));
             for (auto md : mds)
             {
-                ASSERT_THAT(GetMethodSemantics(currentImport, eventdef, md), testing::ElementsAreArray(GetMethodSemantics(baselineImport, eventdef, md)));
+                EXPECT_THAT(GetMethodSemantics(currentImport, eventdef, md), testing::ElementsAreArray(GetMethodSemantics(baselineImport, eventdef, md)));
             }
 
-            ASSERT_THAT(GetNameFromToken(currentImport, eventdef), testing::ElementsAreArray(GetNameFromToken(baselineImport, eventdef)));
-            ASSERT_THAT(IsGlobal(currentImport, eventdef), testing::Eq(IsGlobal(baselineImport, eventdef)));
+            EXPECT_THAT(GetNameFromToken(currentImport, eventdef), testing::ElementsAreArray(GetNameFromToken(baselineImport, eventdef)));
+            EXPECT_THAT(IsGlobal(currentImport, eventdef), testing::Eq(IsGlobal(baselineImport, eventdef)));
         }
 
         TokenList properties;
@@ -1911,11 +1957,11 @@ TEST_P(MetadataImportTest, ImportAPIs)
             ASSERT_THAT(GetPropertyProps(currentImport, props, &mds), testing::ElementsAreArray(GetPropertyProps(baselineImport, props)));
             for (auto md : mds)
             {
-                ASSERT_THAT(GetMethodSemantics(currentImport, props, md), testing::ElementsAreArray(GetMethodSemantics(baselineImport, props, md)));
+                EXPECT_THAT(GetMethodSemantics(currentImport, props, md), testing::ElementsAreArray(GetMethodSemantics(baselineImport, props, md)));
             }
 
-            ASSERT_THAT(GetNameFromToken(currentImport, props), testing::ElementsAreArray(GetNameFromToken(baselineImport, props)));
-            ASSERT_THAT(IsGlobal(currentImport, props), testing::Eq(IsGlobal(baselineImport, props)));
+            EXPECT_THAT(GetNameFromToken(currentImport, props), testing::ElementsAreArray(GetNameFromToken(baselineImport, props)));
+            EXPECT_THAT(IsGlobal(currentImport, props), testing::Eq(IsGlobal(baselineImport, props)));
         }
 
         ASSERT_THAT(EnumFieldsWithName(baselineImport, typdef), EnumFieldsWithName(currentImport, typdef));
@@ -1923,28 +1969,35 @@ TEST_P(MetadataImportTest, ImportAPIs)
         ASSERT_EQUAL_AND_SET(fielddefs, EnumFields(baselineImport, typdef), EnumFields(currentImport, typdef));
         for (auto fielddef : fielddefs)
         {
-            ASSERT_THAT(GetFieldProps(currentImport, fielddef), testing::ElementsAreArray(GetFieldProps(baselineImport, fielddef)));
-            ASSERT_THAT(GetNameFromToken(currentImport, fielddef), testing::ElementsAreArray(GetNameFromToken(baselineImport, fielddef)));
-            ASSERT_THAT(IsGlobal(currentImport, fielddef), testing::Eq(IsGlobal(baselineImport, fielddef)));
-            ASSERT_THAT(GetPinvokeMap(currentImport, fielddef), testing::ElementsAreArray(GetPinvokeMap(baselineImport, fielddef)));
-            ASSERT_THAT(GetRVA(currentImport, fielddef), testing::ElementsAreArray(GetRVA(baselineImport, fielddef)));
-            ASSERT_THAT(GetFieldMarshal(currentImport, fielddef), testing::ElementsAreArray(GetFieldMarshal(baselineImport, fielddef)));
-            ASSERT_THAT(GetCustomAttribute_Nullable(currentImport, fielddef), testing::ElementsAreArray(GetCustomAttribute_Nullable(baselineImport, fielddef)));
+            EXPECT_THAT(GetFieldProps(currentImport, fielddef), testing::ElementsAreArray(GetFieldProps(baselineImport, fielddef)));
+            EXPECT_THAT(GetNameFromToken(currentImport, fielddef), testing::ElementsAreArray(GetNameFromToken(baselineImport, fielddef)));
+            EXPECT_THAT(IsGlobal(currentImport, fielddef), testing::Eq(IsGlobal(baselineImport, fielddef)));
+            EXPECT_THAT(GetPinvokeMap(currentImport, fielddef), testing::ElementsAreArray(GetPinvokeMap(baselineImport, fielddef)));
+            EXPECT_THAT(GetRVA(currentImport, fielddef), testing::ElementsAreArray(GetRVA(baselineImport, fielddef)));
+            EXPECT_THAT(GetFieldMarshal(currentImport, fielddef), testing::ElementsAreArray(GetFieldMarshal(baselineImport, fielddef)));
+            EXPECT_THAT(GetCustomAttribute_Nullable(currentImport, fielddef), testing::ElementsAreArray(GetCustomAttribute_Nullable(baselineImport, fielddef)));
         }
 
         TokenList genparams;
         ASSERT_EQUAL_AND_SET(genparams, EnumGenericParams(baselineImport, typdef), EnumGenericParams(currentImport, typdef));
         for (auto genparam : genparams)
         {
-            ASSERT_THAT(GetGenericParamProps(currentImport, genparam), testing::ElementsAreArray(GetGenericParamProps(baselineImport, genparam)));
+            EXPECT_THAT(GetGenericParamProps(currentImport, genparam), testing::ElementsAreArray(GetGenericParamProps(baselineImport, genparam)));
             TokenList genparamconsts;
             ASSERT_EQUAL_AND_SET(genparamconsts, EnumGenericParamConstraints(baselineImport, genparam), EnumGenericParamConstraints(currentImport, genparam));
             for (auto genparamconst : genparamconsts)
             {
-                ASSERT_THAT(GetGenericParamConstraintProps(currentImport, genparamconst), testing::ElementsAreArray(GetGenericParamConstraintProps(baselineImport, genparamconst)));
+                EXPECT_THAT(GetGenericParamConstraintProps(currentImport, genparamconst), testing::ElementsAreArray(GetGenericParamConstraintProps(baselineImport, genparamconst)));
             }
         }
     }
+}
+
+TEST_P(MetadataImportTest, Assembly)
+{
+    dncp::com_ptr<IMetaDataImport2> baselineImport;
+    dncp::com_ptr<IMetaDataImport2> currentImport;
+    ASSERT_NO_FATAL_FAILURE(GetImports(GetParam(), baselineImport, currentImport));
 
     dncp::com_ptr<IMetaDataAssemblyImport> baselineAssembly;
     ASSERT_THAT(S_OK, baselineImport->QueryInterface(IID_IMetaDataAssemblyImport, (void**)&baselineAssembly));
@@ -1955,22 +2008,58 @@ TEST_P(MetadataImportTest, ImportAPIs)
     ASSERT_EQUAL_AND_SET(assemblyTokens, GetAssemblyFromScope(baselineAssembly), GetAssemblyFromScope(currentAssembly));
     for (auto assembly : assemblyTokens)
     {
-        ASSERT_THAT(GetAssemblyProps(currentAssembly, assembly), testing::ElementsAreArray(GetAssemblyProps(baselineAssembly, assembly)));
+        EXPECT_THAT(GetAssemblyProps(currentAssembly, assembly), testing::ElementsAreArray(GetAssemblyProps(baselineAssembly, assembly)));
     }
+}
+
+TEST_P(MetadataImportTest, AssemblyRef)
+{
+    dncp::com_ptr<IMetaDataImport2> baselineImport;
+    dncp::com_ptr<IMetaDataImport2> currentImport;
+    ASSERT_NO_FATAL_FAILURE(GetImports(GetParam(), baselineImport, currentImport));
+
+    dncp::com_ptr<IMetaDataAssemblyImport> baselineAssembly;
+    ASSERT_THAT(S_OK, baselineImport->QueryInterface(IID_IMetaDataAssemblyImport, (void**)&baselineAssembly));
+    dncp::com_ptr<IMetaDataAssemblyImport> currentAssembly;
+    ASSERT_THAT(S_OK, currentImport->QueryInterface(IID_IMetaDataAssemblyImport, (void**)&currentAssembly));
 
     TokenList assemblyRefs;
     ASSERT_EQUAL_AND_SET(assemblyRefs, EnumAssemblyRefs(baselineAssembly), EnumAssemblyRefs(currentAssembly));
     for (auto assemblyRef : assemblyRefs)
     {
-        ASSERT_THAT(GetAssemblyRefProps(currentAssembly, assemblyRef), testing::ElementsAreArray(GetAssemblyRefProps(baselineAssembly, assemblyRef)));
+        EXPECT_THAT(GetAssemblyRefProps(currentAssembly, assemblyRef), testing::ElementsAreArray(GetAssemblyRefProps(baselineAssembly, assemblyRef)));
     }
+}
+
+TEST_P(MetadataImportTest, File)
+{
+    dncp::com_ptr<IMetaDataImport2> baselineImport;
+    dncp::com_ptr<IMetaDataImport2> currentImport;
+    ASSERT_NO_FATAL_FAILURE(GetImports(GetParam(), baselineImport, currentImport));
+
+    dncp::com_ptr<IMetaDataAssemblyImport> baselineAssembly;
+    ASSERT_THAT(S_OK, baselineImport->QueryInterface(IID_IMetaDataAssemblyImport, (void**)&baselineAssembly));
+    dncp::com_ptr<IMetaDataAssemblyImport> currentAssembly;
+    ASSERT_THAT(S_OK, currentImport->QueryInterface(IID_IMetaDataAssemblyImport, (void**)&currentAssembly));
 
     TokenList files;
     ASSERT_EQUAL_AND_SET(files, EnumFiles(baselineAssembly), EnumFiles(currentAssembly));
     for (auto file : files)
     {
-        ASSERT_THAT(GetFileProps(currentAssembly, file), testing::ElementsAreArray(GetFileProps(baselineAssembly, file)));
+        EXPECT_THAT(GetFileProps(currentAssembly, file), testing::ElementsAreArray(GetFileProps(baselineAssembly, file)));
     }
+}
+
+TEST_P(MetadataImportTest, ExportedType)
+{
+    dncp::com_ptr<IMetaDataImport2> baselineImport;
+    dncp::com_ptr<IMetaDataImport2> currentImport;
+    ASSERT_NO_FATAL_FAILURE(GetImports(GetParam(), baselineImport, currentImport));
+
+    dncp::com_ptr<IMetaDataAssemblyImport> baselineAssembly;
+    ASSERT_THAT(S_OK, baselineImport->QueryInterface(IID_IMetaDataAssemblyImport, (void**)&baselineAssembly));
+    dncp::com_ptr<IMetaDataAssemblyImport> currentAssembly;
+    ASSERT_THAT(S_OK, currentImport->QueryInterface(IID_IMetaDataAssemblyImport, (void**)&currentAssembly));
 
     TokenList exports;
     ASSERT_EQUAL_AND_SET(exports, EnumExportedTypes(baselineAssembly), EnumExportedTypes(currentAssembly));
@@ -1979,20 +2068,30 @@ TEST_P(MetadataImportTest, ImportAPIs)
         std::vector<WCHAR> name;
         uint32_t implementation = mdTokenNil;
         ASSERT_THAT(GetExportedTypeProps(currentAssembly, exportedType, &name, &implementation), testing::ElementsAreArray(GetExportedTypeProps(baselineAssembly, exportedType)));
-        ASSERT_THAT(
+        EXPECT_THAT(
             FindExportedTypeByName(currentAssembly, name.data(), implementation),
             testing::ElementsAreArray(FindExportedTypeByName(baselineAssembly, name.data(), implementation)));
     }
+}
+
+TEST_P(MetadataImportTest, ManifestResource)
+{
+    dncp::com_ptr<IMetaDataImport2> baselineImport;
+    dncp::com_ptr<IMetaDataImport2> currentImport;
+    ASSERT_NO_FATAL_FAILURE(GetImports(GetParam(), baselineImport, currentImport));
+
+    dncp::com_ptr<IMetaDataAssemblyImport> baselineAssembly;
+    ASSERT_THAT(S_OK, baselineImport->QueryInterface(IID_IMetaDataAssemblyImport, (void**)&baselineAssembly));
+    dncp::com_ptr<IMetaDataAssemblyImport> currentAssembly;
+    ASSERT_THAT(S_OK, currentImport->QueryInterface(IID_IMetaDataAssemblyImport, (void**)&currentAssembly));
 
     TokenList resources;
     ASSERT_EQUAL_AND_SET(resources, EnumManifestResources(baselineAssembly), EnumManifestResources(currentAssembly));
     for (auto resource : resources)
     {
-        std::vector<WCHAR> name;
-        ASSERT_THAT(GetManifestResourceProps(currentAssembly, resource, &name), testing::ElementsAreArray(GetManifestResourceProps(baselineAssembly, resource)));
-        ASSERT_THAT(FindManifestResourceByName(currentAssembly, name.data()), testing::ElementsAreArray(FindManifestResourceByName(baselineAssembly, name.data())));
+        EXPECT_THAT(GetManifestResourceProps(currentAssembly, resource), testing::ElementsAreArray(GetManifestResourceProps(baselineAssembly, resource)));
     }
-}
+}   
 
 INSTANTIATE_TEST_SUITE_P(MetaDataImportTestCore, MetadataImportTest, testing::ValuesIn(MetadataInDirectory(GetBaselineDirectory())), PrintFileBlob);
 
@@ -2001,66 +2100,54 @@ INSTANTIATE_TEST_SUITE_P(MetaDataImportTestFx2_0, MetadataImportTest, testing::V
 
 class MetaDataLongRunningTest : public RegressionTest
 {
+protected:
+    TokenList VerifyFindMemberRef(IMetaDataImport2* import, mdToken memberRef)
+    {
+        std::vector<uint32_t> values;
+
+        mdToken ptk;
+        static_char_buffer<WCHAR> name{};
+        ULONG pchMember;
+        PCCOR_SIGNATURE ppvSigBlob;
+        ULONG pcbSigBlob;
+        HRESULT hr = import->GetMemberRefProps(memberRef,
+            & ptk,
+            name.data(),
+            (ULONG)name.size(),
+            & pchMember,
+            & ppvSigBlob,
+            & pcbSigBlob);
+        values.push_back(hr);
+        if (hr == S_OK)
+        {
+            // We were able to get the name, now try looking up a memberRef by name and by sig
+            mdMemberRef lookup = mdTokenNil;
+            hr = import->FindMemberRef(ptk, name.data(), ppvSigBlob, pcbSigBlob, & lookup);
+            values.push_back(hr);
+            values.push_back(lookup);
+            lookup = mdTokenNil;
+            hr = import->FindMemberRef(ptk, name.data(), nullptr, 0, & lookup);
+            values.push_back(hr);
+            values.push_back(lookup);
+            lookup = mdTokenNil;
+            hr = import->FindMemberRef(ptk, nullptr, ppvSigBlob, pcbSigBlob, & lookup);
+            values.push_back(hr);
+            values.push_back(lookup);
+        }
+        return values;
+    }
 };
 
-TEST_P(MetaDataLongRunningTest, ImportAPIs)
+TEST_P(MetaDataLongRunningTest, TypeDefs)
 {
-    auto param = GetParam();
-    void const* data = param.blob.data();
-    uint32_t dataLen = (uint32_t)param.blob.size();
-
-    // Load metadata
     dncp::com_ptr<IMetaDataImport2> baselineImport;
-    ASSERT_HRESULT_SUCCEEDED(CreateImport(TestBaseline::Metadata, data, dataLen, &baselineImport));
-
-    dncp::com_ptr<IMetaDataDispenser> dispenser;
-    ASSERT_HRESULT_SUCCEEDED(GetDispenser(IID_IMetaDataDispenser, (void**)&dispenser));
     dncp::com_ptr<IMetaDataImport2> currentImport;
-    ASSERT_HRESULT_SUCCEEDED(CreateImport(dispenser, data, dataLen, &currentImport));
-
-    static auto VerifyFindMemberRef = [](IMetaDataImport2 * import, mdToken memberRef) -> std::vector<uint32_t>
-        {
-            std::vector<uint32_t> values;
-
-            mdToken ptk;
-            static_char_buffer<WCHAR> name{};
-            ULONG pchMember;
-            PCCOR_SIGNATURE ppvSigBlob;
-            ULONG pcbSigBlob;
-            HRESULT hr = import->GetMemberRefProps(memberRef,
-                & ptk,
-                name.data(),
-                (ULONG)name.size(),
-                & pchMember,
-                & ppvSigBlob,
-                & pcbSigBlob);
-            values.push_back(hr);
-            if (hr == S_OK)
-            {
-                // We were able to get the name, now try looking up a memberRef by name and by sig
-                mdMemberRef lookup = mdTokenNil;
-                hr = import->FindMemberRef(ptk, name.data(), ppvSigBlob, pcbSigBlob, & lookup);
-                values.push_back(hr);
-                values.push_back(lookup);
-                lookup = mdTokenNil;
-                hr = import->FindMemberRef(ptk, name.data(), nullptr, 0, & lookup);
-                values.push_back(hr);
-                values.push_back(lookup);
-                lookup = mdTokenNil;
-                hr = import->FindMemberRef(ptk, nullptr, ppvSigBlob, pcbSigBlob, & lookup);
-                values.push_back(hr);
-                values.push_back(lookup);
-            }
-            return values;
-        };
-
-    size_t stride;
-    size_t count;
+    ASSERT_NO_FATAL_FAILURE(GetImports(GetParam(), baselineImport, currentImport));
 
     TokenList typedefs;
     ASSERT_EQUAL_AND_SET(typedefs, EnumTypeDefs(baselineImport), EnumTypeDefs(currentImport));
-    count = 0;
-    stride = std::max(typedefs.size() / 128, (size_t)16);
+    size_t count = 0;
+    size_t stride = std::max(typedefs.size() / 128, (size_t)16);
     for (auto typdef : typedefs)
     {
         if (count++ % stride != 0)
@@ -2077,11 +2164,18 @@ TEST_P(MetaDataLongRunningTest, ImportAPIs)
 
         EXPECT_THAT(EnumCustomAttributes(currentImport, typdef), testing::ElementsAreArray(EnumCustomAttributes(baselineImport, typdef)));
     }
+}
+
+TEST_P(MetaDataLongRunningTest, TypeSpecs)
+{
+    dncp::com_ptr<IMetaDataImport2> baselineImport;
+    dncp::com_ptr<IMetaDataImport2> currentImport;
+    ASSERT_NO_FATAL_FAILURE(GetImports(GetParam(), baselineImport, currentImport));
 
     TokenList typespecs;
     ASSERT_EQUAL_AND_SET(typespecs, EnumTypeSpecs(baselineImport), EnumTypeSpecs(currentImport));
-    count = 0;
-    stride = std::max(typespecs.size() / 128, (size_t)16);
+    size_t count = 0;
+    size_t stride = std::max(typespecs.size() / 128, (size_t)16);
     for (auto typespec : typespecs)
     {
         if (count++ % stride != 0)
