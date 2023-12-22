@@ -11,10 +11,6 @@
 #include <utility>
 namespace
 {
-    IMetaDataDispenser* g_baselineDisp;
-    IMetaDataDispenser* g_deltaImageBuilder;
-    IMetaDataDispenser* g_currentDisp;
-
     HRESULT CreateImport(IMetaDataDispenser* disp, void const* data, uint32_t dataLen, IMetaDataImport2** import)
     {
         assert(disp != nullptr && data != nullptr && dataLen > 0 && import != nullptr);
