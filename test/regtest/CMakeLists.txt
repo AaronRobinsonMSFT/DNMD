@@ -17,6 +17,22 @@ if (NOT WIN32)
     target_link_libraries(regtest PRIVATE dncp::winhdrs)
 endif()
 
+if (WIN32)
+    FetchContent_Declare(
+        wil
+        GIT_REPOSITORY
+        https://github.com/microsoft/wil.git
+        GIT_TAG
+        v1.0.231216.1
+    )
+
+    set(WIL_BUILD_PACKAGING OFF CACHE BOOL "" FORCE)
+    set(WIL_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+
+    FetchContent_MakeAvailable(wil)
+    target_link_libraries(regtest PRIVATE WIL)
+endif()
+
 target_link_libraries(regtest PRIVATE Regression.Locator)
 
 add_custom_command(TARGET regtest POST_BUILD
