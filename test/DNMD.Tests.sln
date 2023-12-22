@@ -3,15 +3,11 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.5.33026.144
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Regression.UnitTests", "Regression.UnitTests\Regression.UnitTests.csproj", "{D5105B2A-6016-4B1C-A46B-5A841AE5AD26}"
-EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Regression.Performance", "Regression.Performance\Regression.Performance.csproj", "{3ED137D0-B5A2-4309-BDA5-BD9DE3FFC752}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Regression.TargetAssembly", "Regression.TargetAssembly\Regression.TargetAssembly.ilproj", "{D3BEEF3D-C137-49AC-96DD-E5B93E2F4C21}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Regression.DeltaBuilder", "Regression.DeltaBuilder\Regression.DeltaBuilder.csproj", "{6E62512A-7FB4-41DD-9E93-014D0280C77D}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Regression.Locator", "Regression.Locator\Regression.Locator.csproj", "{CD7DEF6B-7254-4541-951D-026CDB8928FD}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Regression.Locator", "Regression.Locator\Regression.Locator.csproj", "{CD7DEF6B-7254-4541-951D-026CDB8928FD}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -19,10 +15,6 @@ Global
 		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{D5105B2A-6016-4B1C-A46B-5A841AE5AD26}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{D5105B2A-6016-4B1C-A46B-5A841AE5AD26}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{D5105B2A-6016-4B1C-A46B-5A841AE5AD26}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{D5105B2A-6016-4B1C-A46B-5A841AE5AD26}.Release|Any CPU.Build.0 = Release|Any CPU
 		{3ED137D0-B5A2-4309-BDA5-BD9DE3FFC752}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{3ED137D0-B5A2-4309-BDA5-BD9DE3FFC752}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{3ED137D0-B5A2-4309-BDA5-BD9DE3FFC752}.Release|Any CPU.ActiveCfg = Release|Any CPU
@@ -31,10 +23,6 @@ Global
 		{D3BEEF3D-C137-49AC-96DD-E5B93E2F4C21}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{D3BEEF3D-C137-49AC-96DD-E5B93E2F4C21}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{D3BEEF3D-C137-49AC-96DD-E5B93E2F4C21}.Release|Any CPU.Build.0 = Release|Any CPU
-		{6E62512A-7FB4-41DD-9E93-014D0280C77D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{6E62512A-7FB4-41DD-9E93-014D0280C77D}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{6E62512A-7FB4-41DD-9E93-014D0280C77D}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{6E62512A-7FB4-41DD-9E93-014D0280C77D}.Release|Any CPU.Build.0 = Release|Any CPU
 		{CD7DEF6B-7254-4541-951D-026CDB8928FD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{CD7DEF6B-7254-4541-951D-026CDB8928FD}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{CD7DEF6B-7254-4541-951D-026CDB8928FD}.Release|Any CPU.ActiveCfg = Release|Any CPU

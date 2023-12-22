@@ -13,6 +13,7 @@
 namespace TestBaseline
 {
     extern dncp::com_ptr<IMetaDataDispenser> Metadata;
+    extern dncp::com_ptr<IMetaDataDispenserEx> DeltaMetadataBuilder;
     extern dncp::com_ptr<ISymUnmanagedBinder> Symbol;
 }
 

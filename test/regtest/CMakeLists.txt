@@ -27,4 +27,4 @@ add_custom_command(TARGET regtest POST_BUILD
 add_custom_command(TARGET regtest POST_BUILD
                     COMMAND ${CMAKE_COMMAND} -E copy_directory ${RegressionLocatorDirectory} $<TARGET_FILE_DIR:regtest>)
 
-gtest_discover_tests(regtest DISCOVERY_MODE PRE_TEST)
+gtest_discover_tests(regtest DISCOVERY_TIMEOUT 100 DISCOVERY_MODE PRE_TEST)

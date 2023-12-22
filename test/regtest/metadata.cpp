@@ -2098,6 +2098,8 @@ INSTANTIATE_TEST_SUITE_P(MetaDataImportTestCore, MetadataImportTest, testing::Va
 INSTANTIATE_TEST_SUITE_P(MetaDataImportTestFx4_0, MetadataImportTest, testing::ValuesIn(MetadataInDirectory(FindFrameworkInstall("v4.0.30319"))), PrintFileBlob);
 INSTANTIATE_TEST_SUITE_P(MetaDataImportTestFx2_0, MetadataImportTest, testing::ValuesIn(MetadataInDirectory(FindFrameworkInstall("v2.0.50727"))), PrintFileBlob);
 
+INSTANTIATE_TEST_SUITE_P(MetaDataImportTest_IndirectionTables, MetadataImportTest, testing::Values(ImageWithDelta()), PrintFileBlob);
+
 class MetaDataLongRunningTest : public RegressionTest
 {
 protected:
@@ -2191,4 +2193,4 @@ TEST_P(MetaDataLongRunningTest, TypeSpecs)
     }
 }
 
-INSTANTIATE_TEST_SUITE_P(MetaDataLongRunningTest_CoreLibs, MetaDataLongRunningTest, testing::ValuesIn(CoreLibs()));
+INSTANTIATE_TEST_SUITE_P(MetaDataLongRunningTest_CoreLibs, MetaDataLongRunningTest, testing::ValuesIn(CoreLibs()), PrintFileBlob);

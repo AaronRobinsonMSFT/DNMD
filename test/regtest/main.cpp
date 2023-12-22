@@ -12,6 +12,7 @@
 namespace TestBaseline
 {
     dncp::com_ptr<IMetaDataDispenser> Metadata = nullptr;
+    dncp::com_ptr<IMetaDataDispenserEx> DeltaMetadataBuilder = nullptr;
     dncp::com_ptr<ISymUnmanagedBinder> Symbol = nullptr;
 }
 
@@ -54,6 +55,14 @@ int main(int argc, char** argv)
     }
 
     RETURN_IF_FAILED(getDispenser(CLSID_CorMetaDataDispenser, IID_IMetaDataDispenser, (void**)&TestBaseline::Metadata));
+
+    RETURN_IF_FAILED(getDispenser(CLSID_CorMetaDataDispenser, IID_IMetaDataDispenserEx, (void**)&TestBaseline::DeltaMetadataBuilder));
+
+    VARIANT vt;
+    V_VT(&vt) = VT_UI4;
+    V_UI4(&vt) = MDUpdateExtension;
+    if (HRESULT hr = TestBaseline::DeltaMetadataBuilder->SetOption(MetaDataSetENC, &vt); FAILED(hr))
+        return hr;
 
     SetBaselineModulePath(coreClrPath.get());
 

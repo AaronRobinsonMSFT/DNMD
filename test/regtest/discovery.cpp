@@ -131,6 +131,60 @@ std::vector<FileBlob> CoreLibs()
     return scenarios;
 }
 
+namespace
+{
+    template<typename T>
+    struct OnExit
+    {
+        T callback;
+        ~OnExit()
+        {
+            callback();
+        }
+    };
+
+    template<typename T>
+    [[nodiscard]] OnExit<T> on_scope_exit(T callback)
+    {
+        return { callback };
+    }
+}
+
+#define THROW_IF_FAILED(hr) if (FAILED(hr)) throw std::runtime_error(#hr)
+
+FileBlob ImageWithDelta()
+{
+    FileBlob imageWithDelta = { "imageWithDelta", {} };
+    uint8_t* baseImage = nullptr;
+    uint32_t baseImageSize = 0;
+    uint8_t** deltas = nullptr;
+    uint32_t* deltaSizes = nullptr;
+    uint32_t numDeltas = 0;
+
+    GetImageAndDeltas(&baseImage, &baseImageSize, &numDeltas, &deltas, &deltaSizes);
+
+    auto _ = on_scope_exit([&]() { FreeImageAndDeltas(baseImage, numDeltas, deltas, deltaSizes); });
+
+    dncp::com_ptr<IMetaDataEmit> baseline;
+    THROW_IF_FAILED(TestBaseline::DeltaMetadataBuilder->OpenScopeOnMemory(baseImage, baseImageSize, 0, IID_IMetaDataEmit, (IUnknown**)&baseline));
+    
+    for (uint32_t i = 0; i < numDeltas; i++)
+    {
+        dncp::com_ptr<IMetaDataImport> delta;
+        THROW_IF_FAILED(TestBaseline::DeltaMetadataBuilder->OpenScopeOnMemory(deltas[i], deltaSizes[i], 0, IID_IMetaDataImport, (IUnknown**)&delta));
+
+        THROW_IF_FAILED(baseline->ApplyEditAndContinue(delta));
+    }
+
+    DWORD compositeImageSize;
+    THROW_IF_FAILED(baseline->GetSaveSize(CorSaveSize::cssAccurate, &compositeImageSize));
+
+    imageWithDelta.blob.resize(compositeImageSize);
+    THROW_IF_FAILED(baseline->SaveToMemory(imageWithDelta.blob.data(), compositeImageSize));
+
+    return imageWithDelta;
+}
+
 std::string GetBaselineDirectory()
 {
     return std::filesystem::path(baselinePath).parent_path().string();

@@ -17,8 +17,6 @@
 
 #include <internal/span.hpp>
 
-
-// TODO: Can't pre-create here as dncp::com_ptr is non-copyable, need to create in the test I guess. Change discovery to be a function that returns a vector of spans of the metadata in PE.
 struct FileBlob
 {
     std::string path;
@@ -37,6 +35,8 @@ std::vector<FileBlob> MetadataInDirectory(std::string directory);
 std::vector<FileBlob> CoreLibs();
 
 malloc_span<uint8_t> GetRegressionAssemblyMetadata();
+
+FileBlob ImageWithDelta();
 
 std::string FindFrameworkInstall(std::string version);
 

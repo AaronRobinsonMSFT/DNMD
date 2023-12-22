@@ -1,8 +1,5 @@
 set(SOURCES
   ./perf.cpp
-  ./regnative.cpp
-  ./unit_cor.cpp
-  ./unit_corsym.cpp
 )
 
 add_library(regnative
