@@ -6,4 +6,8 @@ add_library(regpal STATIC ${SOURCES})
 
 target_link_libraries(regpal PUBLIC Regression.Locator dncp::dncp)
 
+if (NOT WIN32)
+    target_link_libraries(regpal PUBLIC dncp::winhdrs)
+endif()
+
 target_include_directories(regpal PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
