@@ -1768,8 +1768,9 @@ class MetadataImportTest : public RegressionTest
 TEST_P(MetadataImportTest, ImportAPIs)
 {
     auto param = GetParam();
-    void const* data = param.blob.data();
-    uint32_t dataLen = (uint32_t)param.blob.size();
+    span<uint8_t> blob = GetMetadataForFile(param);
+    void const* data = blob;
+    uint32_t dataLen = (uint32_t)blob.size();
 
     // Load metadata
     dncp::com_ptr<IMetaDataImport2> baselineImport;
@@ -1990,12 +1991,12 @@ TEST_P(MetadataImportTest, ImportAPIs)
     }
 }
 
-INSTANTIATE_TEST_SUITE_P(MetaDataImportTestCore, MetadataImportTest, testing::ValuesIn(MetadataInDirectory(GetBaselineDirectory())), PrintFileBlob);
+INSTANTIATE_TEST_SUITE_P(MetaDataImportTestCore, MetadataImportTest, testing::ValuesIn(MetadataFilesInDirectory(GetBaselineDirectory())), PrintName);
 
-INSTANTIATE_TEST_SUITE_P(MetaDataImportTestFx4_0, MetadataImportTest, testing::ValuesIn(MetadataInDirectory(FindFrameworkInstall("v4.0.30319"))), PrintFileBlob);
-INSTANTIATE_TEST_SUITE_P(MetaDataImportTestFx2_0, MetadataImportTest, testing::ValuesIn(MetadataInDirectory(FindFrameworkInstall("v2.0.50727"))), PrintFileBlob);
+INSTANTIATE_TEST_SUITE_P(MetaDataImportTestFx4_0, MetadataImportTest, testing::ValuesIn(MetadataFilesInDirectory(FindFrameworkInstall("v4.0.30319"))), PrintName);
+INSTANTIATE_TEST_SUITE_P(MetaDataImportTestFx2_0, MetadataImportTest, testing::ValuesIn(MetadataFilesInDirectory(FindFrameworkInstall("v2.0.50727"))), PrintName);
 
-INSTANTIATE_TEST_SUITE_P(MetaDataImportTest_IndirectionTables, MetadataImportTest, testing::Values(ImageWithDelta()), PrintFileBlob);
+INSTANTIATE_TEST_SUITE_P(MetaDataImportTest_IndirectionTables, MetadataImportTest, testing::Values(MetadataFile{ MetadataFile::Kind::Generated, DeltaImageKey }), PrintName);
 
 class MetaDataLongRunningTest : public RegressionTest
 {
@@ -2004,8 +2005,9 @@ class MetaDataLongRunningTest : public RegressionTest
 TEST_P(MetaDataLongRunningTest, ImportAPIs)
 {
     auto param = GetParam();
-    void const* data = param.blob.data();
-    uint32_t dataLen = (uint32_t)param.blob.size();
+    span<uint8_t> blob = GetMetadataForFile(param);
+    void const* data = blob;
+    uint32_t dataLen = (uint32_t)blob.size();
 
     // Load metadata
     dncp::com_ptr<IMetaDataImport2> baselineImport;
@@ -2095,4 +2097,4 @@ TEST_P(MetaDataLongRunningTest, ImportAPIs)
     }
 }
 
-INSTANTIATE_TEST_SUITE_P(MetaDataLongRunningTest_CoreLibs, MetaDataLongRunningTest, testing::ValuesIn(CoreLibs()), PrintFileBlob);
+INSTANTIATE_TEST_SUITE_P(MetaDataLongRunningTest_CoreLibs, MetaDataLongRunningTest, testing::ValuesIn(CoreLibFiles()), PrintName);

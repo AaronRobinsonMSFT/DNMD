@@ -2,7 +2,8 @@
 #include "baseline.h"
 #include <pal.hpp>
 #include <filesystem>
-#include <map>
+#include <algorithm>
+#include <unordered_map>
 
 #include <internal/dnmd_tools_platform.hpp>
 
@@ -11,112 +12,14 @@
 #endif
 #include <Regression.LocatorNE.h>
 
-namespace
-{
-    malloc_span<uint8_t> ReadMetadataFromFile(std::filesystem::path path)
-    {
-        malloc_span<uint8_t> b;
-        if (!pal::ReadFile(path, b))
-        {
-            std::cerr << "Failed to read in '" << path << "'\n";
-            return {};
-        }
+#define THROW_IF_FAILED(hr) if (FAILED(hr)) throw std::runtime_error(#hr)
 
-        if (!get_metadata_from_pe(b))
-        {
-            std::cerr << "Failed to read '" << path << "' as PE\n";
-            return {};
-        }
-
-        return b;
-    }
-}
-
-std::vector<FileBlob> MetadataInDirectory(std::string directory)
-{
-    std::vector<FileBlob> scenarios;
-    
-    if (!std::filesystem::exists(directory))
-    {
-        std::cerr << "Directory '" << directory << "' does not exist\n";
-        return scenarios;
-    }
-
-    for (auto& entry : std::filesystem::directory_iterator(directory))
-    {
-        if (entry.is_regular_file())
-        {
-            auto path = entry.path();
-            auto ext = path.extension();
-            if (ext == ".dll")
-            {
-                FileBlob scenario;
-                scenario.path = path.filename().generic_string();
-
-                malloc_span<uint8_t> b = ReadMetadataFromFile(path);
-
-                if (b.size() == 0)
-                {
-                    // Some DLLs don't have metadata, so skip them.
-                    continue;
-                }
-
-                scenario.blob = std::vector<uint8_t>{ (uint8_t*)b, b + b.size() };
-                scenarios.push_back(std::move(scenario));
-            }
-        }
-    }
-
-    return scenarios;
-}
 
 namespace
 {
     std::string baselinePath;
     std::string regressionAssemblyPath;
-}
 
-std::vector<FileBlob> CoreLibs()
-{
-    std::vector<FileBlob> scenarios;
-
-    auto coreclrSystemPrivateCoreLib = std::filesystem::path(baselinePath).parent_path() / "System.Private.CoreLib.dll";
-    auto b = ReadMetadataFromFile(coreclrSystemPrivateCoreLib);
-    if (b.size() == 0)
-    {
-        std::cerr << "Failed to read in '" << coreclrSystemPrivateCoreLib << "'\n";
-        return scenarios;
-    }
-
-    scenarios.push_back({ "netcoreapp", std::vector<uint8_t>{ (uint8_t*)b, b + b.size() } });
-
-    auto fx4mscorlib = std::filesystem::path(FindFrameworkInstall("v4.0.30319")) / "mscorlib.dll";
-    b = ReadMetadataFromFile(coreclrSystemPrivateCoreLib);
-    if (b.size() == 0)
-    {
-        std::cerr << "Failed to read in '" << coreclrSystemPrivateCoreLib << "'\n";
-        return scenarios;
-    }
-
-    scenarios.push_back({ "fx4", std::vector<uint8_t>{ (uint8_t*)b, b + b.size() } });
-    auto fx2mscorlib = std::filesystem::path(FindFrameworkInstall("v2.0.50727")) / "mscorlib.dll";
-    if (std::filesystem::exists(fx2mscorlib))
-    {
-        b = ReadMetadataFromFile(coreclrSystemPrivateCoreLib);
-        if (b.size() == 0)
-        {
-            std::cerr << "Failed to read in '" << coreclrSystemPrivateCoreLib << "'\n";
-            return scenarios;
-        }
-
-        scenarios.push_back({ "fx2", std::vector<uint8_t>{ (uint8_t*)b, b + b.size() } });
-    }
-
-    return scenarios;
-}
-
-namespace
-{
     template<typename T>
     struct OnExit
     {
@@ -132,41 +35,172 @@ namespace
     {
         return { callback };
     }
-}
 
-#define THROW_IF_FAILED(hr) if (FAILED(hr)) throw std::runtime_error(#hr)
-
-FileBlob ImageWithDelta()
-{
-    FileBlob imageWithDelta = { "imageWithDelta", {} };
-    uint8_t* baseImage = nullptr;
-    uint32_t baseImageSize = 0;
-    uint8_t** deltas = nullptr;
-    uint32_t* deltaSizes = nullptr;
-    uint32_t numDeltas = 0;
-
-    GetImageAndDeltas(&baseImage, &baseImageSize, &numDeltas, &deltas, &deltaSizes);
-
-    auto _ = on_scope_exit([&]() { FreeImageAndDeltas(baseImage, numDeltas, deltas, deltaSizes); });
-
-    dncp::com_ptr<IMetaDataEmit> baseline;
-    THROW_IF_FAILED(TestBaseline::DeltaMetadataBuilder->OpenScopeOnMemory(baseImage, baseImageSize, 0, IID_IMetaDataEmit, (IUnknown**)&baseline));
-    
-    for (uint32_t i = 0; i < numDeltas; i++)
+    malloc_span<uint8_t> ReadMetadataFromFile(std::filesystem::path path)
     {
-        dncp::com_ptr<IMetaDataImport> delta;
-        THROW_IF_FAILED(TestBaseline::DeltaMetadataBuilder->OpenScopeOnMemory(deltas[i], deltaSizes[i], 0, IID_IMetaDataImport, (IUnknown**)&delta));
+        malloc_span<uint8_t> b;
+        if (!pal::ReadFile(path, b)
+            || !get_metadata_from_pe(b))
+        {
+            return {};
+        }
 
-        THROW_IF_FAILED(baseline->ApplyEditAndContinue(delta));
+        return b;
+    }
+    
+    malloc_span<uint8_t> CreateImageWithAppliedDelta()
+    {
+        uint8_t* baseImage = nullptr;
+        uint32_t baseImageSize = 0;
+        uint8_t** deltas = nullptr;
+        uint32_t* deltaSizes = nullptr;
+        uint32_t numDeltas = 0;
+
+        GetImageAndDeltas(&baseImage, &baseImageSize, &numDeltas, &deltas, &deltaSizes);
+
+        auto _ = on_scope_exit([&]() { FreeImageAndDeltas(baseImage, numDeltas, deltas, deltaSizes); });
+
+        dncp::com_ptr<IMetaDataEmit> baseline;
+        THROW_IF_FAILED(TestBaseline::DeltaMetadataBuilder->OpenScopeOnMemory(baseImage, baseImageSize, 0, IID_IMetaDataEmit, (IUnknown**)&baseline));
+        
+        for (uint32_t i = 0; i < numDeltas; i++)
+        {
+            dncp::com_ptr<IMetaDataImport> delta;
+            THROW_IF_FAILED(TestBaseline::DeltaMetadataBuilder->OpenScopeOnMemory(deltas[i], deltaSizes[i], 0, IID_IMetaDataImport, (IUnknown**)&delta));
+
+            THROW_IF_FAILED(baseline->ApplyEditAndContinue(delta));
+        }
+
+        malloc_span<uint8_t> imageWithDelta;
+        DWORD compositeImageSize;
+        THROW_IF_FAILED(baseline->GetSaveSize(CorSaveSize::cssAccurate, &compositeImageSize));
+        
+        imageWithDelta = { (uint8_t*)malloc(compositeImageSize), compositeImageSize };
+
+        THROW_IF_FAILED(baseline->SaveToMemory(imageWithDelta, compositeImageSize));
+
+        return imageWithDelta;
     }
 
-    DWORD compositeImageSize;
-    THROW_IF_FAILED(baseline->GetSaveSize(CorSaveSize::cssAccurate, &compositeImageSize));
+    malloc_span<uint8_t> GetMetadataFromKey(std::string key)
+    {
+        if (key == DeltaImageKey)
+        {
+            return CreateImageWithAppliedDelta();
+        }
+        return {};
+    }
+}
 
-    imageWithDelta.blob.resize(compositeImageSize);
-    THROW_IF_FAILED(baseline->SaveToMemory(imageWithDelta.blob.data(), compositeImageSize));
+std::vector<MetadataFile> MetadataFilesInDirectory(std::string directory)
+{
+    std::vector<MetadataFile> scenarios;
 
-    return imageWithDelta;
+    if (!std::filesystem::exists(directory))
+    {
+        std::cerr << "Directory '" << directory << "' does not exist\n";
+        return scenarios;
+    }
+
+    for (auto& entry : std::filesystem::directory_iterator(directory))
+    {
+        if (entry.is_regular_file())
+        {
+            auto path = entry.path();
+            auto ext = path.extension();
+            if (ext == ".dll")
+            {
+                malloc_span<uint8_t> b = ReadMetadataFromFile(path);
+
+                if (b.size() == 0)
+                {
+                    // Some DLLs don't have metadata, so skip them.
+                    continue;
+                }
+
+                scenarios.emplace_back(MetadataFile::Kind::OnDisk, path.generic_string());
+            }
+        }
+    }
+
+    return scenarios;
+}
+
+std::vector<MetadataFile> CoreLibFiles()
+{
+    std::vector<MetadataFile> scenarios;
+
+    scenarios.emplace_back(MetadataFile::Kind::OnDisk, (std::filesystem::path(baselinePath).parent_path() / "System.Private.CoreLib.dll").generic_string());
+    scenarios.emplace_back(MetadataFile::Kind::OnDisk, (std::filesystem::path(FindFrameworkInstall("v4.0.30319")) / "mscorlib.dll").generic_string());
+
+    auto fx2mscorlib = std::filesystem::path(FindFrameworkInstall("v2.0.50727")) / "mscorlib.dll";
+    if (std::filesystem::exists(fx2mscorlib))
+    {
+        scenarios.emplace_back(MetadataFile::Kind::OnDisk, fx2mscorlib.generic_string());
+    }
+    return scenarios;
+}
+
+namespace
+{
+    std::mutex metadataCacheMutex;
+
+    struct MetadataFileHash
+    {
+        size_t operator()(const MetadataFile& file) const
+        {
+            return std::hash<std::string>{}(file.pathOrKey);
+        }
+    };
+
+    std::unordered_map<MetadataFile, malloc_span<uint8_t>, MetadataFileHash> metadataCache;
+}
+
+span<uint8_t> GetMetadataForFile(MetadataFile file)
+{
+    std::lock_guard<std::mutex> lock{ metadataCacheMutex };
+    auto it = metadataCache.find(file);
+    if (it != metadataCache.end())
+    {
+        return it->second;
+    }
+
+    malloc_span<uint8_t> b;
+    if (file.kind == MetadataFile::Kind::OnDisk)
+    {
+        auto path = std::filesystem::path(baselinePath).parent_path() / file.pathOrKey;
+        b = ReadMetadataFromFile(path);
+    }
+    else
+    {
+        b = GetMetadataFromKey(file.pathOrKey.c_str());
+    }
+
+    if (b.size() == 0)
+    {
+        return {};
+    }
+
+    span<uint8_t> spanToReturn = b;
+
+    auto [_, inserted] = metadataCache.emplace(std::move(file), std::move(b));
+    assert(inserted);
+    return spanToReturn;
+}
+
+std::string PrintName(testing::TestParamInfo<MetadataFile> info)
+{
+    std::string name;
+    if (info.param.kind == MetadataFile::Kind::OnDisk)
+    {
+        name = std::filesystem::path(info.param.pathOrKey).stem().generic_string();
+        std::replace(name.begin(), name.end(), '.', '_');
+    }
+    else
+    {
+        name = info.param.pathOrKey + "_InMemory";
+    }
+    return name;
 }
 
 std::string GetBaselineDirectory()

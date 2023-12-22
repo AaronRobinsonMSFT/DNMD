@@ -13,30 +13,38 @@
 #include <corsym.h>
 
 #include <vector>
-#include <algorithm>
-
 #include <internal/span.hpp>
 
-struct FileBlob
+struct MetadataFile final
 {
-    std::string path;
-    std::vector<uint8_t> blob;
+    enum class Kind
+    {
+        OnDisk,
+        Generated
+    } kind;
+
+    MetadataFile(Kind kind, std::string pathOrKey)
+    : pathOrKey(std::move(pathOrKey)), kind(kind) {}
+
+    std::string pathOrKey;
+    
+    bool operator==(const MetadataFile& rhs) const noexcept
+    {
+        return kind == rhs.kind && pathOrKey == rhs.pathOrKey;
+    }
 };
 
-inline std::string PrintFileBlob(testing::TestParamInfo<FileBlob> info)
-{
-    std::string name = info.param.path;
-    std::replace(name.begin(), name.end(), '.', '_');
-    return name;
-}
+inline static std::string DeltaImageKey = "DeltaImage";
 
-std::vector<FileBlob> MetadataInDirectory(std::string directory);
+std::string PrintName(testing::TestParamInfo<MetadataFile> info);
 
-std::vector<FileBlob> CoreLibs();
+std::vector<MetadataFile> MetadataFilesInDirectory(std::string directory);
+
+std::vector<MetadataFile> CoreLibFiles();
+
+span<uint8_t> GetMetadataForFile(MetadataFile file);
 
 malloc_span<uint8_t> GetRegressionAssemblyMetadata();
-
-FileBlob ImageWithDelta();
 
 std::string FindFrameworkInstall(std::string version);
 
@@ -46,7 +54,7 @@ void SetBaselineModulePath(std::string path);
 
 void SetRegressionAssemblyPath(std::string path);
 
-class RegressionTest : public ::testing::TestWithParam<FileBlob>
+class RegressionTest : public ::testing::TestWithParam<MetadataFile>
 {
 protected:
     using TokenList = std::vector<uint32_t>;

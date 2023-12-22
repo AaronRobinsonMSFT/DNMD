@@ -22,6 +22,8 @@ FetchContent_Declare(
   v1.8.3
 )
 
+# Don't build the tests for the benchmark library.
+set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest benchmark)
 
 include(GoogleTest)
