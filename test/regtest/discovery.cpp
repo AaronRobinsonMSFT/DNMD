@@ -1,5 +1,6 @@
 #include "fixtures.h"
 #include "baseline.h"
+#include <pal.hpp>
 #include <filesystem>
 #include <map>
 
@@ -12,27 +13,10 @@
 
 namespace
 {
-    bool read_in_file(std::filesystem::path path, malloc_span<uint8_t>& b)
-    {
-        // Read in the entire file
-        std::ifstream fd{ path, std::ios::binary };
-        if (!fd)
-            return false;
-
-        size_t size = std::filesystem::file_size(path);
-        if (size == 0)
-            return false;
-
-        b = { (uint8_t*)std::malloc(size), size };
-
-        fd.read((char*)(uint8_t*)b, b.size());
-        return true;
-    }
-
     malloc_span<uint8_t> ReadMetadataFromFile(std::filesystem::path path)
     {
         malloc_span<uint8_t> b;
-        if (!read_in_file(path, b))
+        if (!pal::ReadFile(path, b))
         {
             std::cerr << "Failed to read in '" << path << "'\n";
             return {};

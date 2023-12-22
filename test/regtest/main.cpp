@@ -16,11 +16,6 @@ namespace TestBaseline
     dncp::com_ptr<ISymUnmanagedBinder> Symbol = nullptr;
 }
 
-namespace
-{
-    using MetaDataGetDispenser = HRESULT(__stdcall*)(REFCLSID, REFIID, LPVOID*);
-}
-
 #define RETURN_IF_FAILED(x) { auto hr = x; if (FAILED(hr)) return hr; }
 
 class ThrowListener final : public testing::EmptyTestEventListener {
@@ -33,30 +28,11 @@ class ThrowListener final : public testing::EmptyTestEventListener {
 
 int main(int argc, char** argv)
 {
-    dncp::cotaskmem_ptr<char> coreClrPath{ (char*)GetCoreClrPath() };
-    if (coreClrPath == nullptr)
-    {
-        std::cout << "Failed to get coreclr path" << std::endl;
-        return -1;
-    }
+    RETURN_IF_FAILED(pal::GetBaselineMetadataDispenser(&TestBaseline::Metadata));
 
-    auto mod = LoadModule(coreClrPath.get());
-    if (mod == nullptr)
-    {
-        std::cout << "Failed to load metadata baseline module: " << coreClrPath.get() << std::endl;
-        return -1;
-    }
-
-    auto getDispenser = (MetaDataGetDispenser)GetSymbol(mod, "MetaDataGetDispenser");
-    if (getDispenser == nullptr)
-    {
-        std::cout << "Failed to find MetaDataGetDispenser in module: " << coreClrPath.get() << std::endl;
-        return -1;
-    }
-
-    RETURN_IF_FAILED(getDispenser(CLSID_CorMetaDataDispenser, IID_IMetaDataDispenser, (void**)&TestBaseline::Metadata));
-
-    RETURN_IF_FAILED(getDispenser(CLSID_CorMetaDataDispenser, IID_IMetaDataDispenserEx, (void**)&TestBaseline::DeltaMetadataBuilder));
+    dncp::com_ptr<IMetaDataDispenser> deltaBuilder;
+    RETURN_IF_FAILED(pal::GetBaselineMetadataDispenser(&deltaBuilder));
+    RETURN_IF_FAILED(deltaBuilder->QueryInterface(IID_IMetaDataDispenserEx, (void**)&TestBaseline::DeltaMetadataBuilder));
 
     VARIANT vt;
     V_VT(&vt) = VT_UI4;
@@ -64,6 +40,7 @@ int main(int argc, char** argv)
     if (HRESULT hr = TestBaseline::DeltaMetadataBuilder->SetOption(MetaDataSetENC, &vt); FAILED(hr))
         return hr;
 
+    dncp::cotaskmem_ptr<char> coreClrPath{ (char*)GetCoreClrPath() };
     SetBaselineModulePath(coreClrPath.get());
 
     std::cout << "Loaded metadata baseline module: " << coreClrPath.get() << std::endl;

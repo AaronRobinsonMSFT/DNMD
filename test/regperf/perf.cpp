@@ -1,12 +1,16 @@
+#include <pal.hpp>
+#include <internal/dnmd_platform.hpp>
+#include <dnmd_interfaces.hpp>
+#include <internal/dnmd_tools_platform.hpp>
+
+#include <benchmark/benchmark.h>
+
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <cassert>
-
-#include <internal/dnmd_platform.hpp>
-#include <dnmd_interfaces.hpp>
-
-#include <benchmark/benchmark.h>
+#include <iostream>
+#include <filesystem>
 
 #ifdef _WIN32
 #define DNNE_API_OVERRIDE __declspec(dllimport)
@@ -19,6 +23,7 @@
 #define EXPORT extern "C" __attribute__((__visibility__("default")))
 #endif // !_MSC_VER
 
+#define RETURN_IF_FAILED(x) { auto hr = x; if (FAILED(hr)) return hr; }
 
 namespace
 {
@@ -89,162 +94,128 @@ namespace
     }
 }
 
-EXPORT
 HRESULT PerfInitialize(
     void const* data,
-    uint32_t dataLen,
-    IMetaDataDispenser* baseline)
+    uint32_t dataLen)
 {
-    if (data == nullptr || baseline == nullptr)
+    if (data == nullptr)
         return E_INVALIDARG;
 
     g_data = data;
     g_dataLen = dataLen;
 
-    (void)baseline->AddRef();
-    g_baselineDisp = baseline;
+    RETURN_IF_FAILED(CreateImport(g_baselineDisp, &g_baselineImport));
 
-    HRESULT hr;
-    if (FAILED(hr = CreateImport(g_baselineDisp, &g_baselineImport)))
-        return hr;
-
-    if (FAILED(hr = GetDispenser(IID_IMetaDataDispenser, reinterpret_cast<void**>(&g_currentDisp))))
-        return hr;
-
-    if (FAILED(hr = CreateImport(g_currentDisp, &g_currentImport)))
-        return hr;
+    RETURN_IF_FAILED(CreateImport(g_currentDisp, &g_currentImport));
 
     return S_OK;
 }
 
-EXPORT
-HRESULT PerfBaselineCreateImport(int iter)
+void CreateImport(benchmark::State& state, IMetaDataDispenser* disp)
 {
-    HRESULT hr;
     IMetaDataImport* import;
-    for (int i = 0; i < iter; ++i)
+    for (auto _ : state)
     {
-        if (FAILED(hr = CreateImport(g_baselineDisp, &import)))
-            return hr;
-        (void)import->Release();
+        if (SUCCEEDED(CreateImport(disp, &import)))
+            (void)import->Release();
     }
-    return S_OK;
 }
 
-EXPORT
-HRESULT PerfCurrentCreateImport(int iter)
+BENCHMARK_CAPTURE(CreateImport, BaselineCreateImport, g_baselineDisp);
+BENCHMARK_CAPTURE(CreateImport, CurrentCreateImport, g_currentDisp);
+
+#define IMPORT_BENCHMARK(func) \
+    BENCHMARK_CAPTURE(func, Baseline##func, g_baselineImport); \
+    BENCHMARK_CAPTURE(func, Current##func, g_currentImport);
+
+void EnumTypeDefs(benchmark::State& state, IMetaDataImport* import)
+{
+    for (auto _ : state)
+    {
+        if (FAILED(EnumTypeDefs(import)))
+        {
+            state.SkipWithError("Failed to enumerate typedefs");
+        }
+    }
+}
+
+IMPORT_BENCHMARK(EnumTypeDefs);
+
+void GetScopeProps(benchmark::State& state, IMetaDataImport* import)
 {
     HRESULT hr;
-    IMetaDataImport* import;
-    for (int i = 0; i < iter; ++i)
+    for (auto _ : state)
     {
-        if (FAILED(hr = CreateImport(g_currentDisp, &import)))
-            return hr;
-        (void)import->Release();
+        if (FAILED(hr = GetScopeProps(import)))
+        {
+            state.SkipWithError("Failed to get scope props");
+        }
     }
-    return S_OK;
 }
 
-EXPORT
-HRESULT PerfBaselineEnumTypeDefs(int iter)
+IMPORT_BENCHMARK(GetScopeProps);
+
+void EnumUserStrings(benchmark::State& state, IMetaDataImport* import)
 {
     HRESULT hr;
-    for (int i = 0; i < iter; ++i)
+    for (auto _ : state)
     {
-        if (FAILED(hr = EnumTypeDefs(g_baselineImport)))
-            return hr;
+        if (FAILED(hr = EnumUserStrings(import)))
+        {
+            state.SkipWithError("Failed to enumerate user strings");
+        }
     }
-    return S_OK;
 }
 
-EXPORT
-HRESULT PerfCurrentEnumTypeDefs(int iter)
+IMPORT_BENCHMARK(EnumUserStrings);
+
+void EnumCustomAttributeByName(benchmark::State& state, IMetaDataImport* import)
 {
     HRESULT hr;
-    for (int i = 0; i < iter; ++i)
+    for (auto _ : state)
     {
-        if (FAILED(hr = EnumTypeDefs(g_currentImport)))
-            return hr;
+        if (FAILED(hr = GetCustomAttributeByName(import)))
+        {
+            state.SkipWithError("Failed to get custom attributes");
+        }
     }
-    return S_OK;
 }
 
-EXPORT
-HRESULT PerfBaselineGetScopeProps(int iter)
-{
-    HRESULT hr;
-    for (int i = 0; i < iter; ++i)
-    {
-        if (FAILED(hr = GetScopeProps(g_baselineImport)))
-            return hr;
-    }
-    return S_OK;
-}
-
-EXPORT
-HRESULT PerfCurrentGetScopeProps(int iter)
-{
-    HRESULT hr;
-    for (int i = 0; i < iter; ++i)
-    {
-        if (FAILED(hr = GetScopeProps(g_currentImport)))
-            return hr;
-    }
-    return S_OK;
-}
-
-EXPORT
-HRESULT PerfBaselineEnumUserStrings(int iter)
-{
-    HRESULT hr;
-    for (int i = 0; i < iter; ++i)
-    {
-        if (FAILED(hr = EnumUserStrings(g_baselineImport)))
-            return hr;
-    }
-    return S_OK;
-}
-
-EXPORT
-HRESULT PerfCurrentEnumUserStrings(int iter)
-{
-    HRESULT hr;
-    for (int i = 0; i < iter; ++i)
-    {
-        if (FAILED(hr = EnumUserStrings(g_currentImport)))
-            return hr;
-    }
-    return S_OK;
-}
-
-EXPORT
-HRESULT PerfBaselineGetCustomAttributeByName(int iter)
-{
-    for (int i = 0; i < iter; ++i)
-    {
-        if (S_FALSE != GetCustomAttributeByName(g_baselineImport))
-            return E_FAIL;
-    }
-    return S_OK;
-}
-
-EXPORT
-HRESULT PerfCurrentGetCustomAttributeByName(int iter)
-{
-    for (int i = 0; i < iter; ++i)
-    {
-        if (S_FALSE != GetCustomAttributeByName(g_currentImport))
-            return E_FAIL;
-    }
-    return S_OK;
-}
-
-#define RETURN_IF_FAILED(x) { auto hr = x; if (FAILED(hr)) return hr; }
+IMPORT_BENCHMARK(EnumCustomAttributeByName);
 
 int main(int argc, char** argv)
 {
-    // TODO: Refactor regtest/pal to be a static lib that we can use from here.
-    // TODO: Can we use nethost to discover hostfxr and use hostfxr APIs to discover the baseline?
+    RETURN_IF_FAILED(pal::GetBaselineMetadataDispenser(&g_baselineDisp));
+    RETURN_IF_FAILED(GetDispenser(IID_IMetaDataDispenser, reinterpret_cast<void**>(&g_currentDisp)));
+    dncp::cotaskmem_ptr<char> coreClrPath{ (char*)GetCoreClrPath() };
+    if (coreClrPath == nullptr)
+    {
+        std::cerr << "Failed to get coreclr path" << std::endl;
+        return -1;
+    }
+
+    std::filesystem::path dataImagePath = coreClrPath.get();
+    dataImagePath.replace_filename("System.Private.CoreLib.dll");
+
+    std::cerr << "Loading System.Private.CoreLib from: " << dataImagePath << std::endl;
+    
+    malloc_span<uint8_t> dataImage;
+    if (!pal::ReadFile(dataImagePath, dataImage))
+    {
+        std::cerr << "Failed to read System.Private.CoreLib" << std::endl;
+        return -1;
+    }
+
+    if (!get_metadata_from_pe(dataImage))
+    {
+        std::cerr << "Failed to get metadata from System.Private.CoreLib" << std::endl;
+        return -1;
+    }
+
+    RETURN_IF_FAILED(PerfInitialize(
+        dataImage,
+        (uint32_t)dataImage.size()));
+
     benchmark::Initialize(&argc, argv);
     benchmark::RunSpecifiedBenchmarks();
     benchmark::Shutdown();
