@@ -6,11 +6,19 @@
 #include <internal/dnmd_platform.hpp>
 #include <dnmd_interfaces.hpp>
 
+#include <benchmark/benchmark.h>
+
+#ifdef _WIN32
+#define DNNE_API_OVERRIDE __declspec(dllimport)
+#endif
+#include <Regression.LocatorNE.h>
+
 #ifdef _MSC_VER
 #define EXPORT extern "C" __declspec(dllexport)
 #else
 #define EXPORT extern "C" __attribute__((__visibility__("default")))
 #endif // !_MSC_VER
+
 
 namespace
 {
@@ -229,4 +237,16 @@ HRESULT PerfCurrentGetCustomAttributeByName(int iter)
             return E_FAIL;
     }
     return S_OK;
+}
+
+#define RETURN_IF_FAILED(x) { auto hr = x; if (FAILED(hr)) return hr; }
+
+int main(int argc, char** argv)
+{
+    // TODO: Refactor regtest/pal to be a static lib that we can use from here.
+    // TODO: Can we use nethost to discover hostfxr and use hostfxr APIs to discover the baseline?
+    benchmark::Initialize(&argc, argv);
+    benchmark::RunSpecifiedBenchmarks();
+    benchmark::Shutdown();
+    return 0;
 }

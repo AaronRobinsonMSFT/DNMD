@@ -1,7 +1,8 @@
 # Configure the compiler
 include(../configure.cmake)
+include(ImportManagedComponents.cmake)
 
-add_subdirectory(regnative/)
+add_subdirectory(regperf)
 
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -19,7 +20,6 @@ FetchContent_Declare(
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
-include(ImportManagedComponents.cmake)
 
 include(GoogleTest)
 
