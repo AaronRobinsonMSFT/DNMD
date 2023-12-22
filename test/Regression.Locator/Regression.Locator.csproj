@@ -11,8 +11,6 @@
 
   <ItemGroup>
     <PackageReference Include="DNNE" Version="2.0.6" />
-	  <PackageReference Include="Basic.Reference.Assemblies.NetStandard20" Version="1.4.1" />
-	  <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.4.0" />
   </ItemGroup>
 
   <ItemGroup>

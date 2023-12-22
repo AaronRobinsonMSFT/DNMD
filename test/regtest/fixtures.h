@@ -34,7 +34,7 @@ struct MetadataFile final
     }
 };
 
-inline static std::string DeltaImageKey = "DeltaImage";
+inline static std::string IndirectionTablesKey = "IndirectionTables";
 
 std::string PrintName(testing::TestParamInfo<MetadataFile> info);
 

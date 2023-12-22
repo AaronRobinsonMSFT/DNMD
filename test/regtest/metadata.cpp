@@ -1996,7 +1996,7 @@ INSTANTIATE_TEST_SUITE_P(MetaDataImportTestCore, MetadataImportTest, testing::Va
 INSTANTIATE_TEST_SUITE_P(MetaDataImportTestFx4_0, MetadataImportTest, testing::ValuesIn(MetadataFilesInDirectory(FindFrameworkInstall("v4.0.30319"))), PrintName);
 INSTANTIATE_TEST_SUITE_P(MetaDataImportTestFx2_0, MetadataImportTest, testing::ValuesIn(MetadataFilesInDirectory(FindFrameworkInstall("v2.0.50727"))), PrintName);
 
-INSTANTIATE_TEST_SUITE_P(MetaDataImportTest_IndirectionTables, MetadataImportTest, testing::Values(MetadataFile{ MetadataFile::Kind::Generated, DeltaImageKey }), PrintName);
+INSTANTIATE_TEST_SUITE_P(MetaDataImportTest_IndirectionTables, MetadataImportTest, testing::Values(MetadataFile{ MetadataFile::Kind::Generated, IndirectionTablesKey }), PrintName);
 
 class MetaDataLongRunningTest : public RegressionTest
 {

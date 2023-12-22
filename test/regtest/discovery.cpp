@@ -48,46 +48,114 @@ namespace
 
         return b;
     }
-    
-    malloc_span<uint8_t> CreateImageWithAppliedDelta()
+
+    // Create an image with indirection tables, like an image that has had a delta applied to it.
+    // This is used to test that the importer can handle out-of-order rows.
+    // This image is intentinally minimal as our other regression tests cover more full-filled metadata scenarios.
+    malloc_span<uint8_t> CreateImageWithIndirectionTables()
     {
-        uint8_t* baseImage = nullptr;
-        uint32_t baseImageSize = 0;
-        uint8_t** deltas = nullptr;
-        uint32_t* deltaSizes = nullptr;
-        uint32_t numDeltas = 0;
+        dncp::com_ptr<IMetaDataEmit> image;
+        THROW_IF_FAILED(TestBaseline::DeltaMetadataBuilder->DefineScope(CLSID_CorMetaDataRuntime, 0, IID_IMetaDataEmit, (IUnknown**)&image));
 
-        GetImageAndDeltas(&baseImage, &baseImageSize, &numDeltas, &deltas, &deltaSizes);
+        THROW_IF_FAILED(image->SetModuleProps(W("IndirectionTables.dll")));
 
-        auto _ = on_scope_exit([&]() { FreeImageAndDeltas(baseImage, numDeltas, deltas, deltaSizes); });
+        dncp::com_ptr<IMetaDataAssemblyEmit> assemblyEmit;
+        THROW_IF_FAILED(image->QueryInterface(IID_IMetaDataAssemblyEmit, (void**)&assemblyEmit));
 
-        dncp::com_ptr<IMetaDataEmit> baseline;
-        THROW_IF_FAILED(TestBaseline::DeltaMetadataBuilder->OpenScopeOnMemory(baseImage, baseImageSize, 0, IID_IMetaDataEmit, (IUnknown**)&baseline));
+        ASSEMBLYMETADATA assemblyMetadata = { 0 };
+
+        mdAssemblyRef systemRuntimeRef;
+        THROW_IF_FAILED(assemblyEmit->DefineAssemblyRef(nullptr, 0, W("System.Runtime"), &assemblyMetadata, nullptr, 0, 0, &systemRuntimeRef));
+
+        mdTypeRef systemObject;
+        THROW_IF_FAILED(image->DefineTypeRefByName(systemRuntimeRef, W("System.Object"), &systemObject));
         
-        for (uint32_t i = 0; i < numDeltas; i++)
-        {
-            dncp::com_ptr<IMetaDataImport> delta;
-            THROW_IF_FAILED(TestBaseline::DeltaMetadataBuilder->OpenScopeOnMemory(deltas[i], deltaSizes[i], 0, IID_IMetaDataImport, (IUnknown**)&delta));
+        // Define two types so we can define out-of-order rows.
+        mdTypeDef type1;
+        THROW_IF_FAILED(image->DefineTypeDef(W("Type1"), tdSealed, systemObject, nullptr, &type1));
 
-            THROW_IF_FAILED(baseline->ApplyEditAndContinue(delta));
-        }
+        mdTypeDef type2;
+        THROW_IF_FAILED(image->DefineTypeDef(W("Type2"), tdSealed, systemObject, nullptr, &type2));
 
-        malloc_span<uint8_t> imageWithDelta;
-        DWORD compositeImageSize;
-        THROW_IF_FAILED(baseline->GetSaveSize(CorSaveSize::cssAccurate, &compositeImageSize));
+        // Define a signature that has two parameters and a return type.
+        // This will provide us with enough structure to define out-of-order Param rows.
+        std::array signature = { (uint8_t)IMAGE_CEE_CS_CALLCONV_DEFAULT, (uint8_t)0x02, (uint8_t)ELEMENT_TYPE_I4, (uint8_t)ELEMENT_TYPE_I2, (uint8_t)ELEMENT_TYPE_I8};
+
+        mdMethodDef method1;
+        THROW_IF_FAILED(image->DefineMethod(type1, W("Method1"), 0, signature.data(), (ULONG)signature.size(), 0, 0, &method1));
+
+        mdParamDef param1;
+        THROW_IF_FAILED(image->DefineParam(method1, 2, W("Param2"), 0, 0, nullptr, 0, &param1));
+
+        // Define the Param row for the first parameter after we've already defined the second parameter.
+        mdParamDef paramOutOfOrder;
+        THROW_IF_FAILED(image->DefineParam(method1, 1, W("Param1"), 0, 0, nullptr, 0, &paramOutOfOrder));
+
+        mdMethodDef method2;
+        THROW_IF_FAILED(image->DefineMethod(type2, W("Method2"), 0, signature.data(), (ULONG)signature.size(), 0, 0, &method2));
         
-        imageWithDelta = { (uint8_t*)malloc(compositeImageSize), compositeImageSize };
+        // Define a method on the first type after we've already defined a method on the second type.
+        mdMethodDef methodOutOfOrder;
+        THROW_IF_FAILED(image->DefineMethod(type1, W("MethodOutOfOrder"), 0, signature.data(), (ULONG)signature.size(), 0, 0, &methodOutOfOrder));
 
-        THROW_IF_FAILED(baseline->SaveToMemory(imageWithDelta, compositeImageSize));
+        std::array fieldSignature = { (uint8_t)IMAGE_CEE_CS_CALLCONV_FIELD, (uint8_t)ELEMENT_TYPE_I4 };
 
-        return imageWithDelta;
+        mdFieldDef field1;
+        THROW_IF_FAILED(image->DefineField(type1, W("Field1"), 0, fieldSignature.data(), (ULONG)fieldSignature.size(), 0, nullptr, 0, &field1));
+
+        mdFieldDef field2;
+        THROW_IF_FAILED(image->DefineField(type2, W("Field2"), 0, fieldSignature.data(), (ULONG)fieldSignature.size(), 0, nullptr, 0, &field2));
+
+        // Define a field on the first type after we've already defined a field on the second type.
+        mdFieldDef fieldOutOfOrder;
+        THROW_IF_FAILED(image->DefineField(type1, W("FieldOutOfOrder"), 0, fieldSignature.data(), (ULONG)fieldSignature.size(), 0, nullptr, 0, &fieldOutOfOrder));
+
+        std::array propertySignature = { (uint8_t)IMAGE_CEE_CS_CALLCONV_PROPERTY, (uint8_t)ELEMENT_TYPE_I4 };
+        std::array getterSignature = { (uint8_t)IMAGE_CEE_CS_CALLCONV_DEFAULT, (uint8_t)0x00, (uint8_t)ELEMENT_TYPE_I4 };
+        
+        mdMethodDef getter1;
+        THROW_IF_FAILED(image->DefineMethod(type1, W("get_Property1"), 0, getterSignature.data(), (ULONG)getterSignature.size(), 0, 0, &getter1));
+
+        mdProperty property1;
+        THROW_IF_FAILED(image->DefineProperty(type1, W("Property1"), 0, propertySignature.data(), (ULONG)propertySignature.size(), 0, nullptr, 0, getter1, mdMethodDefNil, nullptr, &property1));
+
+        mdMethodDef getter2;
+        THROW_IF_FAILED(image->DefineMethod(type2, W("get_Property2"), 0, getterSignature.data(), (ULONG)getterSignature.size(), 0, 0, &getter2));
+
+        mdProperty property2;
+        THROW_IF_FAILED(image->DefineProperty(type2, W("Property2"), 0, propertySignature.data(), (ULONG)propertySignature.size(), 0, nullptr, 0, getter2, mdMethodDefNil, nullptr, &property2));
+
+        // Define a property on the first type after we've already defined a property on the second type.
+        mdProperty propertyOutOfOrder;
+        THROW_IF_FAILED(image->DefineProperty(type1, W("PropertyOutOfOrder"), 0, propertySignature.data(), (ULONG)propertySignature.size(), 0, nullptr, 0, mdMethodDefNil, mdMethodDefNil, nullptr, &propertyOutOfOrder));
+
+        mdTypeRef eventHandlerRef;
+        THROW_IF_FAILED(image->DefineTypeRefByName(systemRuntimeRef, W("System.EventHandler"), &eventHandlerRef));
+        
+        mdEvent event1;
+        THROW_IF_FAILED(image->DefineEvent(type1, W("Event1"), 0, eventHandlerRef, mdMethodDefNil, mdMethodDefNil, mdMethodDefNil, nullptr, &event1));
+
+        mdEvent event2;
+        THROW_IF_FAILED(image->DefineEvent(type2, W("Event2"), 0, eventHandlerRef, mdMethodDefNil, mdMethodDefNil, mdMethodDefNil, nullptr, &event2));
+
+        // Define an event on the first type after we've already defined an event on the second type.
+        mdEvent eventOutOfOrder;
+        THROW_IF_FAILED(image->DefineEvent(type1, W("EventOutOfOrder"), 0, eventHandlerRef, mdMethodDefNil, mdMethodDefNil, mdMethodDefNil, nullptr, &eventOutOfOrder));
+
+        ULONG size;
+        THROW_IF_FAILED(image->GetSaveSize(cssAccurate, &size));
+
+        malloc_span<uint8_t> imageWithIndirectionTables{ (uint8_t*)malloc(size), size };
+        THROW_IF_FAILED(image->SaveToMemory(imageWithIndirectionTables, size));
+
+        return imageWithIndirectionTables;
     }
 
     malloc_span<uint8_t> GetMetadataFromKey(std::string key)
     {
-        if (key == DeltaImageKey)
+        if (key == IndirectionTablesKey)
         {
-            return CreateImageWithAppliedDelta();
+            return CreateImageWithIndirectionTables();
         }
         return {};
     }
