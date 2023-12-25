@@ -1,6 +1,8 @@
 #ifndef _TEST_REGPAL_PAL_H_
 #define _TEST_REGPAL_PAL_H_
 
+#include <cstdint>
+#include <cstddef>
 #include <dncp.h>
 #include <cor.h>
 #include <filesystem>
