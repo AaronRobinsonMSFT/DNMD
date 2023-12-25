@@ -1,5 +1,5 @@
+#define DNCP_DEFINE_GUID
 #include "pal.hpp"
-#include <dncp.h>
 
 #ifdef _WIN32
 #define DNNE_API_OVERRIDE __declspec(dllimport)

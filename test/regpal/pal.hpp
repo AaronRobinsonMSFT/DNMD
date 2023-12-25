@@ -1,6 +1,7 @@
 #ifndef _TEST_REGPAL_PAL_H_
 #define _TEST_REGPAL_PAL_H_
 
+#include <dncp.h>
 #include <cor.h>
 #include <filesystem>
 #include <internal/span.hpp>
