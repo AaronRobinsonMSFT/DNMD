@@ -4,15 +4,7 @@
 #include <cstdint>
 #include <cstddef>
 
-#ifdef BUILD_WINDOWS
-#define NOMINMAX
-#include <Windows.h>
-#else
-#include <internal/dnmd_peimage.h>
-#endif
-
-#include <dncp.h>
-#include <cor.h>
+#include <internal/dnmd_platform.hpp>
 #include <filesystem>
 #include <internal/span.hpp>
 

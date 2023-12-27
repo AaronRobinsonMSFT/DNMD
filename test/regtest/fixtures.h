@@ -3,16 +3,7 @@
 
 #include <gtest/gtest.h>
 
-#ifdef BUILD_WINDOWS
-#define NOMINMAX
-#include <Windows.h>
-#else
-#include <internal/dnmd_peimage.h>
-#endif
-#include <dncp.h>
-
-#include <cor.h>
-#include <corsym.h>
+#include <internal/dnmd_platform.hpp>
 
 #include <vector>
 #include <internal/span.hpp>

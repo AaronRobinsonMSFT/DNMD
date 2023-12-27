@@ -79,7 +79,7 @@ HRESULT pal::GetBaselineMetadataDispenser(IMetaDataDispenser** dispenser)
 bool pal::ReadFile(std::filesystem::path path, malloc_span<uint8_t>& b)
 {
     // Read in the entire file
-    std::ifstream fd{ path, std::ios::binary };
+    std::ifstream fd{ path, std::ios::binary | std::ios::in };
     if (!fd)
         return false;
 

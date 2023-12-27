@@ -211,6 +211,8 @@ std::vector<MetadataFile> CoreLibFiles()
     std::vector<MetadataFile> scenarios;
 
     scenarios.emplace_back(MetadataFile::Kind::OnDisk, (std::filesystem::path(baselinePath).parent_path() / "System.Private.CoreLib.dll").generic_string());
+
+#ifdef BUILD_WINDOWS
     scenarios.emplace_back(MetadataFile::Kind::OnDisk, (std::filesystem::path(FindFrameworkInstall("v4.0.30319")) / "mscorlib.dll").generic_string());
 
     auto fx2mscorlib = std::filesystem::path(FindFrameworkInstall("v2.0.50727")) / "mscorlib.dll";
@@ -218,6 +220,7 @@ std::vector<MetadataFile> CoreLibFiles()
     {
         scenarios.emplace_back(MetadataFile::Kind::OnDisk, fx2mscorlib.generic_string());
     }
+#endif
     return scenarios;
 }
 
