@@ -14,12 +14,12 @@ if (WIN32)
         IMPORTED_IMPLIB_RELEASE ${CMAKE_BINARY_DIR}/managed/bin/Regression.Locator/release/Regression.LocatorNE.lib)
 elseif (APPLE)
     set_target_properties(Regression.Locator PROPERTIES
-        IMPORTED_LOCATION_DEBUG ${CMAKE_BINARY_DIR}/managed/bin/Regression.Locator/debug/libRegression.LocatorNE.dylib
-        IMPORTED_LOCATION_RELEASE ${CMAKE_BINARY_DIR}/managed/bin/Regression.Locator/release/libRegression.LocatorNE.dylib)
+        IMPORTED_LOCATION_DEBUG ${CMAKE_BINARY_DIR}/managed/bin/Regression.Locator/debug/Regression.LocatorNE.dylib
+        IMPORTED_LOCATION_RELEASE ${CMAKE_BINARY_DIR}/managed/bin/Regression.Locator/release/Regression.LocatorNE.dylib)
 else()
     set_target_properties(Regression.Locator PROPERTIES
-        IMPORTED_LOCATION_DEBUG ${CMAKE_BINARY_DIR}/managed/bin/Regression.Locator/debug/libRegression.LocatorNE.so
-        IMPORTED_LOCATION_RELEASE ${CMAKE_BINARY_DIR}/managed/bin/Regression.Locator/release/libRegression.LocatorNE.so)
+        IMPORTED_LOCATION_DEBUG ${CMAKE_BINARY_DIR}/managed/bin/Regression.Locator/debug/Regression.LocatorNE.so
+        IMPORTED_LOCATION_RELEASE ${CMAKE_BINARY_DIR}/managed/bin/Regression.Locator/release/Regression.LocatorNE.so)
 endif()
 
 set_target_properties(Regression.Locator PROPERTIES
