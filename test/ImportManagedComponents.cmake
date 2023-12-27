@@ -25,4 +25,4 @@ endif()
 set_target_properties(Regression.Locator PROPERTIES
     INTERFACE_INCLUDE_DIRECTORIES ${CMAKE_BINARY_DIR}/managed/bin/Regression.Locator/$<LOWER_CASE:$<CONFIG>>/)
 
-set(RegressionLocatorDirectory ${CMAKE_BINARY_DIR}/managed/bin/Regression.Locator/$<CONFIG>/)
+set(RegressionLocatorDirectory ${CMAKE_BINARY_DIR}/managed/bin/Regression.Locator/$<LOWER_CASE:$<CONFIG>>/)

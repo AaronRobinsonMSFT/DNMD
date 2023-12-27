@@ -56,7 +56,7 @@ namespace
     // This image is intentinally minimal as our other regression tests cover more full-filled metadata scenarios.
     malloc_span<uint8_t> CreateImageWithIndirectionTables()
     {
-        std::cerr << "Creating image with indirection tables" << std::endl;
+        std::cout << "Creating image with indirection tables" << std::endl;
         dncp::com_ptr<IMetaDataEmit> image;
         THROW_IF_FAILED(TestBaseline::DeltaMetadataBuilder->DefineScope(CLSID_CorMetaDataRuntime, 0, IID_IMetaDataEmit, (IUnknown**)&image));
 
@@ -166,12 +166,12 @@ namespace
 
 std::vector<MetadataFile> MetadataFilesInDirectory(std::string directory)
 {
-    std::cerr << "Discovering metadata files in directory: " << directory << std::endl;
+    std::cout << "Discovering metadata files in directory: " << directory << std::endl;
     std::vector<MetadataFile> scenarios;
 
     if (!std::filesystem::exists(directory))
     {
-        std::cerr << "Directory '" << directory << "' does not exist" << std::endl;
+        std::cout << "Directory '" << directory << "' does not exist" << std::endl;
         return scenarios;
     }
 
@@ -191,6 +191,12 @@ std::vector<MetadataFile> MetadataFilesInDirectory(std::string directory)
                     continue;
                 }
 
+#ifdef BUILD_WINDOWS
+                std::wcout << "Found file: " << entry.path().filename() << std::endl;
+#else
+                std::cout << "Found file: " << entry.path().filename() << std::endl;
+#endif
+
                 scenarios.emplace_back(MetadataFile::Kind::OnDisk, path.generic_string());
             }
         }
@@ -201,7 +207,7 @@ std::vector<MetadataFile> MetadataFilesInDirectory(std::string directory)
 
 std::vector<MetadataFile> CoreLibFiles()
 {
-    std::cerr << "Discovering CoreLib files" << std::endl;
+    std::cout << "Discovering CoreLib files" << std::endl;
     std::vector<MetadataFile> scenarios;
 
     scenarios.emplace_back(MetadataFile::Kind::OnDisk, (std::filesystem::path(baselinePath).parent_path() / "System.Private.CoreLib.dll").generic_string());
@@ -257,7 +263,7 @@ span<uint8_t> GetMetadataForFile(MetadataFile file)
 
     span<uint8_t> spanToReturn = b;
 
-    auto [_, inserted] = metadataCache.emplace(std::move(file), std::move(b));
+    [[maybe_unused]] auto [_, inserted] = metadataCache.emplace(std::move(file), std::move(b));
     assert(inserted);
     return spanToReturn;
 }
@@ -299,7 +305,7 @@ malloc_span<uint8_t> GetRegressionAssemblyMetadata()
 
 std::string FindFrameworkInstall(std::string version)
 {
-    std::cerr << "Discovering framework install for version: " << version << std::endl;
+    std::cout << "Discovering framework install for version: " << version << std::endl;
 #ifdef BUILD_WINDOWS
     auto key = wil::reg::create_unique_key(HKEY_LOCAL_MACHINE, L"SOFTWARE\\Microsoft\\.NETFramework");
     std::filesystem::path installPath{ wil::reg::get_value_string(key.get(), L"InstallRoot") };
