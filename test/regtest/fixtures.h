@@ -16,10 +16,11 @@ struct MetadataFile final
         Generated
     } kind;
 
-    MetadataFile(Kind kind, std::string pathOrKey)
-    : kind(kind), pathOrKey(std::move(pathOrKey)) {}
+    MetadataFile(Kind kind, std::string pathOrKey, std::string testNameOverride = "")
+    : kind(kind), pathOrKey(std::move(pathOrKey)), testNameOverride(testNameOverride) {}
 
     std::string pathOrKey;
+    std::string testNameOverride;
     
     bool operator==(const MetadataFile& rhs) const noexcept
     {

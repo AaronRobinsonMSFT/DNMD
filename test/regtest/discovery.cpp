@@ -210,15 +210,15 @@ std::vector<MetadataFile> CoreLibFiles()
     std::cout << "Discovering CoreLib files" << std::endl;
     std::vector<MetadataFile> scenarios;
 
-    scenarios.emplace_back(MetadataFile::Kind::OnDisk, (std::filesystem::path(baselinePath).parent_path() / "System.Private.CoreLib.dll").generic_string());
+    scenarios.emplace_back(MetadataFile::Kind::OnDisk, (std::filesystem::path(baselinePath).parent_path() / "System.Private.CoreLib.dll").generic_string(), "System_Private_CoreLib");
 
 #ifdef BUILD_WINDOWS
-    scenarios.emplace_back(MetadataFile::Kind::OnDisk, (std::filesystem::path(FindFrameworkInstall("v4.0.30319")) / "mscorlib.dll").generic_string());
+    scenarios.emplace_back(MetadataFile::Kind::OnDisk, (std::filesystem::path(FindFrameworkInstall("v4.0.30319")) / "mscorlib.dll").generic_string(), "4_0_mscorlib");
 
     auto fx2mscorlib = std::filesystem::path(FindFrameworkInstall("v2.0.50727")) / "mscorlib.dll";
     if (std::filesystem::exists(fx2mscorlib))
     {
-        scenarios.emplace_back(MetadataFile::Kind::OnDisk, fx2mscorlib.generic_string());
+        scenarios.emplace_back(MetadataFile::Kind::OnDisk, fx2mscorlib.generic_string(), "2_0_mscorlib");
     }
 #endif
     return scenarios;
@@ -273,6 +273,10 @@ span<uint8_t> GetMetadataForFile(MetadataFile file)
 
 std::string PrintName(testing::TestParamInfo<MetadataFile> info)
 {
+    if (info.param.testNameOverride.size() > 0)
+    {
+        return info.param.testNameOverride;
+    }
     std::string name;
     if (info.param.kind == MetadataFile::Kind::OnDisk)
     {
