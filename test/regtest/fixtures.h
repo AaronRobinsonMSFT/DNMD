@@ -3,9 +3,11 @@
 
 #include <gtest/gtest.h>
 
-#if defined(_MSC_VER)
+#ifdef BUILD_WINDOWS
 #define NOMINMAX
 #include <Windows.h>
+#else
+#include <internal/dnmd_peimage.h>
 #endif
 #include <dncp.h>
 
