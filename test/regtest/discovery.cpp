@@ -5,13 +5,13 @@
 #include <algorithm>
 #include <unordered_map>
 
-#ifdef _WIN32
+#ifdef BUILD_WINDOWS
 #include <wil/registry.h>
 #endif
 
 #include <internal/dnmd_tools_platform.hpp>
 
-#ifdef _WIN32
+#ifdef BUILD_WINDOWS
 #define DNNE_API_OVERRIDE __declspec(dllimport)
 #endif
 #include <Regression.LocatorNE.h>
@@ -294,7 +294,7 @@ malloc_span<uint8_t> GetRegressionAssemblyMetadata()
 
 std::string FindFrameworkInstall(std::string version)
 {
-#ifdef _WIN32
+#ifdef BUILD_WINDOWS
     auto key = wil::reg::create_unique_key(HKEY_LOCAL_MACHINE, L"SOFTWARE\\Microsoft\\.NETFramework");
     std::filesystem::path installPath{ wil::reg::get_value_string(key.get(), L"InstallRoot") };
     return (installPath / version).generic_string();

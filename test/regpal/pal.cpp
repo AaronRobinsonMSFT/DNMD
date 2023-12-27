@@ -1,15 +1,12 @@
 #define DNCP_DEFINE_GUID
 #include "pal.hpp"
 
-#ifdef _WIN32
+#ifdef BUILD_WINDOWS
 #define DNNE_API_OVERRIDE __declspec(dllimport)
 #endif
 #include <Regression.LocatorNE.h>
 
-#ifdef _WIN32
-#define NOMINMAX
-#include <Windows.h>
-#else
+#ifndef BUILD_WINDOWS
 #include <dlfcn.h>
 #endif
 
@@ -21,7 +18,7 @@ namespace
 {
     void* LoadModule(char const* path)
     {
-#ifdef _WIN32
+#ifdef BUILD_WINDOWS
         return LoadLibraryA(path);
 #else
         return dlopen(path, RTLD_LAZY);
@@ -30,7 +27,7 @@ namespace
 
     void* GetSymbol(void* module, char const* name)
     {
-#ifdef _WIN32
+#ifdef BUILD_WINDOWS
         return GetProcAddress((HMODULE)module, name);
 #else
         return dlsym(module, name);

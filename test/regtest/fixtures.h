@@ -24,7 +24,7 @@ struct MetadataFile final
     } kind;
 
     MetadataFile(Kind kind, std::string pathOrKey)
-    : pathOrKey(std::move(pathOrKey)), kind(kind) {}
+    : kind(kind), pathOrKey(std::move(pathOrKey)) {}
 
     std::string pathOrKey;
     

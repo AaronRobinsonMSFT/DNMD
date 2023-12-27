@@ -12,7 +12,7 @@
 #include <iostream>
 #include <filesystem>
 
-#ifdef _WIN32
+#ifdef BUILD_WINDOWS
 #define DNNE_API_OVERRIDE __declspec(dllimport)
 #endif
 #include <Regression.LocatorNE.h>

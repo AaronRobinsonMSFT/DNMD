@@ -1,9 +1,11 @@
 #ifndef _TEST_REGTEST_BASELINE_H_
 #define _TEST_REGTEST_BASELINE_H_
 
-#if defined(_MSC_VER)
+#if BUILD_WINDOWS
 #define NOMINMAX
 #include <Windows.h>
+#else
+#include <internal/dnmd_peimage.h>
 #endif
 #include <dncp.h>
 
