@@ -30,17 +30,6 @@ namespace
             reinterpret_cast<IUnknown**>(import));
     }
 
-    HRESULT CreateEmit(IMetaDataDispenser* disp, void const* data, uint32_t dataLen, IMetaDataEmit2** emit)
-    {
-        assert(disp != nullptr && data != nullptr && dataLen > 0 && emit != nullptr);
-        return disp->OpenScopeOnMemory(
-            data,
-            dataLen,
-            CorOpenFlags::ofWrite,
-            IID_IMetaDataEmit2,
-            reinterpret_cast<IUnknown**>(emit));
-    }
-
     template<typename T>
     using static_enum_buffer = std::array<T, 32>;
 
