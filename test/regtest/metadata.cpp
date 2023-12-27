@@ -9,6 +9,14 @@
 
 #include <array>
 #include <utility>
+
+#ifndef BUILD_WINDOWS
+#define EXPECT_HRESULT_SUCCEEDED(hr) EXPECT_THAT((hr), testing::Ge(S_OK))
+#define EXPECT_HRESULT_FAILED(hr) EXPECT_THAT((hr), testing::Lt(0))
+#define ASSERT_HRESULT_SUCCEEDED(hr) ASSERT_THAT((hr), testing::Ge(S_OK))
+#define ASSERT_HRESULT_FAILED(hr) ASSERT_THAT((hr), testing::Lt(0))
+#endif
+
 namespace
 {
     HRESULT CreateImport(IMetaDataDispenser* disp, void const* data, uint32_t dataLen, IMetaDataImport2** import)
