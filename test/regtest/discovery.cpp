@@ -7,6 +7,8 @@
 
 #ifdef BUILD_WINDOWS
 #include <wil/registry.h>
+#else
+#define THROW_IF_FAILED(x) do { HRESULT hr = (x); if (FAILED(hr)) { throw std::runtime_error("Failed HR when running '" #x "'"); } } while (false)
 #endif
 
 #include <internal/dnmd_tools_platform.hpp>
