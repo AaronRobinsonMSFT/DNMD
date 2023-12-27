@@ -5,6 +5,7 @@
 #include <fstream>
 #include <stdexcept>
 #include <array>
+#include <cstring>
 
 #include "dnmd_platform.hpp"
 #include "span.hpp"

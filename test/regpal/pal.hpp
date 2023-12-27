@@ -4,6 +4,11 @@
 #include <cstdint>
 #include <cstddef>
 #include <dncp.h>
+
+#ifndef BUILD_WINDOWS
+#include <internal/dnmd_peimage.h>
+#endif
+
 #include <cor.h>
 #include <filesystem>
 #include <internal/span.hpp>
