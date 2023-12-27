@@ -165,6 +165,7 @@ namespace
 
 std::vector<MetadataFile> MetadataFilesInDirectory(std::string directory)
 {
+    std::cerr << "Discovering metadata files in directory: " << directory << "\n";
     std::vector<MetadataFile> scenarios;
 
     if (!std::filesystem::exists(directory))
