@@ -1124,7 +1124,8 @@ namespace
             values.push_back(pulParamSeq);
             values.push_back(pdwParamFlags);
             values.push_back(ptOwner);
-            values.push_back(reserved);
+            // We don't care about reserved
+            // as its value is unspecified
             uint32_t hash = HashCharArray(name, pchName);
             values.push_back(hash);
             values.push_back(pchName);
