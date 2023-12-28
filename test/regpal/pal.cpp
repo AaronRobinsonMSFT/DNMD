@@ -152,6 +152,7 @@ path pal::GetCoreClrPath()
                 {
                     if (info->frameworks[i].name == X("Microsoft.NETCore.App"))
                     {
+                        std::cout << "Found Microsoft.NETCore.App (" << info->frameworks[i].version << "): " << info->frameworks[i].path << std::endl;
                         coreClrPath = info->frameworks[i].path;
                         coreClrPath /= info->frameworks[i].version;
 #ifdef BUILD_WINDOWS
