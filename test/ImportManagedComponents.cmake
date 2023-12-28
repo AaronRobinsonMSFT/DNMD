@@ -2,6 +2,7 @@ execute_process(
     COMMAND dotnet build -c Debug
     COMMAND dotnet build -c Release
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    COMMAND_ERROR_IS_FATAL ANY
 )
 
 add_library(Regression.Locator IMPORTED SHARED)
