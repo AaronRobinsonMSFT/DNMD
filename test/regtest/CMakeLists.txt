@@ -35,12 +35,16 @@ if (WIN32)
     target_link_libraries(regtest PRIVATE WIL)
 endif()
 
-target_link_libraries(regtest PRIVATE Regression.Locator)
+add_custom_target(Regression.TargetAssembly
+  dotnet build ${CMAKE_CURRENT_SOURCE_DIR}/../Regression.TargetAssembly/Regression.TargetAssembly.ilproj -c $<CONFIG>
+  COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_BINARY_DIR}/managed/bin/Regression.TargetAssembly/$<LOWER_CASE:$<CONFIG>>/Regression.TargetAssembly.dll ${CMAKE_CURRENT_BINARY_DIR}/Regression.TargetAssembly.dll
+  BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/Regression.TargetAssembly.dll
+  COMMENT "Building Regression.TargetAssembly.dll"
+  )
+
+add_dependencies(regtest Regression.TargetAssembly)
 
 add_custom_command(TARGET regtest POST_BUILD
                     COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:dnmd::interfaces> $<TARGET_FILE_DIR:regtest>)
-
-add_custom_command(TARGET regtest POST_BUILD
-                    COMMAND ${CMAKE_COMMAND} -E copy_directory ${RegressionLocatorDirectory} $<TARGET_FILE_DIR:regtest>)
 
 gtest_discover_tests(regtest DISCOVERY_TIMEOUT 600)

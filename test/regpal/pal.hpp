@@ -10,6 +10,7 @@
 
 namespace pal
 {
+    std::filesystem::path GetCoreClrPath();
     HRESULT GetBaselineMetadataDispenser(IMetaDataDispenser** dispenser);
     bool ReadFile(std::filesystem::path path, malloc_span<uint8_t>& b);
 }

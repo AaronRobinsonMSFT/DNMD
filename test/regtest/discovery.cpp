@@ -16,11 +16,10 @@
 #ifdef BUILD_WINDOWS
 #define DNNE_API_OVERRIDE __declspec(dllimport)
 #endif
-#include <Regression.LocatorNE.h>
 
 namespace
 {
-    std::string baselinePath;
+    std::filesystem::path baselinePath;
     std::string regressionAssemblyPath;
 
     template<typename T>
@@ -210,7 +209,7 @@ std::vector<MetadataFile> CoreLibFiles()
     std::cout << "Discovering CoreLib files" << std::endl;
     std::vector<MetadataFile> scenarios;
 
-    scenarios.emplace_back(MetadataFile::Kind::OnDisk, (std::filesystem::path(baselinePath).parent_path() / "System.Private.CoreLib.dll").generic_string(), "System_Private_CoreLib");
+    scenarios.emplace_back(MetadataFile::Kind::OnDisk, (baselinePath.parent_path() / "System.Private.CoreLib.dll").generic_string(), "System_Private_CoreLib");
 
 #ifdef BUILD_WINDOWS
     scenarios.emplace_back(MetadataFile::Kind::OnDisk, (std::filesystem::path(FindFrameworkInstall("v4.0.30319")) / "mscorlib.dll").generic_string(), "4_0_mscorlib");
@@ -251,7 +250,7 @@ span<uint8_t> GetMetadataForFile(MetadataFile file)
     malloc_span<uint8_t> b;
     if (file.kind == MetadataFile::Kind::OnDisk)
     {
-        auto path = std::filesystem::path(baselinePath).parent_path() / file.pathOrKey;
+        auto path = baselinePath.parent_path() / file.pathOrKey;
         b = ReadMetadataFromFile(path);
     }
     else
@@ -292,12 +291,12 @@ std::string PrintName(testing::TestParamInfo<MetadataFile> info)
 
 std::string GetBaselineDirectory()
 {
-    return std::filesystem::path(baselinePath).parent_path().string();
+    return baselinePath.parent_path().string();
 }
 
-void SetBaselineModulePath(std::string path)
+void SetBaselineModulePath(std::filesystem::path path)
 {
-    baselinePath = path;
+    baselinePath = std::move(path);
 }
 
 void SetRegressionAssemblyPath(std::string path)
