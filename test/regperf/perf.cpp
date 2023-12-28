@@ -12,11 +12,6 @@
 #include <iostream>
 #include <filesystem>
 
-#ifdef BUILD_WINDOWS
-#define DNNE_API_OVERRIDE __declspec(dllimport)
-#endif
-#include <Regression.LocatorNE.h>
-
 #ifdef _MSC_VER
 #define EXPORT extern "C" __declspec(dllexport)
 #else
@@ -187,14 +182,14 @@ int main(int argc, char** argv)
 {
     RETURN_IF_FAILED(pal::GetBaselineMetadataDispenser(&g_baselineDisp));
     RETURN_IF_FAILED(GetDispenser(IID_IMetaDataDispenser, reinterpret_cast<void**>(&g_currentDisp)));
-    dncp::cotaskmem_ptr<char> coreClrPath{ (char*)GetCoreClrPath() };
-    if (coreClrPath == nullptr)
+    auto coreClrPath = pal::GetCoreClrPath();
+    if (coreClrPath.empty())
     {
         std::cerr << "Failed to get coreclr path" << std::endl;
         return -1;
     }
 
-    std::filesystem::path dataImagePath = coreClrPath.get();
+    std::filesystem::path dataImagePath = std::move(coreClrPath);
     dataImagePath.replace_filename("System.Private.CoreLib.dll");
 
     std::cerr << "Loading System.Private.CoreLib from: " << dataImagePath << std::endl;

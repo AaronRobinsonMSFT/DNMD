@@ -1,6 +1,6 @@
 # Configure the compiler
 include(../configure.cmake)
-include(ImportManagedComponents.cmake)
+include(FindNetHost.cmake)
 
 if (POLICY CMP0135)
   cmake_policy(SET CMP0135 NEW) # Set timestamps in downloaded archives to the time of download.

@@ -9,8 +9,7 @@ add_executable(regperf
 target_link_libraries(regperf
   dnmd::interfaces
   dncp::dncp
-  regpal
-  Regression.Locator)
+  regpal)
 
 if(NOT MSVC)
   target_link_libraries(regperf dncp::winhdrs)
