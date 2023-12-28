@@ -6,6 +6,7 @@
 #include <internal/dnmd_platform.hpp>
 
 #include <vector>
+#include <filesystem>
 #include <internal/span.hpp>
 
 struct MetadataFile final
@@ -44,7 +45,7 @@ std::string FindFrameworkInstall(std::string version);
 
 std::string GetBaselineDirectory();
 
-void SetBaselineModulePath(std::string path);
+void SetBaselineModulePath(std::filesystem::path path);
 
 void SetRegressionAssemblyPath(std::string path);
 

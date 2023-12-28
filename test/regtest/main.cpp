@@ -4,11 +4,6 @@
 #include "fixtures.h"
 #include "pal.hpp"
 
-#ifdef BUILD_WINDOWS
-#define DNNE_API_OVERRIDE __declspec(dllimport)
-#endif
-#include <Regression.LocatorNE.h>
-
 namespace TestBaseline
 {
     dncp::com_ptr<IMetaDataDispenser> Metadata = nullptr;
@@ -40,21 +35,16 @@ int main(int argc, char** argv)
     if (HRESULT hr = TestBaseline::DeltaMetadataBuilder->SetOption(MetaDataSetENC, &vt); FAILED(hr))
         return hr;
 
-    dncp::cotaskmem_ptr<char> coreClrPath{ (char*)GetCoreClrPath() };
-    SetBaselineModulePath(coreClrPath.get());
+    auto coreClrPath = pal::GetCoreClrPath();
+    std::cout << "Loaded metadata baseline module: " << coreClrPath.generic_string() << std::endl;
+    SetBaselineModulePath(std::move(coreClrPath));
 
-    std::cout << "Loaded metadata baseline module: " << coreClrPath.get() << std::endl;
+    std::filesystem::path regressionAssemblyPath = argv[0];
+    regressionAssemblyPath = regressionAssemblyPath.parent_path() / "Regression.TargetAssembly.dll";
 
-    dncp::cotaskmem_ptr<char> regressionAssemblyPath{ (char*)GetRegressionTargetAssemblyPath() };
-    if (regressionAssemblyPath == nullptr)
-    {
-        std::cout << "Failed to get regression assembly path" << std::endl;
-        return -1;
-    }
+    SetRegressionAssemblyPath(regressionAssemblyPath.generic_string());
 
-    SetRegressionAssemblyPath(regressionAssemblyPath.get());
-
-    std::cout << "Regression assembly path: " << regressionAssemblyPath.get() << std::endl;
+    std::cout << "Regression assembly path: " << regressionAssemblyPath.generic_string() << std::endl;
 
     ::testing::InitGoogleTest(&argc, argv);
     testing::UnitTest::GetInstance()->listeners().Append(new ThrowListener);
