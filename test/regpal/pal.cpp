@@ -54,7 +54,6 @@ namespace
 
     MetaDataGetDispenser LoadGetDispenser()
     {
-        // TODO: Can we use nethost to discover hostfxr and use hostfxr APIs to discover the baseline?
         auto coreClrPath = pal::GetCoreClrPath();
         if (coreClrPath.empty())
         {
