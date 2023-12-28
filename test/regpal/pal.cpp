@@ -43,6 +43,15 @@ namespace
 
     using MetaDataGetDispenser = HRESULT(STDMETHODCALLTYPE*)(REFCLSID, REFIID, LPVOID*);
 
+    using CoreCLRInitialize = int(STDMETHODCALLTYPE*)(
+            const char* exePath,
+            const char* appDomainFriendlyName,
+            int propertyCount,
+            const char** propertyKeys,
+            const char** propertyValues,
+            void** hostHandle,
+            unsigned int* domainId);
+
     MetaDataGetDispenser LoadGetDispenser()
     {
         // TODO: Can we use nethost to discover hostfxr and use hostfxr APIs to discover the baseline?
@@ -59,6 +68,20 @@ namespace
             std::cerr << "Failed to load metadata baseline module: " << coreClrPath << std::endl;
             return nullptr;
         }
+#ifndef BUILD_WINDOWS
+        // On non-Windows, the metadata APIs in CoreCLR don't work until the PAL is initialized.
+        // Initialize the runtime just enough to load the PAL.
+        auto init = (CoreCLRInitialize)GetSymbol(mod, "coreclr_initialize");
+        if (init == nullptr)
+        {
+            std::cerr << "Failed to find coreclr_initialize in module: " << coreClrPath << std::endl;
+            return nullptr;
+        }
+
+        const char* propertyKeys[] = { "TRUSTED_PLATFORM_ASSEMBLIES" };
+        const char* propertyValues[] = { coreClrPath.c_str() };
+        init("regpal", "regpal", 1, propertyKeys, propertyValues, nullptr, nullptr);
+#endif
 
         auto getDispenser = (MetaDataGetDispenser)GetSymbol(mod, "MetaDataGetDispenser");
         if (getDispenser == nullptr)
