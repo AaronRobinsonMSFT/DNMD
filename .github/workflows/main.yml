@@ -29,6 +29,9 @@ jobs:
       with:
         dotnet-version: '8.0.x'
         dotnet-quality: 'preview'
+    
+    - name: List dotnet information
+      run: dotnet --info
 
     - name: Build Vendored Dependencies
       if: ${{ !matrix.use-vendored-libs }}
