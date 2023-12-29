@@ -2,7 +2,6 @@ cmake_minimum_required(VERSION 3.10)
 project(dnmd
     LANGUAGES C CXX)
 
-set(CMAKE_CONFIGURATION_TYPES Debug;Release)
 option(INCLUDE_VENDORED_LIBS "Include vendored libraries (submodules) instead of discovering dependencies through packages." ON)
 
 set(CMAKE_INSTALL_PREFIX ${CMAKE_BINARY_DIR})
