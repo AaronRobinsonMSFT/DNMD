@@ -133,27 +133,32 @@ path pal::GetCoreClrPath()
         result = get_hostfxr_path(hostfxr_path.get(), &bufferSize, nullptr);
     } while (result != 0);
 
-    std::cerr << "Found hostfxr at: " << hostfxr_path.get() << std::endl;
-    
+    path hostFxrPath = hostfxr_path.get();
     void* hostfxrModule = LoadModule(hostfxr_path.get());
     if (hostfxrModule == nullptr)
     {
-        std::cerr << "Failed to load hostfxr module: " << hostfxr_path.get() << std::endl;
+        std::cerr << "Failed to load hostfxr module: " << hostFxrPath << std::endl;
         return {};
     }
+
+
+    // The hostfxr path is in the form: <dotnet_root>/host/fxr/<version>/hostfxr.dll
+    // We need to get the dotnet root, which is 3 levels up
+    // We need to do this because hostfxr_get_dotnet_environment_info only returns information
+    // for a globally-installed dotnet if we don't pass a path to the dotnet root.
+    // The macOS machines on GitHub Actions don't have dotnet globally installed.
+    path dotnetRoot = hostFxrPath.parent_path().parent_path().parent_path().parent_path();
 
     path coreClrPath = {};
     auto getDotnetEnvironmentInfo = (hostfxr_get_dotnet_environment_info_fn)GetSymbol(hostfxrModule, "hostfxr_get_dotnet_environment_info");
     if (getDotnetEnvironmentInfo(
-            nullptr,
+            dotnetRoot.c_str(),
             nullptr,
             [](const hostfxr_dotnet_environment_info* info, void* result_context)
             {
                 path& coreClrPath = *(path*)result_context;
-                std::cerr << "Found " << info->framework_count << " frameworks" << std::endl;
                 for (size_t i = 0; i < info->framework_count; ++i)
                 {
-                    std::cerr << "Found framework: " << info->frameworks[i].name << " (" << info->frameworks[i].version << "): " << info->frameworks[i].path << std::endl;
                     if (info->frameworks[i].name == X("Microsoft.NETCore.App"))
                     {
                         coreClrPath = info->frameworks[i].path;
@@ -176,8 +181,6 @@ path pal::GetCoreClrPath()
         std::cerr << "Failed to get dotnet environment info" << std::endl;
         return {};
     }
-
-    std::cerr << "Found CoreCLR at: " << coreClrPath << std::endl;
 
     return coreClrPath;
 }
