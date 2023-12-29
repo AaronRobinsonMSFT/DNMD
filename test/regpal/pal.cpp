@@ -148,9 +148,10 @@ path pal::GetCoreClrPath()
             [](const hostfxr_dotnet_environment_info* info, void* result_context)
             {
                 path& coreClrPath = *(path*)result_context;
+                std::cerr << "Found " << info->framework_count << " frameworks" << std::endl;
                 for (size_t i = 0; i < info->framework_count; ++i)
                 {
-                    std::cout << "Found framework: " << info->frameworks[i].name << " (" << info->frameworks[i].version << "): " << info->frameworks[i].path << std::endl;
+                    std::cerr << "Found framework: " << info->frameworks[i].name << " (" << info->frameworks[i].version << "): " << info->frameworks[i].path << std::endl;
                     if (info->frameworks[i].name == X("Microsoft.NETCore.App"))
                     {
                         coreClrPath = info->frameworks[i].path;
@@ -170,9 +171,11 @@ path pal::GetCoreClrPath()
             &coreClrPath
         ) != 0)
     {
-        std::cout << "Failed to get dotnet environment info" << std::endl;
+        std::cerr << "Failed to get dotnet environment info" << std::endl;
         return {};
     }
+
+    std::cerr << "Found CoreCLR at: " << coreClrPath << std::endl;
 
     return coreClrPath;
 }
