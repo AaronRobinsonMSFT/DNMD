@@ -132,6 +132,8 @@ path pal::GetCoreClrPath()
         hostfxr_path.reset(new char_t[bufferSize]);
         result = get_hostfxr_path(hostfxr_path.get(), &bufferSize, nullptr);
     } while (result != 0);
+
+    std::cerr << "Found hostfxr at: " << hostfxr_path.get() << std::endl;
     
     void* hostfxrModule = LoadModule(hostfxr_path.get());
     if (hostfxrModule == nullptr)
