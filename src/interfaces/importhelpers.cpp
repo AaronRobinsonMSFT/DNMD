@@ -387,6 +387,7 @@ namespace
         
         for (uint32_t i = 0; i < count; i++, md_cursor_next(&c))
         {
+            // Search the table linearly by manually reading the columns.
             hr = matcher.Match(c, majorVersion, minorVersion, buildNumber, revisionNumber);
             RETURN_IF_FAILED(hr);
             if (hr == S_FALSE)

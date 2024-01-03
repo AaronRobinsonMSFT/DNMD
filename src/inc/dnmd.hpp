@@ -22,7 +22,7 @@ private:
     mdcursor_t new_row;
 public:
     md_added_row_t() = default;
-    md_added_row_t(mdcursor_t row) : new_row{ row } {}
+    explicit md_added_row_t(mdcursor_t row) : new_row{ row } {}
     md_added_row_t(md_added_row_t const& other) = delete;
     md_added_row_t(md_added_row_t&& other)
     {
