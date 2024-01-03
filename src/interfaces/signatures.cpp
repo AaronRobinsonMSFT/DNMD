@@ -10,7 +10,7 @@ namespace
     template<typename T, typename = typename std::enable_if<std::is_same<typename std::remove_const<T>::type, uint8_t>::value>::type>
     std::tuple<uint32_t, span<T>> read_compressed_uint(span<T> signature)
     {
-        ULONG value;
+        ULONG value = 0;
         signature = slice(signature, CorSigUncompressData(signature, &value));
         return std::make_tuple(value, signature);
     }
@@ -18,9 +18,6 @@ namespace
     template<typename T, typename = typename std::enable_if<std::is_same<typename std::remove_const<T>::type, uint8_t>::value>::type>
     std::tuple<int32_t, span<T>> read_compressed_int(span<T> signature)
     {
-        // Explicitly initialized as CorSigUncompressSignedInt does not initialize the value if the compressed value is invalid.
-        // We don't need to explicitly initialize in read_compressed_uint or read_compressed_token as CorSigUncompressData and CorSigUncompressToken
-        // will initialize the out parameter to 0 even if the compressed value is invalid.
         int value = 0;
         signature = slice(signature, CorSigUncompressSignedInt(signature, &value));
         return std::make_tuple(value, signature);
@@ -29,7 +26,7 @@ namespace
     template<typename T, typename = typename std::enable_if<std::is_same<typename std::remove_const<T>::type, uint8_t>::value>::type>
     std::tuple<mdToken, span<T>> read_compressed_token(span<T> signature)
     {
-        mdToken value;
+        mdToken value = mdTokenNil;
         signature = slice(signature, CorSigUncompressToken(signature, &value));
         return std::make_tuple(value, signature);
     }
@@ -338,7 +335,7 @@ HRESULT ImportSignatureIntoModule(
     mdhandle_t destinationModule,
     span<const uint8_t> signature,
     std::function<void(mdcursor_t)> onRowAdded,
-    malloc_span<uint8_t>* importedSignature)
+    malloc_span<uint8_t>& importedSignature)
 {
     HRESULT hr;
     // We are going to copy over the signature and replace the tokens from the source module in the signature
@@ -444,7 +441,7 @@ HRESULT ImportSignatureIntoModule(
     }
 
     std::memcpy(buffer, importedSignatureBuffer.data(), importedSignatureBuffer.size());
-    *importedSignature = { buffer, importedSignatureBuffer.size() };
+    importedSignature = { buffer, importedSignatureBuffer.size() };
     return S_OK;
 }
 
@@ -456,7 +453,7 @@ HRESULT ImportTypeSpecBlob(
     mdhandle_t destinationModule,
     span<const uint8_t> typeSpecBlob,
     std::function<void(mdcursor_t)> onRowAdded,
-    malloc_span<uint8_t>* importedTypeSpecBlob)
+    malloc_span<uint8_t>& importedTypeSpecBlob)
 {
     std::vector<uint8_t> importedTypeSpecBlobBuffer;
     // Our imported blob will likely be a very similar size to the original blob.
@@ -523,6 +520,6 @@ HRESULT ImportTypeSpecBlob(
     }
 
     std::memcpy(buffer, importedTypeSpecBlobBuffer.data(), importedTypeSpecBlobBuffer.size());
-    *importedTypeSpecBlob = { buffer, importedTypeSpecBlobBuffer.size() };
+    importedTypeSpecBlob = { buffer, importedTypeSpecBlobBuffer.size() };
     return S_OK;
 }

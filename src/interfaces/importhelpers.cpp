@@ -8,8 +8,11 @@
 #include <algorithm>
 #include <cstring>
 
-// ALG_ID crackers
+// Macros from wincrypt.h that we need avaliable on all platforms
+// for strong-name parsing.
+// Get the class (hash, signature, encryption, etc) of an algorithm from an ALG_ID
 #define GET_ALG_CLASS(x)                (x & (7 << 13))
+// Get the sub-identifier of an algorithm (like SHA1) from an ALG_ID
 #define GET_ALG_SID(x)                  (x & (511))
 
 #define ALG_CLASS_SIGNATURE             (1 << 13)
@@ -17,6 +20,7 @@
 
 #define ALG_SID_SHA1                    4
 
+// Blob definitions from wincrypt.h
 #define PUBLICKEYBLOB           0x6
 
 #define RETURN_IF_FAILED(exp) \
@@ -45,13 +49,15 @@ namespace
 
     CorTokenType GetTokenTypeFromCursor(mdcursor_t cursor)
     {
-        mdToken token = (mdToken)-1;
+        mdToken token = mdTokenNil;
         if (!md_cursor_to_token(cursor, &token))
             assert(false);
         
         return (CorTokenType)TypeFromToken(token);
     }
 
+    // The strong name token is the last 8 bytes of the SHA1 hash of the public key.
+    // See II.6.3
     constexpr size_t StrongNameTokenSize = 8;
     
     using StrongNameToken = std::array<uint8_t, StrongNameTokenSize>;
@@ -65,11 +71,12 @@ namespace
 
         // The byte values of the ECMA pseudo public key and its token.
         // Arcade SDK StrongNameKeyId: ECMA
-        const uint8_t Ecma[] = { 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0 };
+        // See II.6.2.1.3 for th definition of this key.
+        uint8_t const EcmaPublicKey[] = { 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0 };
         const StrongNameToken EcmaToken = { 0xb7, 0x7a, 0x5c, 0x56, 0x19, 0x34, 0xe0, 0x89 };
 
         // Arcade SDK StrongNameKeyId: Microsoft
-        static const uint8_t Microsoft[] =
+        uint8_t const Microsoft[] =
         {
             0x00,0x24,0x00,0x00,0x04,0x80,0x00,0x00,0x94,0x00,0x00,0x00,0x06,0x02,0x00,0x00,
             0x00,0x24,0x00,0x00,0x52,0x53,0x41,0x31,0x00,0x04,0x00,0x00,0x01,0x00,0x01,0x00,
@@ -83,10 +90,10 @@ namespace
             0x26,0x1c,0x8a,0x12,0x43,0x65,0x18,0x20,0x6d,0xc0,0x93,0x34,0x4d,0x5a,0xd2,0x93
         };
 
-        static const StrongNameToken MicrosoftToken = {0xb0,0x3f,0x5f,0x7f,0x11,0xd5,0x0a,0x3a};
+        StrongNameToken const MicrosoftToken = {0xb0,0x3f,0x5f,0x7f,0x11,0xd5,0x0a,0x3a};
 
         // Arcade SDK StrongNameKeyId: SilverlightPlatform
-        static const uint8_t SilverlightPlatform[] =
+        uint8_t const SilverlightPlatform[] =
         {
             0x00,0x24,0x00,0x00,0x04,0x80,0x00,0x00,0x94,0x00,0x00,0x00,0x06,0x02,0x00,0x00,
             0x00,0x24,0x00,0x00,0x52,0x53,0x41,0x31,0x00,0x04,0x00,0x00,0x01,0x00,0x01,0x00,
@@ -100,10 +107,10 @@ namespace
             0x00,0xae,0xc2,0x32,0xf6,0xc6,0xb1,0xc7,0x85,0xb4,0x30,0x5c,0x12,0x3b,0x37,0xab
         };
 
-        static const StrongNameToken SilverlightPlatformToken = {0x7c,0xec,0x85,0xd7,0xbe,0xa7,0x79,0x8e};
+        StrongNameToken const SilverlightPlatformToken = {0x7c,0xec,0x85,0xd7,0xbe,0xa7,0x79,0x8e};
 
         // Arcade SDK StrongNameKeyId: MicrosoftShared
-        static const uint8_t Silverlight[] =
+        uint8_t const Silverlight[] =
         {
             0x00,0x24,0x00,0x00,0x04,0x80,0x00,0x00,0x94,0x00,0x00,0x00,0x06,0x02,0x00,0x00,
             0x00,0x24,0x00,0x00,0x52,0x53,0x41,0x31,0x00,0x04,0x00,0x00,0x01,0x00,0x01,0x00,
@@ -117,10 +124,10 @@ namespace
             0xf4,0x6b,0x2a,0x2b,0x12,0x47,0xad,0xc3,0x65,0x2b,0xf5,0xc3,0x08,0x05,0x5d,0xa9
         };
 
-        static const StrongNameToken SilverlightToken = {0x31,0xBF,0x38,0x56,0xAD,0x36,0x4E,0x35};
+        StrongNameToken const SilverlightToken = {0x31,0xBF,0x38,0x56,0xAD,0x36,0x4E,0x35};
 
         // Arcade SDK StrongNameKeyId: MicrosoftAspNetCore
-        static const uint8_t AspNetCore[] =
+        uint8_t const AspNetCore[] =
         {
             0x00,0x24,0x00,0x00,0x04,0x80,0x00,0x00,0x94,0x00,0x00,0x00,0x06,0x02,0x00,0x00,
             0x00,0x24,0x00,0x00,0x52,0x53,0x41,0x31,0x00,0x04,0x00,0x00,0x01,0x00,0x01,0x00,
@@ -134,10 +141,10 @@ namespace
             0x64,0xB7,0xCD,0xE2,0x47,0xF8,0x91,0xBA,0x07,0x89,0x1C,0x9D,0x87,0x2A,0xD2,0xBB
         };
 
-        static const StrongNameToken AspNetCoreToken = {0xad, 0xb9, 0x79, 0x38, 0x29, 0xdd, 0xae, 0x60};
+        StrongNameToken const AspNetCoreToken = {0xad, 0xb9, 0x79, 0x38, 0x29, 0xdd, 0xae, 0x60};
 
         // Arcade SDK StrongNameKeyId: Open
-        static const uint8_t Open[] =
+        uint8_t const Open[] =
         {
             0x00,0x24,0x00,0x00,0x04,0x80,0x00,0x00,0x94,0x00,0x00,0x00,0x06,0x02,0x00,0x00,
             0x00,0x24,0x00,0x00,0x52,0x53,0x41,0x31,0x00,0x04,0x00,0x00,0x01,0x00,0x01,0x00,
@@ -151,18 +158,18 @@ namespace
             0xC6,0xD9,0x13,0xE3,0xA5,0x41,0x33,0x3A,0x1D,0x05,0xD9,0xBE,0xD2,0x2B,0x38,0xCB
         };
 
-        static const StrongNameToken OpenToken = {0xcc, 0x7b, 0x13, 0xff, 0xcd, 0x2d, 0xdd, 0x51};
+        StrongNameToken const OpenToken = {0xcc, 0x7b, 0x13, 0xff, 0xcd, 0x2d, 0xdd, 0x51};
 
-        struct WellKnownKey
+        struct WellKnownKey final
         {
             uint8_t const* const PublicKey;
-            const size_t PublicKeyLen;
+            size_t const PublicKeyLen;
             StrongNameToken const& Token;
         };
 
         static const WellKnownKey WellKnownKeys[] =
         {
-            { Ecma, sizeof(Ecma), EcmaToken },
+            { EcmaPublicKey, sizeof(EcmaPublicKey), EcmaToken },
             { Microsoft, sizeof(Microsoft), MicrosoftToken },
             { SilverlightPlatform, sizeof(SilverlightPlatform), SilverlightPlatformToken },
             { Silverlight, sizeof(Silverlight), SilverlightToken },
@@ -174,8 +181,8 @@ namespace
         {
             for (size_t i = 0; i < ARRAY_SIZE(WellKnownKeys); i++)
             {
-                if (keyLength == WellKnownKeys[i].PublicKeyLen &&
-                    memcmp(key, WellKnownKeys[i].PublicKey, keyLength) == 0)
+                if (keyLength == WellKnownKeys[i].PublicKeyLen
+                    && std::memcmp(key, WellKnownKeys[i].PublicKey, keyLength) == 0)
                 {
                     *token = WellKnownKeys[i].Token;
                     return true;
@@ -186,7 +193,7 @@ namespace
         }
     }
 
-    struct PublicKeyBlob
+    struct PublicKeyBlob final
     {
         uint32_t SigAlgID;
         uint32_t HashAlgID;
@@ -194,7 +201,7 @@ namespace
         uint8_t  PublicKey[];
     };
 
-    HRESULT StrongNameTokenFromPublicKey(span<const uint8_t> publicKeyBlob, StrongNameToken& strongNameTokenBuffer)
+    HRESULT StrongNameTokenFromPublicKey(span<uint8_t const> publicKeyBlob, StrongNameToken& strongNameTokenBuffer)
     {
         if (publicKeyBlob.size() < sizeof(PublicKeyBlob))
             return CORSEC_E_INVALID_PUBLICKEY;
@@ -204,8 +211,8 @@ namespace
         if (publicKey->PublicKeyLength != publicKeyBlob.size() - sizeof(PublicKeyBlob))
             return CORSEC_E_INVALID_PUBLICKEY;
         
-        if (publicKeyBlob.size() == sizeof(StrongNameKeys::Ecma)
-            && std::memcmp(publicKeyBlob, StrongNameKeys::Ecma, sizeof(StrongNameKeys::Ecma)) == 0)
+        if (publicKeyBlob.size() == sizeof(StrongNameKeys::EcmaPublicKey)
+            && std::memcmp(publicKeyBlob, StrongNameKeys::EcmaPublicKey, sizeof(StrongNameKeys::EcmaPublicKey)) == 0)
         {
             return S_OK;
         }
@@ -234,12 +241,10 @@ namespace
             return CORSEC_E_INVALID_PUBLICKEY;
 
         // Take the last few bytes of the hash value for our token.
-        // These are the low order bytes from a network byte order point of view.
-        // Reverse the order of these bytes in the output buffer to get host byte order.
-        for (size_t i = 0; i < StrongNameTokenSize; i++)
-        {
-            hash[StrongNameTokenSize - (i + 1)] = hash[i + pal::SHA1_HASH_SIZE - StrongNameTokenSize];
-        }
+        // These are the low order bytes from a big-endian point of view.
+        // Reverse the order of these bytes in the output buffer to get little-endian byte order.
+        // The byte order of the strong name token is not specified in ECMA-335, but is what CLR, CoreCLR, and Mono Desktop have always done.
+        std::reverse_copy(hash.begin() + pal::SHA1_HASH_SIZE - StrongNameTokenSize, hash.end(), strongNameTokenBuffer.begin());
 
         return S_OK;
     }
@@ -247,18 +252,107 @@ namespace
 
 namespace
 {
-    bool CaseInsensitiveEquals(char const* a, char const* b)
+    struct AssemblyVersionMatcher
     {
-        while (*a != '\0' && *b != '\0')
+        bool(*IsApplicable)(char const* name);
+        HRESULT(*Match)(mdcursor_t c, uint32_t majorVersion, uint32_t minorVersion, uint32_t buildNumber, uint32_t revisionNumber);
+    };
+
+    std::array<AssemblyVersionMatcher, 2> const AssemblyVersionMatchers =
+    {
         {
-            if (std::tolower(*a) != std::tolower(*b))
-                return false;
-            
-            a++;
-            b++;
+            // COMPAT: CoreCLR resolves all references to mscorlib and Microsoft.VisualC to the same assembly ref ignoring the build and revision version.
+            {
+                [](char const* name) -> bool
+                {
+                    auto AsciiCaseInsensitiveEquals = [](char const* a, char const* b)
+                    {
+                        while (*a != '\0' && *b != '\0')
+                        {
+                            if (std::tolower(*a) != std::tolower(*b))
+                                return false;
+                            
+                            a++;
+                            b++;
+                        }
+
+                        return *a == '\0' && *b == '\0';
+                    };
+
+                    return AsciiCaseInsensitiveEquals(name, "mscorlib")
+                        || AsciiCaseInsensitiveEquals(name, "microsoft.visualc");
+                },
+                [](mdcursor_t c, uint32_t majorVersion, uint32_t minorVersion, uint32_t buildNumber, uint32_t revisionNumber)
+                {
+                    UNREFERENCED_PARAMETER(buildNumber);
+                    UNREFERENCED_PARAMETER(revisionNumber);
+                    uint32_t temp;
+                    if (1 != md_get_column_value_as_constant(c, mdtAssemblyRef_MajorVersion, 1, &temp))
+                        return CLDB_E_FILE_CORRUPT;
+                    
+                    if (temp != majorVersion)
+                        return S_FALSE;
+                    
+                    if (1 != md_get_column_value_as_constant(c, mdtAssemblyRef_MinorVersion, 1, &temp))
+                        return CLDB_E_FILE_CORRUPT;
+                    
+                    if (temp != minorVersion)
+                        return S_FALSE;
+
+                    return S_OK;
+                }
+            },
+            // Otherwise, we'll compare all of the version components.
+            {
+                [](char const* name)
+                {
+                    UNREFERENCED_PARAMETER(name);
+                    return true;
+                },
+                [](mdcursor_t c, uint32_t majorVersion, uint32_t minorVersion, uint32_t buildNumber, uint32_t revisionNumber)
+                {
+                    uint32_t temp;
+                    if (1 != md_get_column_value_as_constant(c, mdtAssemblyRef_MajorVersion, 1, &temp))
+                        return CLDB_E_FILE_CORRUPT;
+                    
+                    if (temp != majorVersion)
+                        return S_FALSE;
+                    
+                    if (1 != md_get_column_value_as_constant(c, mdtAssemblyRef_MinorVersion, 1, &temp))
+                        return CLDB_E_FILE_CORRUPT;
+                    
+                    if (temp != minorVersion)
+                        return S_FALSE;
+                    if (1 != md_get_column_value_as_constant(c, mdtAssemblyRef_BuildNumber, 1, &temp))
+                        return CLDB_E_FILE_CORRUPT;
+                    
+                    if (temp != buildNumber)
+                        return S_FALSE;
+                    
+                    if (1 != md_get_column_value_as_constant(c, mdtAssemblyRef_RevisionNumber, 1, &temp))
+                        return CLDB_E_FILE_CORRUPT;
+                    
+                    if (temp != revisionNumber)
+                        return S_FALSE;
+
+                    return S_OK;
+                }
+            }
+        }
+    };
+    
+    AssemblyVersionMatcher const& GetAssemblyVersionMatcher(char const* name)
+    {
+        for (AssemblyVersionMatcher const& matcher : AssemblyVersionMatchers)
+        {
+            if (matcher.IsApplicable(name))
+                return matcher;
         }
 
-        return *a == '\0' && *b == '\0';
+        // The final matcher should always be applicable.
+        // If it isn't, we have a bug in our code.
+        assert(false);
+        return AssemblyVersionMatchers[AssemblyVersionMatchers.size() - 1];
     }
 
     HRESULT FindAssemblyRef(
@@ -289,40 +383,14 @@ namespace
         if (!md_create_cursor(targetModule, mdtid_AssemblyRef, &c, &count))
             return E_FAIL;
         
-        // COMPAT: CoreCLR resolves all references to mscorlib and Microsoft.VisualC to the same assembly ref ignoring the build and revision version.
-        bool ignoreBuildRevisionVersion = CaseInsensitiveEquals(name, "mscorlib") || CaseInsensitiveEquals(name, "microsoft.visualc");
+        AssemblyVersionMatcher const& matcher = GetAssemblyVersionMatcher(name);
         
         for (uint32_t i = 0; i < count; i++, md_cursor_next(&c))
         {
-            // Search the table linearly my manually reading the columns.
-
-            uint32_t temp;
-            if (1 != md_get_column_value_as_constant(c, mdtAssemblyRef_MajorVersion, 1, &temp))
-                return CLDB_E_FILE_CORRUPT;
-            
-            if (temp != majorVersion)
+            hr = matcher.Match(c, majorVersion, minorVersion, buildNumber, revisionNumber);
+            RETURN_IF_FAILED(hr);
+            if (hr == S_FALSE)
                 continue;
-            
-            if (1 != md_get_column_value_as_constant(c, mdtAssemblyRef_MinorVersion, 1, &temp))
-                return CLDB_E_FILE_CORRUPT;
-            
-            if (temp != minorVersion)
-                continue;
-            
-            if (!ignoreBuildRevisionVersion)
-            {
-                if (1 != md_get_column_value_as_constant(c, mdtAssemblyRef_BuildNumber, 1, &temp))
-                    return CLDB_E_FILE_CORRUPT;
-                
-                if (temp != buildNumber)
-                    continue;
-                
-                if (1 != md_get_column_value_as_constant(c, mdtAssemblyRef_RevisionNumber, 1, &temp))
-                    return CLDB_E_FILE_CORRUPT;
-                
-                if (temp != revisionNumber)
-                    continue;
-            }
             
             char const* tempString;
             if (1 != md_get_column_value_as_utf8(c, mdtAssemblyRef_Name, 1, &tempString))
@@ -358,19 +426,19 @@ namespace
                 
                 if (IsAfPublicKey(flags) == IsAfPublicKey(assemblyRefFlags))
                 {
-                    // If both the source and destination either have a full key or a token, we can compare them directly.
+                    // If the source and destination either both have a full key or both have a key token, we can compare them directly.
                     if (tempBlobLength != publicKeyOrToken.size() || !std::equal(publicKeyOrToken.begin(), publicKeyOrToken.end(), tempBlob))
                         continue;
                 }
                 else if (IsAfPublicKey(assemblyRefFlags))
                 {
-                    // This AssemblyRef row has a full public key. And our source has a token.
+                    // This AssemblyRef row has a full public key and our source has a token.
                     // We need to get the token from the key.
                     RETURN_IF_FAILED(StrongNameTokenFromPublicKey({ tempBlob, tempBlobLength }, refPublicKeyToken));
                 }
                 else
                 {
-                    // This AssemblyRef row has a token. And our source has a full public key.
+                    // This AssemblyRef row has a token and our source has a full public key.
                     // We need to get the token from the key.
                     if (!calculatedPublicKeyToken)
                     {
@@ -674,14 +742,14 @@ HRESULT ImportReferenceToTypeDef(
     HRESULT hr;
     mdhandle_t sourceModule = md_extract_handle_from_cursor(sourceTypeDef);
 
-    mdguid_t targetModuleMvid = { 0 };
-    mdguid_t targetAssemblyMvid = { 0 };
-    mdguid_t sourceAssemblyMvid = { 0 };
-    mdguid_t sourceModuleMvid = { 0 };
+    mdguid_t targetModuleMvid = {};
+    mdguid_t targetAssemblyMvid = {};
+    mdguid_t sourceAssemblyMvid = {};
+    mdguid_t sourceModuleMvid = {};
     RETURN_IF_FAILED(GetMvid(targetModule, &targetModuleMvid));
     RETURN_IF_FAILED(GetMvid(targetAssembly, &targetAssemblyMvid));
-    RETURN_IF_FAILED(GetMvid(sourceAssembly, &sourceAssemblyMvid));
     RETURN_IF_FAILED(GetMvid(sourceModule, &sourceModuleMvid));
+    RETURN_IF_FAILED(GetMvid(sourceAssembly, &sourceAssemblyMvid));
 
     bool sameModuleMvid = std::memcmp(&targetModuleMvid, &sourceModuleMvid, sizeof(mdguid_t)) == 0;
     bool sameAssemblyMvid = std::memcmp(&targetAssemblyMvid, &sourceAssemblyMvid, sizeof(mdguid_t)) == 0;
@@ -741,61 +809,68 @@ HRESULT ImportReferenceToTypeDef(
         RETURN_IF_FAILED(ImportReferenceToAssembly(sourceAssembly, sourceAssemblyHash, targetModule, targetAssembly, onRowAdded, &resolutionScope));
     }
 
-    std::stack<mdcursor_t> typesForTypeRefs;
-
-    mdcursor_t importType;
-    if (!md_token_to_cursor(sourceModule, tdImport, &importType))
-        return CLDB_E_FILE_CORRUPT;
-    
-    typesForTypeRefs.push(importType);
-    
-    mdcursor_t nestedClasses;
-    uint32_t nestedClassCount;
-    if (!md_create_cursor(sourceModule, mdtid_NestedClass, &nestedClasses, &nestedClassCount))
-        return E_FAIL;
-    
-    mdToken nestedTypeToken = tdImport;
-    mdcursor_t nestedClass;
-    while (md_find_row_from_cursor(nestedClasses, mdtNestedClass_NestedClass, RidFromToken(nestedTypeToken), &nestedClass))
+    try
     {
-        mdcursor_t enclosingClass;
-        if (1 != md_get_column_value_as_cursor(nestedClass, mdtNestedClass_EnclosingClass, 1, &enclosingClass))
-            return E_FAIL;
-        
-        typesForTypeRefs.push(enclosingClass);
-        if (!md_cursor_to_token(enclosingClass, &nestedTypeToken))
-            return E_FAIL;
-    }
+        std::stack<mdcursor_t> typesForTypeRefs;
 
-    for (; !typesForTypeRefs.empty(); typesForTypeRefs.pop())
-    {
-        mdcursor_t typeDef = typesForTypeRefs.top();
-        md_added_row_t typeRef;
-        if (!md_append_row(targetModule, mdtid_TypeRef, &typeRef))
+        mdcursor_t importType;
+        if (!md_token_to_cursor(sourceModule, tdImport, &importType))
+            return CLDB_E_FILE_CORRUPT;
+        
+        typesForTypeRefs.push(importType);
+        
+        mdcursor_t nestedClasses;
+        uint32_t nestedClassCount;
+        if (!md_create_cursor(sourceModule, mdtid_NestedClass, &nestedClasses, &nestedClassCount))
             return E_FAIL;
         
-        if (1 != md_set_column_value_as_cursor(typeRef, mdtTypeRef_ResolutionScope, 1, &resolutionScope))
-            return E_FAIL;
-        
-        char const* typeName;
-        if (1 != md_get_column_value_as_utf8(typeDef, mdtTypeDef_TypeName, 1, &typeName)
-            || 1 != md_set_column_value_as_utf8(typeRef, mdtTypeRef_TypeName, 1, &typeName))
+        mdToken nestedTypeToken = tdImport;
+        mdcursor_t nestedClass;
+        while (md_find_row_from_cursor(nestedClasses, mdtNestedClass_NestedClass, RidFromToken(nestedTypeToken), &nestedClass))
         {
-            return E_FAIL;
-        }
-        
-        char const* typeNamespace;
-        if (1 != md_get_column_value_as_utf8(typeDef, mdtTypeDef_TypeNamespace, 1, &typeNamespace)
-            || 1 != md_set_column_value_as_utf8(typeRef, mdtTypeRef_TypeNamespace, 1, &typeNamespace))
-        {
-            return E_FAIL;
+            mdcursor_t enclosingClass;
+            if (1 != md_get_column_value_as_cursor(nestedClass, mdtNestedClass_EnclosingClass, 1, &enclosingClass))
+                return E_FAIL;
+            
+            typesForTypeRefs.push(enclosingClass);
+            if (!md_cursor_to_token(enclosingClass, &nestedTypeToken))
+                return E_FAIL;
         }
 
-        resolutionScope = typeRef;
-        onRowAdded(typeRef);
-    }
+        for (; !typesForTypeRefs.empty(); typesForTypeRefs.pop())
+        {
+            mdcursor_t typeDef = typesForTypeRefs.top();
+            md_added_row_t typeRef;
+            if (!md_append_row(targetModule, mdtid_TypeRef, &typeRef))
+                return E_FAIL;
+            
+            if (1 != md_set_column_value_as_cursor(typeRef, mdtTypeRef_ResolutionScope, 1, &resolutionScope))
+                return E_FAIL;
+            
+            char const* typeName;
+            if (1 != md_get_column_value_as_utf8(typeDef, mdtTypeDef_TypeName, 1, &typeName)
+                || 1 != md_set_column_value_as_utf8(typeRef, mdtTypeRef_TypeName, 1, &typeName))
+            {
+                return E_FAIL;
+            }
+            
+            char const* typeNamespace;
+            if (1 != md_get_column_value_as_utf8(typeDef, mdtTypeDef_TypeNamespace, 1, &typeNamespace)
+                || 1 != md_set_column_value_as_utf8(typeRef, mdtTypeRef_TypeNamespace, 1, &typeNamespace))
+            {
+                return E_FAIL;
+            }
 
-    *targetTypeDef = resolutionScope;
+            resolutionScope = typeRef;
+            onRowAdded(typeRef);
+        }
+
+        *targetTypeDef = resolutionScope;
+    }
+    catch (std::bad_alloc const&)
+    {
+        return E_OUTOFMEMORY;
+    }
 
     return S_OK;
 }
@@ -1109,7 +1184,7 @@ namespace
             
             return S_OK;
         }
-        return E_NOTIMPL;
+        return S_OK;
     }
 
     HRESULT ImportReferenceToTypeRef(
@@ -1139,14 +1214,14 @@ namespace
         }
         
         mdhandle_t sourceModule = md_extract_handle_from_cursor(sourceTypeRef);
-        mdguid_t targetModuleMvid = { 0 };
-        mdguid_t targetAssemblyMvid = { 0 };
-        mdguid_t sourceAssemblyMvid = { 0 };
-        mdguid_t sourceModuleMvid = { 0 };
+        mdguid_t targetModuleMvid = {};
+        mdguid_t targetAssemblyMvid = {};
+        mdguid_t sourceAssemblyMvid = {};
+        mdguid_t sourceModuleMvid = {};
         RETURN_IF_FAILED(GetMvid(targetModule, &targetModuleMvid));
         RETURN_IF_FAILED(GetMvid(targetAssembly, &targetAssemblyMvid));
-        RETURN_IF_FAILED(GetMvid(sourceAssembly, &sourceAssemblyMvid));
         RETURN_IF_FAILED(GetMvid(sourceModule, &sourceModuleMvid));
+        RETURN_IF_FAILED(GetMvid(sourceAssembly, &sourceAssemblyMvid));
 
         bool sameModuleMvid = std::memcmp(&targetModuleMvid, &sourceModuleMvid, sizeof(mdguid_t)) == 0;
         bool sameAssemblyMvid = std::memcmp(&targetAssemblyMvid, &sourceAssemblyMvid, sizeof(mdguid_t)) == 0;
@@ -1157,7 +1232,7 @@ namespace
         // - ModuleRef token
         // - Module token
         // - AssemblyRef token
-        mdcursor_t targetOutermostScope = { 0 };
+        mdcursor_t targetOutermostScope = {};
         if (sameAssemblyMvid && sameModuleMvid)
         {
             mdToken token;
@@ -1182,7 +1257,7 @@ namespace
                 // Since the source and target assemblies have the same identity,
                 // we can use the Nil token and we don't have to resolve the ExportedType
                 // as the target and source assemblies are the same.
-                targetOutermostScope = { 0 };
+                targetOutermostScope = {};
             }
             else if (TypeFromToken(scopeToken) == mdtModule)
             {
@@ -1263,7 +1338,7 @@ namespace
                 mdcursor_t exportedType;
                 uint32_t count;
                 bool foundExportedType = false;
-                mdcursor_t implementation = { 0 };
+                mdcursor_t implementation = {};
                 if (md_create_cursor(sourceAssembly, mdtid_ExportedType, &exportedType, &count))
                 {
                     mdcursor_t outermostTypeRef = typesForTypeRefs.top();
@@ -1619,7 +1694,7 @@ HRESULT ImportReferenceToTypeDefOrRefOrSpec(
                 return E_FAIL;
             
             malloc_span<uint8_t> importedSignature;
-            RETURN_IF_FAILED(ImportTypeSpecBlob(sourceAssembly, sourceModule, sourceAssemblyHash, targetAssembly, targetModule, {signature, signatureLength}, onRowAdded, &importedSignature));
+            RETURN_IF_FAILED(ImportTypeSpecBlob(sourceAssembly, sourceModule, sourceAssemblyHash, targetAssembly, targetModule, {signature, signatureLength}, onRowAdded, importedSignature));
 
             md_added_row_t typeSpec;
             if (!md_append_row(targetModule, mdtid_TypeSpec, &typeSpec))

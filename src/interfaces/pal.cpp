@@ -167,24 +167,24 @@ namespace
 bool pal::ComputeSha1Hash(span<const uint8_t> data, std::array<uint8_t, SHA1_HASH_SIZE>& hashDestination)
 {
     BCRYPT_ALG_HANDLE hAlg;
-    if (!BCRYPT_SUCCESS(BCryptOpenAlgorithmProvider(&hAlg, BCRYPT_SHA1_ALGORITHM, nullptr, 0)))
+    if (!BCRYPT_SUCCESS(::BCryptOpenAlgorithmProvider(&hAlg, BCRYPT_SHA1_ALGORITHM, nullptr, 0)))
     {
         return false;
     }
     bcrypt_alg_handle algHandle { hAlg };
 
     BCRYPT_HASH_HANDLE hHash;
-    if (!BCRYPT_SUCCESS(BCryptCreateHash(hAlg, &hHash, nullptr, 0, nullptr, 0, 0)))
+    if (!BCRYPT_SUCCESS(::BCryptCreateHash(hAlg, &hHash, nullptr, 0, nullptr, 0, 0)))
     {
         return false;
     }
     bcrypt_hash_handle hashHandle { hHash };
-    if (!BCRYPT_SUCCESS(BCryptHashData(hHash, (PUCHAR)(uint8_t const*)data, (ULONG)data.size(), 0)))
+    if (!BCRYPT_SUCCESS(::BCryptHashData(hHash, (PUCHAR)(uint8_t const*)data, (ULONG)data.size(), 0)))
     {
         return false;
     }
 
-    return BCRYPT_SUCCESS(BCryptFinishHash(hHash, hashDestination.data(), (ULONG)hashDestination.size(), 0));
+    return BCRYPT_SUCCESS(::BCryptFinishHash(hHash, hashDestination.data(), (ULONG)hashDestination.size(), 0));
 }
 #elif defined(BUILD_MACOS)
 #include <CommonCrypto/CommonDigest.h>

@@ -29,7 +29,7 @@ HRESULT ImportSignatureIntoModule(
     mdhandle_t destinationModule,
     span<const uint8_t> signature,
     std::function<void(mdcursor_t)> onRowAdded,
-    malloc_span<uint8_t>* importedSignature);
+    malloc_span<uint8_t>& importedSignature);
 
 // Import a TypeSpecBlob (II.23.2.14) from one set of module and assembly metadata into another set of module and assembly metadata.
 HRESULT ImportTypeSpecBlob(
@@ -40,6 +40,6 @@ HRESULT ImportTypeSpecBlob(
     mdhandle_t destinationModule,
     span<const uint8_t> typeSpecBlob,
     std::function<void(mdcursor_t)> onRowAdded,
-    malloc_span<uint8_t>* importedTypeSpecBlob);
+    malloc_span<uint8_t>& importedTypeSpecBlob);
 
 #endif // _SRC_INTERFACES_SIGNATURES_HPP_
