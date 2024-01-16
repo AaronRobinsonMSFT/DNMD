@@ -1,5 +1,5 @@
 #include "metadataemit.hpp"
-#include "metadataemithelpers.hpp"
+#include "importhelpers.hpp"
 #include "pal.hpp"
 #include <limits>
 #include <fstream>

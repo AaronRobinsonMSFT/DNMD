@@ -3,7 +3,6 @@ set(SOURCES
   ./symbinder.cpp
   ./metadataimport.cpp
   ./metadataemit.cpp
-  ./metadataemithelpers.cpp
   ./hcorenum.cpp
   ./pal.cpp
   ./signatures.cpp
