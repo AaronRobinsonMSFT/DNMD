@@ -7,6 +7,7 @@
 #include <stack>
 #include <algorithm>
 #include <utility>
+#include <cstring>
 
 #define RETURN_IF_FAILED(exp) \
 { \
@@ -28,7 +29,7 @@ namespace
         char const** name)
     {
         // Search for the last delimiter.
-        char* pos = ::strrchr(typeName, '.');
+        char* pos = std::strrchr(typeName, '.');
         if (pos == nullptr)
         {
             // No namespace is indicated by an empty string.
@@ -60,7 +61,7 @@ HRESULT MetadataEmit::SetModuleProps(
     // Search for a file name in the provided path
     // and use that as the module name.
     char* modulePath = cvt;
-    std::size_t len = strlen(modulePath);
+    std::size_t len = std::strlen(modulePath);
     const char* start = modulePath;
     for (std::size_t i = len - 1; i >= 0; i--)
     {
@@ -1130,7 +1131,7 @@ HRESULT MetadataEmit::SetMethodProps(
     if (!md_token_to_cursor(MetaData(), md, &c))
         return CLDB_E_FILE_CORRUPT;
     
-    if (dwMethodFlags != std::numeric_limits<UINT32>::max())
+    if (dwMethodFlags != std::numeric_limits<DWORD>::max())
     {
         // TODO: Strip the reserved flags from user input and preserve the existing reserved flags.
         uint32_t flags = dwMethodFlags;
@@ -1138,14 +1139,14 @@ HRESULT MetadataEmit::SetMethodProps(
             return E_FAIL;
     }
     
-    if (ulCodeRVA != std::numeric_limits<UINT32>::max())
+    if (ulCodeRVA != std::numeric_limits<ULONG>::max())
     {
         uint32_t rva = ulCodeRVA;
         if (1 != md_set_column_value_as_constant(c, mdtMethodDef_Rva, 1, &rva))
             return E_FAIL;
     }
     
-    if (dwImplFlags != std::numeric_limits<UINT32>::max())
+    if (dwImplFlags != std::numeric_limits<DWORD>::max())
     {
         uint32_t implFlags = dwImplFlags;
         if (1 != md_set_column_value_as_constant(c, mdtMethodDef_ImplFlags, 1, &implFlags))
@@ -1166,7 +1167,7 @@ HRESULT MetadataEmit::SetTypeDefProps(
     if (!md_token_to_cursor(MetaData(), td, &c))
         return CLDB_E_FILE_CORRUPT;
     
-    if (dwTypeDefFlags != std::numeric_limits<UINT32>::max())
+    if (dwTypeDefFlags != std::numeric_limits<DWORD>::max())
     {
         // TODO: Strip the reserved flags from user input and preserve the existing reserved flags.
         uint32_t flags = dwTypeDefFlags;
@@ -1174,7 +1175,7 @@ HRESULT MetadataEmit::SetTypeDefProps(
             return E_FAIL;
     }
 
-    if (tkExtends != std::numeric_limits<UINT32>::max())
+    if (tkExtends != std::numeric_limits<uint32_t>::max())
     {
         if (IsNilToken(tkExtends))
             tkExtends = mdTypeDefNil;
@@ -1282,7 +1283,7 @@ HRESULT MetadataEmit::SetEventProps(
     if (!md_token_to_cursor(MetaData(), ev, &c))
         return CLDB_E_FILE_CORRUPT;
     
-    if (dwEventFlags != std::numeric_limits<UINT32>::max())
+    if (dwEventFlags != std::numeric_limits<DWORD>::max())
     {
         uint32_t eventFlags = dwEventFlags;
         if (1 != md_set_column_value_as_constant(c, mdtEvent_EventFlags, 1, &eventFlags))
@@ -1651,7 +1652,7 @@ HRESULT MetadataEmit::DefineField(
         hasConstant = true;
     }
 
-    if (dwFieldFlags != std::numeric_limits<UINT32>::max())
+    if (dwFieldFlags != std::numeric_limits<DWORD>::max())
     {
         // TODO: Handle reserved flags
         uint32_t fieldFlags = dwFieldFlags;
@@ -1750,7 +1751,7 @@ HRESULT MetadataEmit::DefineProperty(
             }
 
             uint32_t propFlags = (uint32_t)dwPropFlags;
-            if (propFlags != std::numeric_limits<UINT32>::max())
+            if (propFlags != std::numeric_limits<uint32_t>::max())
             {
                 propFlags &= ~prReservedMask;  
             }
@@ -1762,13 +1763,13 @@ HRESULT MetadataEmit::DefineProperty(
                 (pValue || (pValue == 0 && (dwCPlusTypeFlag == ELEMENT_TYPE_STRING ||
                                             dwCPlusTypeFlag == ELEMENT_TYPE_CLASS))))
             {
-                if (propFlags == std::numeric_limits<UINT32>::max())
+                if (propFlags == std::numeric_limits<uint32_t>::max())
                     propFlags = 0;
                 propFlags |= prHasDefault;
                 hasConstant = true;
             }
 
-            if (propFlags != std::numeric_limits<UINT32>::max())
+            if (propFlags != std::numeric_limits<uint32_t>::max())
             {
                 if (1 != md_set_column_value_as_constant(c, mdtProperty_Flags, 1, &propFlags))
                     return E_FAIL;   
@@ -1862,7 +1863,7 @@ HRESULT MetadataEmit::DefineParam(
         hasConstant = true;
     }
 
-    if (dwParamFlags != std::numeric_limits<UINT32>::max())
+    if (dwParamFlags != std::numeric_limits<DWORD>::max())
     {
         // TODO: Handle reserved flags
         uint32_t flags = dwParamFlags;
@@ -1923,7 +1924,7 @@ HRESULT MetadataEmit::SetFieldProps(
         hasConstant = true;
     }
 
-    if (dwFieldFlags != std::numeric_limits<UINT32>::max())
+    if (dwFieldFlags != std::numeric_limits<DWORD>::max())
     {
         // TODO: Handle reserved flags
         uint32_t fieldFlags = dwFieldFlags;
@@ -1970,7 +1971,7 @@ HRESULT MetadataEmit::SetPropertyProps(
     if (!md_token_to_cursor(MetaData(), pr, &c))
         return CLDB_E_FILE_CORRUPT;
 
-    if (dwPropFlags != std::numeric_limits<UINT32>::max())
+    if (dwPropFlags != std::numeric_limits<DWORD>::max())
     {
         dwPropFlags &= ~prReservedMask;  
     }
@@ -1982,13 +1983,13 @@ HRESULT MetadataEmit::SetPropertyProps(
         (pValue || (pValue == 0 && (dwCPlusTypeFlag == ELEMENT_TYPE_STRING ||
                                     dwCPlusTypeFlag == ELEMENT_TYPE_CLASS))))
     {
-        if (dwPropFlags == std::numeric_limits<UINT32>::max())
+        if (dwPropFlags == std::numeric_limits<DWORD>::max())
             dwPropFlags = 0;
         dwPropFlags |= prHasDefault;
         hasConstant = true;
     }
 
-    if (dwPropFlags != std::numeric_limits<UINT32>::max())
+    if (dwPropFlags != std::numeric_limits<DWORD>::max())
     {
         // TODO: Preserve reserved flags
         uint32_t flags = dwPropFlags;
@@ -2074,7 +2075,7 @@ HRESULT MetadataEmit::SetParamProps(
         hasConstant = true;
     }
 
-    if (dwParamFlags != std::numeric_limits<UINT32>::max())
+    if (dwParamFlags != std::numeric_limits<DWORD>::max())
     {
         // TODO: Handle reserved flags
         uint32_t flags = dwParamFlags;
