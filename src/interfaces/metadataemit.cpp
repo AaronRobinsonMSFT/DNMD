@@ -1,9 +1,12 @@
 #include "metadataemit.hpp"
 #include "importhelpers.hpp"
+#include "signatures.hpp"
 #include "pal.hpp"
 #include <limits>
 #include <fstream>
 #include <stack>
+#include <algorithm>
+#include <utility>
 
 #define RETURN_IF_FAILED(exp) \
 { \
@@ -382,7 +385,7 @@ namespace
 
 HRESULT MetadataEmit::DefineImportType(
         IMetaDataAssemblyImport *pAssemImport,
-        const void  *pbHashValue,
+        void const *pbHashValue,
         ULONG       cbHashValue,
         IMetaDataImport *pImport,
         mdTypeDef   tdImport,
@@ -405,191 +408,26 @@ HRESULT MetadataEmit::DefineImportType(
     dncp::com_ptr<IDNMDOwner> import{};
     RETURN_IF_FAILED(pImport->QueryInterface(IID_IDNMDOwner, (void**)&import));
 
-    mdguid_t thisMvid = { 0 };
-    mdguid_t assemEmitMvid = { 0 };
-    mdguid_t assemImportMvid = { 0 };
-    mdguid_t importMvid = { 0 };
-    RETURN_IF_FAILED(GetMvid(MetaData(), &thisMvid));
-    RETURN_IF_FAILED(GetMvid(assemEmit->MetaData(), &assemEmitMvid));
-    RETURN_IF_FAILED(GetMvid(assemImport->MetaData(), &assemImportMvid));
-    RETURN_IF_FAILED(GetMvid(import->MetaData(), &importMvid));
-
-    bool sameModuleMvid = std::memcmp(&thisMvid, &importMvid, sizeof(mdguid_t)) == 0;
-    bool sameAssemblyMvid = std::memcmp(&assemEmitMvid, &assemImportMvid, sizeof(mdguid_t)) == 0;
-
-    mdcursor_t resolutionScope;
-    if (sameAssemblyMvid && sameModuleMvid)
-    {
-        uint32_t count;
-        if (!md_create_cursor(MetaData(), mdtid_Module, &resolutionScope, &count))
-            return E_FAIL;
-    }
-    else if (sameAssemblyMvid && !sameModuleMvid)
-    {
-        char const* importName;
-        mdcursor_t importModule;
-        uint32_t count;
-        if (!md_create_cursor(import->MetaData(), mdtid_Module, &importModule, &count)
-            || 1 != md_get_column_value_as_utf8(importModule, mdtModule_Name, 1, &importName))
-        {
-            return E_FAIL;
-        }
-
-        md_added_row_t moduleRef;
-        if (!md_append_row(MetaData(), mdtid_ModuleRef, &moduleRef)
-            || 1 != md_set_column_value_as_utf8(moduleRef, mdtModuleRef_Name, 1, &importName))
-        {
-            return E_FAIL;
-        }
-
-        resolutionScope = moduleRef;
-    }
-    else if (sameModuleMvid)
-    {
-        // The import can't be the same module and different assemblies.
-        // COMPAT-BREAK: CoreCLR allows this for cases where pAssemImport is null, with a TODO from FX-era.
-        return E_INVALIDARG;
-    }
-    else
-    {
-        // TODO: Create assembly ref
-        mdcursor_t importAssembly;
-        uint32_t count;
-        if (!md_create_cursor(import->MetaData(), mdtid_Assembly, &importAssembly, &count))
-            return E_FAIL;
-        
-        uint32_t flags;
-        if (1 != md_get_column_value_as_constant(importAssembly, mdtAssembly_Flags, 1, &flags))
-            return E_FAIL;
-
-        uint8_t const* publicKey;
-        uint32_t publicKeyLength;
-        if (1 != md_get_column_value_as_blob(importAssembly, mdtAssembly_PublicKey, 1, &publicKey, &publicKeyLength))
-            return E_FAIL;
-        
-        if (publicKey != nullptr)
-        {
-            assert(IsAfPublicKey(flags));
-            flags &= ~afPublicKey;
-            // TODO: Generate token from public key.
-        }
-        else
-        {
-            assert(!IsAfPublicKey(flags));
-        }
-
-        md_added_row_t assemblyRef;
-        if (!md_append_row(MetaData(), mdtid_AssemblyRef, &assemblyRef))
-            return E_FAIL;
-  
-        uint32_t temp;
-        if (1 != md_get_column_value_as_constant(importAssembly, mdtAssembly_MajorVersion, 1, &temp)
-            || 1 != md_set_column_value_as_constant(assemblyRef, mdtAssemblyRef_MajorVersion, 1, &temp))
-        {
-            return E_FAIL;
-        }
-
-        if (1 != md_get_column_value_as_constant(importAssembly, mdtAssembly_MinorVersion, 1, &temp)
-            || 1 != md_set_column_value_as_constant(assemblyRef, mdtAssemblyRef_MinorVersion, 1, &temp))
-        {
-            return E_FAIL;
-        }
-
-        if (1 != md_get_column_value_as_constant(importAssembly, mdtAssembly_BuildNumber, 1, &temp)
-            || 1 != md_set_column_value_as_constant(assemblyRef, mdtAssemblyRef_BuildNumber, 1, &temp))
-        {
-            return E_FAIL;
-        }
-
-        if (1 != md_get_column_value_as_constant(importAssembly, mdtAssembly_RevisionNumber, 1, &temp)
-            || 1 != md_set_column_value_as_constant(assemblyRef, mdtAssemblyRef_RevisionNumber, 1, &temp))
-        {
-            return E_FAIL;
-        }
-        
-        // TODO: Public Key/Token and Flags
-        if (1 != md_set_column_value_as_constant(assemblyRef, mdtAssemblyRef_Flags, 1, &flags))
-            return E_FAIL;
-        
-        char const* assemblyName;
-        if (1 != md_get_column_value_as_utf8(importAssembly, mdtAssembly_Name, 1, &assemblyName)
-            || 1 != md_set_column_value_as_utf8(assemblyRef, mdtAssemblyRef_Name, 1, &assemblyName))
-        {
-            return E_FAIL;
-        }
-
-        char const* assemblyCulture;
-        if (1 != md_get_column_value_as_utf8(importAssembly, mdtAssembly_Culture, 1, &assemblyCulture)
-            || 1 != md_set_column_value_as_utf8(assemblyRef, mdtAssemblyRef_Culture, 1, &assemblyCulture))
-        {
-            return E_FAIL;
-        }
-
-        uint8_t const* hash = (uint8_t const*)pbHashValue;
-        uint32_t hashLength = (uint32_t)cbHashValue;
-        if (1 != md_set_column_value_as_blob(assemblyRef, mdtAssemblyRef_HashValue, 1, &hash, &hashLength))
-            return E_FAIL;
-        
-        resolutionScope = assemblyRef;
-    }
-
-    std::stack<mdcursor_t> typesForTypeRefs;
-
-    mdcursor_t importType;
-    if (!md_token_to_cursor(import->MetaData(), tdImport, &importType))
+    mdcursor_t originalTypeDef;
+    if (!md_token_to_cursor(import->MetaData(), tdImport, &originalTypeDef))
         return CLDB_E_FILE_CORRUPT;
     
-    typesForTypeRefs.push(importType);
-    
-    mdcursor_t nestedClasses;
-    uint32_t nestedClassCount;
-    if (!md_create_cursor(import->MetaData(), mdtid_NestedClass, &nestedClasses, &nestedClassCount))
+    mdcursor_t importedTypeDef;
+
+    RETURN_IF_FAILED(ImportReferenceToTypeDef(
+        originalTypeDef,
+        assemImport->MetaData(),
+        { reinterpret_cast<uint8_t const*>(pbHashValue), cbHashValue },
+        assemEmit->MetaData(),
+        MetaData(),
+        false,
+        [](mdcursor_t){},
+        &importedTypeDef
+    ));
+
+    if (!md_cursor_to_token(importedTypeDef, ptr))
         return E_FAIL;
     
-    mdToken nestedTypeToken = tdImport;
-    mdcursor_t nestedClass;
-    while (md_find_row_from_cursor(nestedClasses, mdtNestedClass_NestedClass, RidFromToken(nestedTypeToken), &nestedClass))
-    {
-        mdcursor_t enclosingClass;
-        if (1 != md_get_column_value_as_cursor(nestedClass, mdtNestedClass_EnclosingClass, 1, &enclosingClass))
-            return E_FAIL;
-        
-        typesForTypeRefs.push(enclosingClass);
-        if (!md_cursor_to_token(enclosingClass, &nestedTypeToken))
-            return E_FAIL;
-    }
-
-    for (; !typesForTypeRefs.empty(); typesForTypeRefs.pop())
-    {
-        mdcursor_t typeDef = typesForTypeRefs.top();
-        md_added_row_t typeRef;
-        if (!md_append_row(MetaData(), mdtid_TypeRef, &typeRef))
-            return E_FAIL;
-        
-        if (1 != md_set_column_value_as_cursor(typeRef, mdtTypeRef_ResolutionScope, 1, &resolutionScope))
-            return E_FAIL;
-        
-        char const* typeName;
-        if (1 != md_get_column_value_as_utf8(typeDef, mdtTypeDef_TypeName, 1, &typeName)
-            || 1 != md_set_column_value_as_utf8(typeRef, mdtTypeRef_TypeName, 1, &typeName))
-        {
-            return E_FAIL;
-        }
-        
-        char const* typeNamespace;
-        if (1 != md_get_column_value_as_utf8(typeDef, mdtTypeDef_TypeNamespace, 1, &typeNamespace)
-            || 1 != md_set_column_value_as_utf8(typeRef, mdtTypeRef_TypeNamespace, 1, &typeNamespace))
-        {
-            return E_FAIL;
-        }
-
-        resolutionScope = typeRef;
-    }
-
-    if (!md_cursor_to_token(resolutionScope, ptr))
-        return E_FAIL;
-
-    // TODO: Update EncLog
     return S_OK;
 }
 
@@ -2311,18 +2149,40 @@ HRESULT MetadataEmit::TranslateSigWithScope(
         ULONG       cbTranslatedSigMax,
         ULONG       *pcbTranslatedSig)
 {
-    UNREFERENCED_PARAMETER(pAssemImport);
-    UNREFERENCED_PARAMETER(pbHashValue);
-    UNREFERENCED_PARAMETER(cbHashValue);
-    UNREFERENCED_PARAMETER(import);
-    UNREFERENCED_PARAMETER(pbSigBlob);
-    UNREFERENCED_PARAMETER(cbSigBlob);
-    UNREFERENCED_PARAMETER(pAssemEmit);
-    UNREFERENCED_PARAMETER(emit);
-    UNREFERENCED_PARAMETER(pvTranslatedSig);
-    UNREFERENCED_PARAMETER(cbTranslatedSigMax);
-    UNREFERENCED_PARAMETER(pcbTranslatedSig);
-    return E_NOTIMPL;
+    HRESULT hr;
+    dncp::com_ptr<IDNMDOwner> assemImport{};
+
+    if (pAssemImport != nullptr)
+        RETURN_IF_FAILED(pAssemImport->QueryInterface(IID_IDNMDOwner, (void**)&assemImport));
+
+    dncp::com_ptr<IDNMDOwner> assemEmit{};
+    if (pAssemEmit != nullptr)
+        RETURN_IF_FAILED(pAssemEmit->QueryInterface(IID_IDNMDOwner, (void**)&assemEmit));
+
+    if (import == nullptr)
+        return E_INVALIDARG;
+    
+    dncp::com_ptr<IDNMDOwner> moduleImport{};
+    RETURN_IF_FAILED(import->QueryInterface(IID_IDNMDOwner, (void**)&moduleImport));
+    
+    dncp::com_ptr<IDNMDOwner> moduleEmit{};
+    RETURN_IF_FAILED(emit->QueryInterface(IID_IDNMDOwner, (void**)&moduleEmit));
+    
+    malloc_span<uint8_t> translatedSig;
+    RETURN_IF_FAILED(ImportSignatureIntoModule(
+        assemImport->MetaData(),
+        moduleImport->MetaData(),
+        { reinterpret_cast<uint8_t const*>(pbHashValue), cbHashValue },
+        assemEmit->MetaData(),
+        moduleEmit->MetaData(),
+        { pbSigBlob, cbSigBlob },
+        [](mdcursor_t){},
+        translatedSig));
+    
+    std::copy_n(translatedSig.begin(), std::min(translatedSig.size(), (size_t)cbTranslatedSigMax), (uint8_t*)pvTranslatedSig);
+
+    *pcbTranslatedSig = (ULONG)translatedSig.size();
+    return translatedSig.size() > cbTranslatedSigMax ? CLDB_S_TRUNCATION : S_OK;
 }
 
 HRESULT MetadataEmit::SetMethodImplFlags(
