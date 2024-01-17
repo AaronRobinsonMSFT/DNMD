@@ -367,23 +367,6 @@ HRESULT MetadataEmit::DefineTypeRefByName(
     return S_OK;
 }
 
-namespace
-{
-    HRESULT GetMvid(mdhandle_t handle, mdguid_t* mvid)
-    {
-        assert(mvid != nullptr);
-        mdcursor_t c;
-        uint32_t count;
-        if (!md_create_cursor(handle, mdtid_Module, &c, &count))
-            return E_INVALIDARG;
-
-        if (1 != md_get_column_value_as_guid(c, mdtModule_Mvid, 1, mvid))
-            return E_INVALIDARG;
-        
-        return S_OK;
-    }
-}
-
 HRESULT MetadataEmit::DefineImportType(
         IMetaDataAssemblyImport *pAssemImport,
         void const *pbHashValue,
@@ -774,7 +757,7 @@ HRESULT MetadataEmit::SetFieldMarshal(
         return CLDB_E_FILE_CORRUPT;
     
     col_index_t col = TypeFromToken(tk) == mdtFieldDef ? mdtField_Flags : mdtParam_Flags;
-    uint32_t flagToAdd = TypeFromToken(tk) == mdtFieldDef ? fdHasFieldMarshal : pdHasFieldMarshal;
+    uint32_t flagToAdd = TypeFromToken(tk) == mdtFieldDef ? (uint32_t)fdHasFieldMarshal : (uint32_t)pdHasFieldMarshal;
     uint32_t flags;
     if (1 != md_get_column_value_as_constant(parent, col, 1, &flags))
         return E_FAIL;
@@ -814,7 +797,7 @@ HRESULT MetadataEmit::DeleteFieldMarshal(
         MetaData(),
         tk,
         TypeFromToken(tk) == mdtFieldDef ? mdtField_Flags : mdtParam_Flags,
-        TypeFromToken(tk) == mdtFieldDef ? fdHasFieldMarshal : pdHasFieldMarshal));
+        TypeFromToken(tk) == mdtFieldDef ? (uint32_t)fdHasFieldMarshal : (uint32_t)pdHasFieldMarshal));
     return S_OK;
 }
 
@@ -839,7 +822,7 @@ HRESULT MetadataEmit::DefinePermissionSet(
     if (TypeFromToken(tk) == mdtTypeDef
         || TypeFromToken(tk) == mdtMethodDef)
     {
-        uint32_t flagToAdd = TypeFromToken(tk) == mdtTypeDef ? tdHasSecurity : mdHasSecurity;
+        uint32_t flagToAdd = TypeFromToken(tk) == mdtTypeDef ? (uint32_t)tdHasSecurity : (uint32_t)mdHasSecurity;
         col_index_t flagsCol = TypeFromToken(tk) == mdtTypeDef ? mdtTypeDef_Flags : mdtMethodDef_Flags;
 
         mdcursor_t parent;
@@ -1110,7 +1093,7 @@ HRESULT MetadataEmit::DeleteToken(
                     MetaData(),
                     originalParent,
                     TypeFromToken(originalParent) == mdtTypeDef ? mdtTypeDef_Flags : mdtMethodDef_Flags,
-                    TypeFromToken(originalParent) == mdtTypeDef ? tdHasSecurity : mdHasSecurity);
+                    TypeFromToken(originalParent) == mdtTypeDef ? (uint32_t)tdHasSecurity : (uint32_t)mdHasSecurity);
             }
 
             return S_OK;
@@ -1482,7 +1465,7 @@ HRESULT MetadataEmit::DeletePinvokeMap(
         MetaData(),
         tk,
         TypeFromToken(tk) == mdtFieldDef ? mdtField_Flags : mdtMethodDef_Flags,
-        TypeFromToken(tk) == mdtFieldDef ? fdPinvokeImpl : mdPinvokeImpl));
+        TypeFromToken(tk) == mdtFieldDef ? (uint32_t)fdPinvokeImpl : (uint32_t)mdPinvokeImpl));
     
     return S_OK;
 }
