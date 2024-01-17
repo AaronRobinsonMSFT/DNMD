@@ -45,30 +45,28 @@ public:
         return _md_ptr.get();
     }
 
-    // TODO: provide implementations all of the methods below (starting with E_NOTIMPL stubs)
-
 public: // IMetaDataEmit
     STDMETHOD(SetModuleProps)(
-        LPCWSTR     szName);
+        LPCWSTR     szName) override;
 
     STDMETHOD(Save)(
         LPCWSTR     szFile,
-        DWORD       dwSaveFlags);
+        DWORD       dwSaveFlags) override;
 
     STDMETHOD(SaveToStream)(
         IStream     *pIStream,
-        DWORD       dwSaveFlags);
+        DWORD       dwSaveFlags) override;
 
     STDMETHOD(GetSaveSize)(
         CorSaveSize fSave,
-        DWORD       *pdwSaveSize);
+        DWORD       *pdwSaveSize) override;
 
     STDMETHOD(DefineTypeDef)(
         LPCWSTR     szTypeDef,
         DWORD       dwTypeDefFlags,
         mdToken     tkExtends,
         mdToken     rtkImplements[],
-        mdTypeDef   *ptd);
+        mdTypeDef   *ptd) override;
 
     STDMETHOD(DefineNestedType)(
         LPCWSTR     szTypeDef,
@@ -76,10 +74,10 @@ public: // IMetaDataEmit
         mdToken     tkExtends,
         mdToken     rtkImplements[],
         mdTypeDef   tdEncloser,
-        mdTypeDef   *ptd);
+        mdTypeDef   *ptd) override;
 
     STDMETHOD(SetHandler)(
-        IUnknown    *pUnk);
+        IUnknown    *pUnk) override;
 
     STDMETHOD(DefineMethod)(
         mdTypeDef   td,
@@ -89,17 +87,17 @@ public: // IMetaDataEmit
         ULONG       cbSigBlob,
         ULONG       ulCodeRVA,
         DWORD       dwImplFlags,
-        mdMethodDef *pmd);
+        mdMethodDef *pmd) override;
 
     STDMETHOD(DefineMethodImpl)(
         mdTypeDef   td,
         mdToken     tkBody,
-        mdToken     tkDecl);
+        mdToken     tkDecl) override;
 
     STDMETHOD(DefineTypeRefByName)(
         mdToken     tkResolutionScope,
         LPCWSTR     szName,
-        mdTypeRef   *ptr);
+        mdTypeRef   *ptr) override;
 
     STDMETHOD(DefineImportType)(
         IMetaDataAssemblyImport *pAssemImport,
@@ -108,14 +106,14 @@ public: // IMetaDataEmit
         IMetaDataImport *pImport,
         mdTypeDef   tdImport,
         IMetaDataAssemblyEmit *pAssemEmit,
-        mdTypeRef   *ptr);
+        mdTypeRef   *ptr) override;
 
     STDMETHOD(DefineMemberRef)(
         mdToken     tkImport,
         LPCWSTR     szName,
         PCCOR_SIGNATURE pvSigBlob,
         ULONG       cbSigBlob,
-        mdMemberRef *pmr);
+        mdMemberRef *pmr) override;
 
     STDMETHOD(DefineImportMember)(
         IMetaDataAssemblyImport *pAssemImport,
@@ -125,7 +123,7 @@ public: // IMetaDataEmit
         mdToken     mbMember,
         IMetaDataAssemblyEmit *pAssemEmit,
         mdToken     tkParent,
-        mdMemberRef *pmr);
+        mdMemberRef *pmr) override;
 
     STDMETHOD(DefineEvent) (
         mdTypeDef   td,
@@ -136,78 +134,78 @@ public: // IMetaDataEmit
         mdMethodDef mdRemoveOn,
         mdMethodDef mdFire,
         mdMethodDef rmdOtherMethods[],
-        mdEvent     *pmdEvent);
+        mdEvent     *pmdEvent) override;
 
     STDMETHOD(SetClassLayout) (
         mdTypeDef   td,
         DWORD       dwPackSize,
         COR_FIELD_OFFSET rFieldOffsets[],
-        ULONG       ulClassSize);
+        ULONG       ulClassSize) override;
 
     STDMETHOD(DeleteClassLayout) (
-        mdTypeDef   td);
+        mdTypeDef   td) override;
 
     STDMETHOD(SetFieldMarshal) (
         mdToken     tk,
         PCCOR_SIGNATURE pvNativeType,
-        ULONG       cbNativeType);
+        ULONG       cbNativeType) override;
 
     STDMETHOD(DeleteFieldMarshal) (
-        mdToken     tk);
+        mdToken     tk) override;
 
     STDMETHOD(DefinePermissionSet) (
         mdToken     tk,
         DWORD       dwAction,
         void const  *pvPermission,
         ULONG       cbPermission,
-        mdPermission *ppm);
+        mdPermission *ppm) override;
 
     STDMETHOD(SetRVA)(
         mdMethodDef md,
-        ULONG       ulRVA);
+        ULONG       ulRVA) override;
 
     STDMETHOD(GetTokenFromSig)(
         PCCOR_SIGNATURE pvSig,
         ULONG       cbSig,
-        mdSignature *pmsig);
+        mdSignature *pmsig) override;
 
     STDMETHOD(DefineModuleRef)(
         LPCWSTR     szName,
-        mdModuleRef *pmur);
+        mdModuleRef *pmur) override;
 
 
     STDMETHOD(SetParent)(
         mdMemberRef mr,
-        mdToken     tk);
+        mdToken     tk) override;
 
     STDMETHOD(GetTokenFromTypeSpec)(
         PCCOR_SIGNATURE pvSig,
         ULONG       cbSig,
-        mdTypeSpec *ptypespec);
+        mdTypeSpec *ptypespec) override;
 
     STDMETHOD(SaveToMemory)(
         void        *pbData,
-        ULONG       cbData);
+        ULONG       cbData) override;
 
     STDMETHOD(DefineUserString)(
         LPCWSTR szString,
         ULONG       cchString,
-        mdString    *pstk);
+        mdString    *pstk) override;
 
     STDMETHOD(DeleteToken)(
-        mdToken     tkObj);
+        mdToken     tkObj) override;
 
     STDMETHOD(SetMethodProps)(
         mdMethodDef md,
         DWORD       dwMethodFlags,
         ULONG       ulCodeRVA,
-        DWORD       dwImplFlags);
+        DWORD       dwImplFlags) override;
 
     STDMETHOD(SetTypeDefProps)(
         mdTypeDef   td,
         DWORD       dwTypeDefFlags,
         mdToken     tkExtends,
-        mdToken     rtkImplements[]);
+        mdToken     rtkImplements[]) override;
 
     STDMETHOD(SetEventProps)(
         mdEvent     ev,
@@ -216,29 +214,29 @@ public: // IMetaDataEmit
         mdMethodDef mdAddOn,
         mdMethodDef mdRemoveOn,
         mdMethodDef mdFire,
-        mdMethodDef rmdOtherMethods[]);
+        mdMethodDef rmdOtherMethods[]) override;
 
     STDMETHOD(SetPermissionSetProps)(
         mdToken     tk,
         DWORD       dwAction,
         void const  *pvPermission,
         ULONG       cbPermission,
-        mdPermission *ppm);
+        mdPermission *ppm) override;
 
     STDMETHOD(DefinePinvokeMap)(
         mdToken     tk,
         DWORD       dwMappingFlags,
         LPCWSTR     szImportName,
-        mdModuleRef mrImportDLL);
+        mdModuleRef mrImportDLL) override;
 
     STDMETHOD(SetPinvokeMap)(
         mdToken     tk,
         DWORD       dwMappingFlags,
         LPCWSTR     szImportName,
-        mdModuleRef mrImportDLL);
+        mdModuleRef mrImportDLL) override;
 
     STDMETHOD(DeletePinvokeMap)(
-        mdToken     tk);
+        mdToken     tk) override;
 
 
     STDMETHOD(DefineCustomAttribute)(
@@ -246,12 +244,12 @@ public: // IMetaDataEmit
         mdToken     tkCtor,
         void const  *pCustomAttribute,
         ULONG       cbCustomAttribute,
-        mdCustomAttribute *pcv);
+        mdCustomAttribute *pcv) override;
 
     STDMETHOD(SetCustomAttributeValue)(
         mdCustomAttribute pcv,
         void const  *pCustomAttribute,
-        ULONG       cbCustomAttribute);
+        ULONG       cbCustomAttribute) override;
 
     STDMETHOD(DefineField)(
         mdTypeDef   td,
@@ -262,7 +260,7 @@ public: // IMetaDataEmit
         DWORD       dwCPlusTypeFlag,
         void const  *pValue,
         ULONG       cchValue,
-        mdFieldDef  *pmd);
+        mdFieldDef  *pmd) override;
 
     STDMETHOD(DefineProperty)(
         mdTypeDef   td,
@@ -276,7 +274,7 @@ public: // IMetaDataEmit
         mdMethodDef mdSetter,
         mdMethodDef mdGetter,
         mdMethodDef rmdOtherMethods[],
-        mdProperty  *pmdProp);
+        mdProperty  *pmdProp) override;
 
     STDMETHOD(DefineParam)(
         mdMethodDef md,
@@ -286,14 +284,14 @@ public: // IMetaDataEmit
         DWORD       dwCPlusTypeFlag,
         void const  *pValue,
         ULONG       cchValue,
-        mdParamDef  *ppd);
+        mdParamDef  *ppd) override;
 
     STDMETHOD(SetFieldProps)(
         mdFieldDef  fd,
         DWORD       dwFieldFlags,
         DWORD       dwCPlusTypeFlag,
         void const  *pValue,
-        ULONG       cchValue);
+        ULONG       cchValue) override;
 
     STDMETHOD(SetPropertyProps)(
         mdProperty  pr,
@@ -303,7 +301,7 @@ public: // IMetaDataEmit
         ULONG       cchValue,
         mdMethodDef mdSetter,
         mdMethodDef mdGetter,
-        mdMethodDef rmdOtherMethods[]);
+        mdMethodDef rmdOtherMethods[]) override;
 
     STDMETHOD(SetParamProps)(
         mdParamDef  pd,
@@ -311,17 +309,17 @@ public: // IMetaDataEmit
         DWORD       dwParamFlags,
         DWORD       dwCPlusTypeFlag,
         void const  *pValue,
-        ULONG       cchValue);
+        ULONG       cchValue) override;
 
 
     STDMETHOD(DefineSecurityAttributeSet)(
         mdToken     tkObj,
         COR_SECATTR rSecAttrs[],
         ULONG       cSecAttrs,
-        ULONG       *pulErrorAttr);
+        ULONG       *pulErrorAttr) override;
 
     STDMETHOD(ApplyEditAndContinue)(
-        IUnknown    *pImport);
+        IUnknown    *pImport) override;
 
     STDMETHOD(TranslateSigWithScope)(
         IMetaDataAssemblyImport *pAssemImport,
@@ -334,45 +332,45 @@ public: // IMetaDataEmit
         IMetaDataEmit *emit,
         PCOR_SIGNATURE pvTranslatedSig,
         ULONG       cbTranslatedSigMax,
-        ULONG       *pcbTranslatedSig);
+        ULONG       *pcbTranslatedSig) override;
 
     STDMETHOD(SetMethodImplFlags)(
         mdMethodDef md,
-        DWORD       dwImplFlags);
+        DWORD       dwImplFlags) override;
 
     STDMETHOD(SetFieldRVA)(
         mdFieldDef  fd,
-        ULONG       ulRVA);
+        ULONG       ulRVA) override;
 
     STDMETHOD(Merge)(
         IMetaDataImport *pImport,
         IMapToken   *pHostMapToken,
-        IUnknown    *pHandler);
+        IUnknown    *pHandler) override;
 
-    STDMETHOD(MergeEnd)();
+    STDMETHOD(MergeEnd)() override;
 
 public: // IMetaDataEmit2
     STDMETHOD(DefineMethodSpec)(
         mdToken     tkParent,
         PCCOR_SIGNATURE pvSigBlob,
         ULONG       cbSigBlob,
-        mdMethodSpec *pmi);
+        mdMethodSpec *pmi) override;
 
     STDMETHOD(GetDeltaSaveSize)(
         CorSaveSize fSave,
-        DWORD       *pdwSaveSize);
+        DWORD       *pdwSaveSize) override;
 
     STDMETHOD(SaveDelta)(
         LPCWSTR     szFile,
-        DWORD       dwSaveFlags);
+        DWORD       dwSaveFlags) override;
 
     STDMETHOD(SaveDeltaToStream)(
         IStream     *pIStream,
-        DWORD       dwSaveFlags);
+        DWORD       dwSaveFlags) override;
 
     STDMETHOD(SaveDeltaToMemory)(
         void        *pbData,
-        ULONG       cbData);
+        ULONG       cbData) override;
 
     STDMETHOD(DefineGenericParam)(
         mdToken      tk,
@@ -381,16 +379,16 @@ public: // IMetaDataEmit2
         LPCWSTR      szname,
         DWORD        reserved,
         mdToken      rtkConstraints[],
-        mdGenericParam *pgp);
+        mdGenericParam *pgp) override;
 
     STDMETHOD(SetGenericParamProps)(
         mdGenericParam gp,
         DWORD        dwParamFlags,
         LPCWSTR      szName,
         DWORD        reserved,
-        mdToken      rtkConstraints[]);
+        mdToken      rtkConstraints[]) override;
 
-    STDMETHOD(ResetENCLog)();
+    STDMETHOD(ResetENCLog)() override;
 
 public: // IMetaDataAssemblyEmit
     STDMETHOD(DefineAssembly)(
@@ -400,7 +398,7 @@ public: // IMetaDataAssemblyEmit
         LPCWSTR     szName,
         const ASSEMBLYMETADATA *pMetaData,
         DWORD       dwAssemblyFlags,
-        mdAssembly  *pma);
+        mdAssembly  *pma) override;
 
     STDMETHOD(DefineAssemblyRef)(
         const void  *pbPublicKeyOrToken,
@@ -410,28 +408,28 @@ public: // IMetaDataAssemblyEmit
         const void  *pbHashValue,
         ULONG       cbHashValue,
         DWORD       dwAssemblyRefFlags,
-        mdAssemblyRef *pmdar);
+        mdAssemblyRef *pmdar) override;
 
     STDMETHOD(DefineFile)(
         LPCWSTR     szName,
         const void  *pbHashValue,
         ULONG       cbHashValue,
         DWORD       dwFileFlags,
-        mdFile      *pmdf);
+        mdFile      *pmdf) override;
 
     STDMETHOD(DefineExportedType)(
         LPCWSTR     szName,
         mdToken     tkImplementation,
         mdTypeDef   tkTypeDef,
         DWORD       dwExportedTypeFlags,
-        mdExportedType   *pmdct);
+        mdExportedType   *pmdct) override;
 
     STDMETHOD(DefineManifestResource)(
         LPCWSTR     szName,
         mdToken     tkImplementation,
         DWORD       dwOffset,
         DWORD       dwResourceFlags,
-        mdManifestResource  *pmdmr);
+        mdManifestResource  *pmdmr) override;
 
     STDMETHOD(SetAssemblyProps)(
         mdAssembly  pma,
@@ -440,7 +438,7 @@ public: // IMetaDataAssemblyEmit
         ULONG       ulHashAlgId,
         LPCWSTR     szName,
         const ASSEMBLYMETADATA *pMetaData,
-        DWORD       dwAssemblyFlags);
+        DWORD       dwAssemblyFlags) override;
 
     STDMETHOD(SetAssemblyRefProps)(
         mdAssemblyRef ar,
@@ -450,25 +448,25 @@ public: // IMetaDataAssemblyEmit
         const ASSEMBLYMETADATA *pMetaData,
         const void  *pbHashValue,
         ULONG       cbHashValue,
-        DWORD       dwAssemblyRefFlags);
+        DWORD       dwAssemblyRefFlags) override;
 
     STDMETHOD(SetFileProps)(
         mdFile      file,
         const void  *pbHashValue,
         ULONG       cbHashValue,
-        DWORD       dwFileFlags);
+        DWORD       dwFileFlags) override;
 
     STDMETHOD(SetExportedTypeProps)(
         mdExportedType   ct,
         mdToken     tkImplementation,
         mdTypeDef   tkTypeDef,
-        DWORD       dwExportedTypeFlags);
+        DWORD       dwExportedTypeFlags) override;
 
     STDMETHOD(SetManifestResourceProps)(
         mdManifestResource  mr,
         mdToken     tkImplementation,
         DWORD       dwOffset,
-        DWORD       dwResourceFlags);
+        DWORD       dwResourceFlags) override;
 };
 
 #endif
