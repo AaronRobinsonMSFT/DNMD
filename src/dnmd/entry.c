@@ -359,7 +359,7 @@ mdhandle_t md_create_new_pdb_handle()
 
     return pcxt;
 }
-#endif
+#endif // DNMD_PORTABLE_PDB
 
 bool md_apply_delta(mdhandle_t handle, void const* data, size_t data_len)
 {

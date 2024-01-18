@@ -51,7 +51,7 @@ mdhandle_t md_create_new_handle();
 // The image will always be in the v1.1 metadata format
 // and use the "PDB v1.0" version string.
 mdhandle_t md_create_new_pdb_handle();
-#endif
+#endif // DNMD_PORTABLE_PDB
 
 // Apply delta data to the current metadata.
 bool md_apply_delta(mdhandle_t handle, void const* data, size_t data_len);
