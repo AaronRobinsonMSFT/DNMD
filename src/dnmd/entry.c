@@ -269,9 +269,11 @@ static bool initialize_minimal_table_rows(mdcxt_t* cxt)
     if (1 != set_column_value_as_heap_offset(module_cursor, mdtModule_Mvid, 1, &guid_heap_offset)
         || 1 != set_column_value_as_heap_offset(module_cursor, mdtModule_EncBaseId, 1, &guid_heap_offset)
         || 1 != set_column_value_as_heap_offset(module_cursor, mdtModule_EncId, 1, &guid_heap_offset))
+    {
         return false;
+    }
 
-    const char* name = "";
+    char const* name = "";
     if (1 != md_set_column_value_as_utf8(module_cursor, mdtModule_Name, 1, &name))
         return false;
     
@@ -287,7 +289,7 @@ static bool initialize_minimal_table_rows(mdcxt_t* cxt)
     if (1 != md_set_column_value_as_constant(global_type_cursor, mdtTypeDef_Flags, 1, &flags))
         return false;
     
-    const char* global_type_name = "<Module>";
+    char const* global_type_name = "<Module>"; // Defined in ECMA-335 II.10.8
     if (1 != md_set_column_value_as_utf8(global_type_cursor, mdtTypeDef_TypeName, 1, &global_type_name))
         return false;
     

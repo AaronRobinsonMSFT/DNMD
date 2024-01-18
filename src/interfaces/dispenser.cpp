@@ -42,7 +42,7 @@ namespace
             // Initialize the MVID of the new image.
             mdcursor_t moduleCursor;
             if (!md_token_to_cursor(md_ptr.get(), TokenFromRid(1, mdtModule), &moduleCursor))
-                return E_UNEXPECTED;
+                return E_FAIL;
             
             mdguid_t mvid;
             HRESULT hr = PAL_CoCreateGuid(reinterpret_cast<GUID*>(&mvid));
