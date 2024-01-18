@@ -61,6 +61,7 @@ namespace
             try
             {
                 mdhandle_view handle_view{ obj->CreateAndAddTearOff<DNMDOwner>(std::move(md_ptr)) };
+                (void)obj->CreateAndAddTearOff<MetadataEmit>(handle_view);
                 (void)obj->CreateAndAddTearOff<MetadataImportRO>(std::move(handle_view));
             }
             catch(std::bad_alloc const&)
@@ -126,7 +127,7 @@ namespace
                 
                 if (!(dwOpenFlags & ofReadOnly))
                 {
-                    obj->CreateAndAddTearOff<MetadataEmit>(handle_view);
+                    (void)obj->CreateAndAddTearOff<MetadataEmit>(handle_view);
                 }
 
                 (void)obj->CreateAndAddTearOff<MetadataImportRO>(std::move(handle_view));
