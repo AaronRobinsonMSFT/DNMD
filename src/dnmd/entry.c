@@ -254,6 +254,7 @@ bool md_create_handle(void const* data, size_t data_len, mdhandle_t* handle)
 // and a row in the TypeDef table for the global type.
 static bool initialize_minimal_table_rows(mdcxt_t* cxt)
 {
+    // Add the Module row for module identity
     mdcursor_t module_cursor;
     if (!md_append_row(cxt, mdtid_Module, &module_cursor))
         return false;
@@ -274,8 +275,10 @@ static bool initialize_minimal_table_rows(mdcxt_t* cxt)
     if (1 != md_set_column_value_as_utf8(module_cursor, mdtModule_Name, 1, &name))
         return false;
     
+    // Mark that we're done adding the Module row.
     md_commit_row_add(module_cursor);
 
+    // Add a row for the global <Module> type.
     mdcursor_t global_type_cursor;
     if (!md_append_row(cxt, mdtid_TypeDef, &global_type_cursor))
         return false;
@@ -296,6 +299,7 @@ static bool initialize_minimal_table_rows(mdcxt_t* cxt)
     if (1 != md_set_column_value_as_token(global_type_cursor, mdtTypeDef_Extends, 1, &nil_typedef))
         return false;
 
+    // Mark that we're done adding the TypeDef row.
     md_commit_row_add(global_type_cursor);
 
     return true;
