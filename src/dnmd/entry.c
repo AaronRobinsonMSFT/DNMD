@@ -312,8 +312,8 @@ mdhandle_t md_create_new_handle()
     memset(&cxt, 0, sizeof(mdcxt_t));
     cxt.magic = MDLIB_MAGIC_NUMBER;
     cxt.context_flags = mdc_none;
-    cxt.major_ver = 2;
-    cxt.minor_ver = 0;
+    cxt.major_ver = 1;
+    cxt.minor_ver = 1;
     cxt.flags = 0;
     cxt.version = "v4.0.30319";
     cxt.editor = NULL;
@@ -334,6 +334,30 @@ mdhandle_t md_create_new_handle()
     return pcxt;
 }
 
+#ifdef DNMD_PORTABLE_PDB
+mdhandle_t md_create_new_pdb_handle()
+{
+    mdcxt_t cxt;
+
+    memset(&cxt, 0, sizeof(mdcxt_t));
+    cxt.magic = MDLIB_MAGIC_NUMBER;
+    cxt.context_flags = mdc_none;
+    cxt.major_ver = 1;
+    cxt.minor_ver = 1;
+    cxt.flags = 0;
+    cxt.version = "PDB v1.0";
+    cxt.editor = NULL;
+    cxt.mem = NULL;
+
+    // Allocate and initialize a full context
+    // with the correctly-sized trailing memory.
+    mdcxt_t* pcxt = allocate_full_context(&cxt);
+    if (pcxt == NULL)
+        return NULL;
+
+    return pcxt;
+}
+#endif
 
 bool md_apply_delta(mdhandle_t handle, void const* data, size_t data_len)
 {
