@@ -201,8 +201,8 @@ HRESULT MetadataEmit::DefineTypeDef(
         return E_FAIL;
     
     size_t i = 0;
-    mdToken currentImplementation = rtkImplements[i];
-    do
+    
+    for (mdToken currentImplementation; currentImplementation != mdTokenNil; currentImplementation = rtkImplements[++i])
     {
         md_added_row_t interfaceImpl;
         if (!md_append_row(MetaData(), mdtid_InterfaceImpl, &interfaceImpl))
@@ -213,7 +213,7 @@ HRESULT MetadataEmit::DefineTypeDef(
         
         if (1 != md_set_column_value_as_token(interfaceImpl, mdtInterfaceImpl_Interface, 1, &currentImplementation))
             return E_FAIL;
-    } while ((currentImplementation = rtkImplements[++i]) != mdTokenNil);
+    }
     
     // TODO: Update Enc Log
 
@@ -1383,12 +1383,15 @@ HRESULT MetadataEmit::DefinePinvokeMap(
     if (1 != md_set_column_value_as_token(row_to_edit, mdtImplMap_MemberForwarded, 1, &tk))
         return E_FAIL;
     
-    if (dwMappingFlags != std::numeric_limits<uint32_t>::max())
+    if (dwMappingFlags == std::numeric_limits<uint32_t>::max())
     {
-        uint32_t mappingFlags = dwMappingFlags;
-        if (1 != md_set_column_value_as_constant(row_to_edit, mdtImplMap_MappingFlags, 1, &mappingFlags))
-            return E_FAIL;
+        // Unspecified by the user, set to the default.
+        dwMappingFlags = 0;
     }
+
+    uint32_t mappingFlags = dwMappingFlags;
+    if (1 != md_set_column_value_as_constant(row_to_edit, mdtImplMap_MappingFlags, 1, &mappingFlags))
+        return E_FAIL;
     
     pal::StringConvert<WCHAR, char> cvt(szImportName);
     const char* name = cvt;
@@ -1650,6 +1653,20 @@ HRESULT MetadataEmit::DefineField(
         if (1 != md_set_column_value_as_constant(c, mdtField_Flags, 1, &fieldFlags))
             return E_FAIL;
     }
+    else
+    {
+        uint32_t fieldFlags = 0;
+
+        // If the field name has the special name for enum fields,
+        // set the special name and RTSpecialName flags.
+        // COMPAT: CoreCLR does not check if the field is actually in an enum type.
+        if (strcmp(name, COR_ENUM_FIELD_NAME) == 0)
+        {
+            fieldFlags |= fdRTSpecialName | fdSpecialName;
+        }
+        if (1 != md_set_column_value_as_constant(c, mdtField_Flags, 1, &fieldFlags))
+            return E_FAIL;
+    }
 
     uint8_t const* sig = (uint8_t const*)pvSigBlob;
     uint32_t sigLength = cbSigBlob;
@@ -1738,6 +1755,10 @@ HRESULT MetadataEmit::DefineProperty(
             {
                 propFlags &= ~prReservedMask;  
             }
+            else
+            {
+                propFlags = 0;
+            }
 
             bool hasConstant = false;
             // See if there is a Constant.
@@ -1752,11 +1773,8 @@ HRESULT MetadataEmit::DefineProperty(
                 hasConstant = true;
             }
 
-            if (propFlags != std::numeric_limits<uint32_t>::max())
-            {
-                if (1 != md_set_column_value_as_constant(c, mdtProperty_Flags, 1, &propFlags))
-                    return E_FAIL;   
-            }
+            if (1 != md_set_column_value_as_constant(c, mdtProperty_Flags, 1, &propFlags))
+                return E_FAIL;
 
             if (mdGetter != mdMethodDefNil)
             {
@@ -1851,6 +1869,12 @@ HRESULT MetadataEmit::DefineParam(
         // TODO: Handle reserved flags
         uint32_t flags = dwParamFlags;
 
+        if (1 != md_set_column_value_as_constant(c, mdtParam_Flags, 1, &flags))
+            return E_FAIL;
+    }
+    else
+    {
+        uint32_t flags = 0;
         if (1 != md_set_column_value_as_constant(c, mdtParam_Flags, 1, &flags))
             return E_FAIL;
     }
@@ -2357,6 +2381,12 @@ HRESULT MetadataEmit::DefineGenericParam(
         if (1 != md_set_column_value_as_utf8(c, mdtGenericParam_Name, 1, &name))
             return E_FAIL;
     }
+    else
+    {
+        const char* name = nullptr;
+        if (1 != md_set_column_value_as_utf8(c, mdtGenericParam_Name, 1, &name))
+            return E_FAIL;
+    }
 
     if (rtkConstraints != nullptr)
     {
@@ -2499,6 +2529,12 @@ HRESULT MetadataEmit::DefineAssembly(
         if (1 != md_set_column_value_as_blob(c, mdtAssembly_PublicKey, 1, &publicKey, &publicKeyLength))
             return E_FAIL;
     }
+    else
+    {
+        uint32_t publicKeyLength = 0;
+        if (1 != md_set_column_value_as_blob(c, mdtAssembly_PublicKey, 1, &publicKey, &publicKeyLength))
+            return E_FAIL;
+    }
     
     if (1 != md_set_column_value_as_constant(c, mdtAssembly_Flags, 1, &assemblyFlags))
         return E_FAIL;
@@ -2511,34 +2547,22 @@ HRESULT MetadataEmit::DefineAssembly(
     if (1 != md_set_column_value_as_constant(c, mdtAssembly_HashAlgId, 1, &hashAlgId))
         return E_FAIL;
 
-    if (pMetaData->usMajorVersion != std::numeric_limits<uint16_t>::max())
-    {
-        uint32_t majorVersion = pMetaData->usMajorVersion;
-        if (1 != md_set_column_value_as_constant(c, mdtAssembly_MajorVersion, 1, &majorVersion))
-            return E_FAIL;
-    }
+    uint32_t majorVersion = pMetaData->usMajorVersion != std::numeric_limits<uint16_t>::max() ? pMetaData->usMajorVersion : 0;
+    if (1 != md_set_column_value_as_constant(c, mdtAssembly_MajorVersion, 1, &majorVersion))
+        return E_FAIL;
 
-    if (pMetaData->usMinorVersion != std::numeric_limits<uint16_t>::max())
-    {
-        uint32_t minorVersion = pMetaData->usMinorVersion;
-        if (1 != md_set_column_value_as_constant(c, mdtAssembly_MinorVersion, 1, &minorVersion))
-            return E_FAIL;
-    }
-
-    if (pMetaData->usBuildNumber != std::numeric_limits<uint16_t>::max())
-    {
-        uint32_t buildNumber = pMetaData->usBuildNumber;
-        if (1 != md_set_column_value_as_constant(c, mdtAssembly_BuildNumber, 1, &buildNumber))
-            return E_FAIL;
-    }
-
-    if (pMetaData->usRevisionNumber != std::numeric_limits<uint16_t>::max())
-    {
-        uint32_t revisionNumber = pMetaData->usRevisionNumber;
-        if (1 != md_set_column_value_as_constant(c, mdtAssembly_RevisionNumber, 1, &revisionNumber))
-            return E_FAIL;
-    }
-
+    uint32_t minorVersion = pMetaData->usMinorVersion != std::numeric_limits<uint16_t>::max() ? pMetaData->usMinorVersion : 0;
+    if (1 != md_set_column_value_as_constant(c, mdtAssembly_MinorVersion, 1, &minorVersion))
+        return E_FAIL;
+    
+    uint32_t buildNumber = pMetaData->usBuildNumber != std::numeric_limits<uint16_t>::max() ? pMetaData->usBuildNumber : 0;
+    if (1 != md_set_column_value_as_constant(c, mdtAssembly_BuildNumber, 1, &buildNumber))
+        return E_FAIL;
+    
+    uint32_t revisionNumber = pMetaData->usRevisionNumber != std::numeric_limits<uint16_t>::max() ? pMetaData->usRevisionNumber : 0;
+    if (1 != md_set_column_value_as_constant(c, mdtAssembly_RevisionNumber, 1, &revisionNumber))
+        return E_FAIL;
+    
     if (pMetaData->szLocale != nullptr)
     {
         pal::StringConvert<WCHAR, char> cvtLocale(pMetaData->szLocale);
@@ -2546,6 +2570,12 @@ HRESULT MetadataEmit::DefineAssembly(
             return E_INVALIDARG;
 
         const char* locale = cvtLocale;
+        if (1 != md_set_column_value_as_utf8(c, mdtAssembly_Culture, 1, &locale))
+            return E_FAIL;
+    }
+    else
+    {
+        const char* locale = nullptr;
         if (1 != md_set_column_value_as_utf8(c, mdtAssembly_Culture, 1, &locale))
             return E_FAIL;
     }
@@ -2586,11 +2616,24 @@ HRESULT MetadataEmit::DefineAssemblyRef(
         if (1 != md_set_column_value_as_blob(c, mdtAssemblyRef_PublicKeyOrToken, 1, &publicKey, &publicKeyLength))
             return E_FAIL;
     }
+    else
+    {
+        uint32_t publicKeyLength = 0;
+        if (1 != md_set_column_value_as_blob(c, mdtAssemblyRef_PublicKeyOrToken, 1, &publicKey, &publicKeyLength))
+            return E_FAIL;
+    }
 
     if (pbHashValue != nullptr)
     {
         uint8_t const* hashValue = (uint8_t const*)pbHashValue;
         uint32_t hashValueLength = cbHashValue;
+        if (1 != md_set_column_value_as_blob(c, mdtAssemblyRef_HashValue, 1, &hashValue, &hashValueLength))
+            return E_FAIL;
+    }
+    else
+    {
+        uint8_t const* hashValue = nullptr;
+        uint32_t hashValueLength = 0;
         if (1 != md_set_column_value_as_blob(c, mdtAssemblyRef_HashValue, 1, &hashValue, &hashValueLength))
             return E_FAIL;
     }
@@ -2603,34 +2646,22 @@ HRESULT MetadataEmit::DefineAssemblyRef(
     if (1 != md_set_column_value_as_utf8(c, mdtAssemblyRef_Name, 1, &name))
         return E_FAIL;
 
-    if (pMetaData->usMajorVersion != std::numeric_limits<uint16_t>::max())
-    {
-        uint32_t majorVersion = pMetaData->usMajorVersion;
-        if (1 != md_set_column_value_as_constant(c, mdtAssemblyRef_MajorVersion, 1, &majorVersion))
-            return E_FAIL;
-    }
-
-    if (pMetaData->usMinorVersion != std::numeric_limits<uint16_t>::max())
-    {
-        uint32_t minorVersion = pMetaData->usMinorVersion;
-        if (1 != md_set_column_value_as_constant(c, mdtAssemblyRef_MinorVersion, 1, &minorVersion))
-            return E_FAIL;
-    }
-
-    if (pMetaData->usBuildNumber != std::numeric_limits<uint16_t>::max())
-    {
-        uint32_t buildNumber = pMetaData->usBuildNumber;
-        if (1 != md_set_column_value_as_constant(c, mdtAssemblyRef_BuildNumber, 1, &buildNumber))
-            return E_FAIL;
-    }
-
-    if (pMetaData->usRevisionNumber != std::numeric_limits<uint16_t>::max())
-    {
-        uint32_t revisionNumber = pMetaData->usRevisionNumber;
-        if (1 != md_set_column_value_as_constant(c, mdtAssemblyRef_RevisionNumber, 1, &revisionNumber))
-            return E_FAIL;
-    }
-
+    uint32_t majorVersion = pMetaData->usMajorVersion != std::numeric_limits<uint16_t>::max() ? pMetaData->usMajorVersion : 0;
+    if (1 != md_set_column_value_as_constant(c, mdtAssemblyRef_MajorVersion, 1, &majorVersion))
+        return E_FAIL;
+    
+    uint32_t minorVersion = pMetaData->usMinorVersion != std::numeric_limits<uint16_t>::max() ? pMetaData->usMinorVersion : 0;
+    if (1 != md_set_column_value_as_constant(c, mdtAssemblyRef_MinorVersion, 1, &minorVersion))
+        return E_FAIL;
+    
+    uint32_t buildNumber = pMetaData->usBuildNumber != std::numeric_limits<uint16_t>::max() ? pMetaData->usBuildNumber : 0;
+    if (1 != md_set_column_value_as_constant(c, mdtAssemblyRef_BuildNumber, 1, &buildNumber))
+        return E_FAIL;
+    
+    uint32_t revisionNumber = pMetaData->usRevisionNumber != std::numeric_limits<uint16_t>::max() ? pMetaData->usRevisionNumber : 0;
+    if (1 != md_set_column_value_as_constant(c, mdtAssemblyRef_RevisionNumber, 1, &revisionNumber))
+        return E_FAIL;
+    
     if (pMetaData->szLocale != nullptr)
     {
         pal::StringConvert<WCHAR, char> cvtLocale(pMetaData->szLocale);
@@ -2638,6 +2669,12 @@ HRESULT MetadataEmit::DefineAssemblyRef(
             return E_INVALIDARG;
 
         const char* locale = cvtLocale;
+        if (1 != md_set_column_value_as_utf8(c, mdtAssemblyRef_Culture, 1, &locale))
+            return E_FAIL;
+    }
+    else
+    {
+        const char* locale = nullptr;
         if (1 != md_set_column_value_as_utf8(c, mdtAssemblyRef_Culture, 1, &locale))
             return E_FAIL;
     }
@@ -2679,13 +2716,17 @@ HRESULT MetadataEmit::DefineFile(
         if (1 != md_set_column_value_as_blob(c, mdtFile_HashValue, 1, &hashValue, &hashValueLength))
             return E_FAIL;
     }
-
-    if (dwFileFlags != std::numeric_limits<uint32_t>::max())
+    else
     {
-        uint32_t fileFlags = dwFileFlags;
-        if (1 != md_set_column_value_as_constant(c, mdtFile_Flags, 1, &fileFlags))
+        uint8_t const* hashValue = nullptr;
+        uint32_t hashValueLength = 0;
+        if (1 != md_set_column_value_as_blob(c, mdtFile_HashValue, 1, &hashValue, &hashValueLength))
             return E_FAIL;
     }
+
+    uint32_t fileFlags = dwFileFlags != std::numeric_limits<uint32_t>::max() ? dwFileFlags : 0;
+    if (1 != md_set_column_value_as_constant(c, mdtFile_Flags, 1, &fileFlags))
+        return E_FAIL;
 
     if (!md_cursor_to_token(c, pmdf))
         return E_FAIL;
@@ -2723,19 +2764,30 @@ HRESULT MetadataEmit::DefineExportedType(
         if (1 != md_set_column_value_as_token(c, mdtExportedType_Implementation, 1, &tkImplementation))
             return E_FAIL;
     }
+    else
+    {
+        // COMPAT: When the implementation column isn't defined, it is defaulted to the 0 value.
+        // For the Implementation coded index, the nil File token is the 0 value;
+        mdToken nilToken = mdFileNil;
+        if (1 != md_set_column_value_as_token(c, mdtExportedType_Implementation, 1, &nilToken))
+            return E_FAIL;
+    }
 
     if (!IsNilToken(tkTypeDef))
     {
-        if (1 != md_set_column_value_as_token(c, mdtExportedType_TypeDefId, 1, &tkTypeDef))
+        if (1 != md_set_column_value_as_constant(c, mdtExportedType_TypeDefId, 1, &tkTypeDef))
+            return E_FAIL;
+    }
+    else
+    {
+        mdToken nilToken = 0;
+        if (1 != md_set_column_value_as_constant(c, mdtExportedType_TypeDefId, 1, &nilToken))
             return E_FAIL;
     }
 
-    if (dwExportedTypeFlags != std::numeric_limits<uint32_t>::max())
-    {
-        uint32_t exportedTypeFlags = dwExportedTypeFlags;
-        if (1 != md_set_column_value_as_constant(c, mdtExportedType_Flags, 1, &exportedTypeFlags))
-            return E_FAIL;
-    }
+    uint32_t exportedTypeFlags = dwExportedTypeFlags != std::numeric_limits<uint32_t>::max() ? dwExportedTypeFlags : 0;
+    if (1 != md_set_column_value_as_constant(c, mdtExportedType_Flags, 1, &exportedTypeFlags))
+        return E_FAIL;
 
     if (!md_cursor_to_token(c, pmdct))
         return E_FAIL;
@@ -2769,20 +2821,22 @@ HRESULT MetadataEmit::DefineManifestResource(
         if (1 != md_set_column_value_as_token(c, mdtManifestResource_Implementation, 1, &tkImplementation))
             return E_FAIL;
     }
-
-    if (dwOffset != std::numeric_limits<uint32_t>::max())
+    else
     {
-        uint32_t offset = dwOffset;
-        if (1 != md_set_column_value_as_constant(c, mdtManifestResource_Offset, 1, &offset))
+        // COMPAT: When the implementation column isn't defined, it is defaulted to the 0 value.
+        // For the Implementation coded index, the nil File token is the 0 value;
+        mdToken nilToken = mdFileNil;
+        if (1 != md_set_column_value_as_token(c, mdtManifestResource_Implementation, 1, &nilToken))
             return E_FAIL;
     }
 
-    if (dwResourceFlags != std::numeric_limits<uint32_t>::max())
-    {
-        uint32_t resourceFlags = dwResourceFlags;
-        if (1 != md_set_column_value_as_constant(c, mdtManifestResource_Flags, 1, &resourceFlags))
-            return E_FAIL;
-    }
+    uint32_t offset = dwOffset != std::numeric_limits<uint32_t>::max() ? dwOffset : 0;
+    if (1 != md_set_column_value_as_constant(c, mdtManifestResource_Offset, 1, &offset))
+        return E_FAIL;
+
+    uint32_t resourceFlags = dwResourceFlags != std::numeric_limits<uint32_t>::max() ? dwResourceFlags : 0;
+    if (1 != md_set_column_value_as_constant(c, mdtManifestResource_Flags, 1, &resourceFlags))
+        return E_FAIL;
 
     if (!md_cursor_to_token(c, pmdmr))
         return E_FAIL;
