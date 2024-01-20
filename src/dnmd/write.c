@@ -424,7 +424,7 @@ int32_t md_set_column_value_as_guid(mdcursor_t c, col_index_t col_idx, uint32_t 
     do
     {
         static const mdguid_t empty_guid = { 0 };
-        if (memcmp(&guid, &empty_guid, sizeof(mdguid_t)) == 0)
+        if (memcmp(guid, &empty_guid, sizeof(mdguid_t)) == 0)
         {
             if (!write_column_data(&acxt, 0))
                 return -1;
