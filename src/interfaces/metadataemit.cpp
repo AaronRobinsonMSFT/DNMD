@@ -202,7 +202,7 @@ HRESULT MetadataEmit::DefineTypeDef(
     
     size_t i = 0;
     
-    for (mdToken currentImplementation; currentImplementation != mdTokenNil; currentImplementation = rtkImplements[++i])
+    for (mdToken currentImplementation = rtkImplements[i]; currentImplementation != mdTokenNil; currentImplementation = rtkImplements[++i])
     {
         md_added_row_t interfaceImpl;
         if (!md_append_row(MetaData(), mdtid_InterfaceImpl, &interfaceImpl))
