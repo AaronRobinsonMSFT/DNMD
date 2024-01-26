@@ -182,11 +182,26 @@ std::vector<MetadataFile> MetadataFilesInDirectory(std::string directory)
             auto ext = path.extension();
             if (ext == ".dll")
             {
-                malloc_span<uint8_t> b = ReadMetadataFromFile(path);
+                // Some of the DLLs in our search paths are native,
+                // so we need to filter to the managed ones.
+                // We could try opening them and skip them if they don't have any metadata,
+                // but that is slow and we don't want to do that for test discovery.
+                // Instead, we'll use the following heuristic to determine if the DLL is managed:
+                // - If the file name contains '.Native.', then it's not managed
+                // - If the file name contains '.Thunk.', then it's not managed
+                // - If the file name starts with 'System.' or 'Microsoft.', then it's managed
 
-                if (b.size() == 0)
+                auto fileName = path.filename().generic_string();
+
+                if (fileName.find(".Native.") != std::string::npos
+                    || fileName.find(".Thunk.") != std::string::npos)
                 {
-                    // Some DLLs don't have metadata, so skip them.
+                    continue;
+                }
+
+                if (fileName.find("System.") != 0
+                    && fileName.find("Microsoft.") != 0)
+                {
                     continue;
                 }
 

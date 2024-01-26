@@ -16,9 +16,9 @@
 using std::filesystem::path;
 
 #ifdef BUILD_WINDOWS
-#define W(str) std::wstring_view{L##str}
+#define W_StringView(str) std::wstring_view{L##str}
 #else
-#define W(str) std::string_view{str}
+#define W_StringView(str) std::string_view{str}
 #endif
 
 namespace
@@ -50,7 +50,7 @@ namespace
             char const** propertyKeys,  
             char const** propertyValues,  
             void** hostHandle,  
-            uint32* domainId);  
+            uint32_t* domainId);  
 
     MetaDataGetDispenser LoadGetDispenser()
     {
@@ -159,7 +159,7 @@ path pal::GetCoreClrPath()
                 path& coreClrPath = *(path*)result_context;
                 for (size_t i = 0; i < info->framework_count; ++i)
                 {
-                    if (info->frameworks[i].name == W("Microsoft.NETCore.App"))
+                    if (info->frameworks[i].name == W_StringView("Microsoft.NETCore.App"))
                     {
                         coreClrPath = info->frameworks[i].path;
                         coreClrPath /= info->frameworks[i].version;
