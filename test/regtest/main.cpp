@@ -13,12 +13,15 @@ namespace TestBaseline
 
 #define RETURN_IF_FAILED(x) { auto hr = x; if (FAILED(hr)) return hr; }
 
-class ThrowListener final : public testing::EmptyTestEventListener {
-  void OnTestPartResult(const testing::TestPartResult& result) override {
-    if (result.fatally_failed()) {
-      throw testing::AssertionException(result);
-    }
-  }
+class ThrowListener final : public testing::EmptyTestEventListener  
+{  
+    void OnTestPartResult(testing::TestPartResult const& result) override  
+    {  
+        if (result.fatally_failed())  
+        {  
+            throw testing::AssertionException(result);  
+        }  
+    }  
 };
 
 int main(int argc, char** argv)

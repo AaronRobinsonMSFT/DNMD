@@ -14,6 +14,7 @@
 #endif // !BUILD_WINDOWS
 
 // Machine code masks for native (R2R) images
+// See pedecoder.h in CoreCLR
 #define IMAGE_FILE_MACHINE_OS_MASK_APPLE 0x4644
 #define IMAGE_FILE_MACHINE_OS_MASK_FREEBSD 0xADC4
 #define IMAGE_FILE_MACHINE_OS_MASK_LINUX 0x7B79

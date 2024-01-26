@@ -198,13 +198,13 @@ int main(int argc, char** argv)
     if (!pal::ReadFile(dataImagePath, dataImage))
     {
         std::cerr << "Failed to read System.Private.CoreLib" << std::endl;
-        return -1;
+        return EXIT_FAILURE;
     }
 
     if (!get_metadata_from_pe(dataImage))
     {
         std::cerr << "Failed to get metadata from System.Private.CoreLib" << std::endl;
-        return -1;
+        return EXIT_FAILURE;
     }
 
     RETURN_IF_FAILED(PerfInitialize(
@@ -214,5 +214,5 @@ int main(int argc, char** argv)
     benchmark::Initialize(&argc, argv);
     benchmark::RunSpecifiedBenchmarks();
     benchmark::Shutdown();
-    return 0;
+    return EXIT_SUCCESS;
 }

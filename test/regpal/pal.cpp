@@ -16,9 +16,9 @@
 using std::filesystem::path;
 
 #ifdef BUILD_WINDOWS
-#define X(str) std::wstring_view{L##str}
+#define W(str) std::wstring_view{L##str}
 #else
-#define X(str) std::string_view{str}
+#define W(str) std::string_view{str}
 #endif
 
 namespace
@@ -26,31 +26,31 @@ namespace
     void* LoadModule(path path)
     {
 #ifdef BUILD_WINDOWS
-        return LoadLibraryW(path.c_str());
-#else
-        return dlopen(path.c_str(), RTLD_LAZY);
+        return ::LoadLibraryW(path.c_str());  
+#else  
+        return ::dlopen(path.c_str(), RTLD_LAZY);  
 #endif
     }
 
     void* GetSymbol(void* module, char const* name)
     {
 #ifdef BUILD_WINDOWS
-        return GetProcAddress((HMODULE)module, name);
-#else
-        return dlsym(module, name);
+        return ::GetProcAddress((HMODULE)module, name);  
+#else  
+        return ::dlsym(module, name); 
 #endif
     }
 
     using MetaDataGetDispenser = HRESULT(STDMETHODCALLTYPE*)(REFCLSID, REFIID, LPVOID*);
 
     using CoreCLRInitialize = int(STDMETHODCALLTYPE*)(
-            const char* exePath,
-            const char* appDomainFriendlyName,
-            int propertyCount,
-            const char** propertyKeys,
-            const char** propertyValues,
-            void** hostHandle,
-            unsigned int* domainId);
+            char const* exePath,  
+            char const* appDomainFriendlyName,  
+            int propertyCount,  
+            char const** propertyKeys,  
+            char const** propertyValues,  
+            void** hostHandle,  
+            uint32* domainId);  
 
     MetaDataGetDispenser LoadGetDispenser()
     {
@@ -77,8 +77,8 @@ namespace
             return nullptr;
         }
 
-        const char* propertyKeys[] = { "TRUSTED_PLATFORM_ASSEMBLIES" };
-        const char* propertyValues[] = { coreClrPath.c_str() };
+        char const* propertyKeys[] = { "TRUSTED_PLATFORM_ASSEMBLIES" };  
+        char const* propertyValues[] = { coreClrPath.c_str() };
         init("regpal", "regpal", 1, propertyKeys, propertyValues, nullptr, nullptr);
 #endif
 
@@ -126,7 +126,7 @@ path pal::GetCoreClrPath()
 {
     int result = 0;
     size_t bufferSize = 4096;
-    std::unique_ptr<char_t[]> hostfxr_path{nullptr};
+    std::unique_ptr<char_t[]> hostfxr_path;
     do
     {
         hostfxr_path.reset(new char_t[bufferSize]);
@@ -159,7 +159,7 @@ path pal::GetCoreClrPath()
                 path& coreClrPath = *(path*)result_context;
                 for (size_t i = 0; i < info->framework_count; ++i)
                 {
-                    if (info->frameworks[i].name == X("Microsoft.NETCore.App"))
+                    if (info->frameworks[i].name == W("Microsoft.NETCore.App"))
                     {
                         coreClrPath = info->frameworks[i].path;
                         coreClrPath /= info->frameworks[i].version;
