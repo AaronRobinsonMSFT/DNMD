@@ -297,7 +297,7 @@ static bool initialize_minimal_table_rows(mdcxt_t* cxt)
     if (1 != md_set_column_value_as_utf8(global_type_cursor, mdtTypeDef_TypeNamespace, 1, &namespace))
         return false;
     
-    mdToken nil_typedef = CreateTokenType(mdtTypeDef);
+    mdToken nil_typedef = CreateTokenType(mdtid_TypeDef);
     if (1 != md_set_column_value_as_token(global_type_cursor, mdtTypeDef_Extends, 1, &nil_typedef))
         return false;
 

@@ -759,7 +759,7 @@ uint32_t add_to_guid_heap(mdcxt_t* cxt, mdguid_t guid)
     }
 
     memcpy(editor->guid_heap.heap.ptr + heap_offset, &guid, sizeof(mdguid_t));
-    return heap_offset / sizeof(mdguid_t);
+    return heap_offset / sizeof(mdguid_t) + 1;
 }
 
 bool append_heap(mdcxt_t* cxt, mdcxt_t* delta, mdtcol_t heap_id)
