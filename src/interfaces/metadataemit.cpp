@@ -48,26 +48,39 @@ namespace
 HRESULT MetadataEmit::SetModuleProps(
         LPCWSTR     szName)
 {
+    // If the name is null, we have nothing to do.
+    // COMPAT-BREAK: CoreCLR would still record the token in the EncLog in this case.
+    if (szName == nullptr)
+        return S_OK;
+
     pal::StringConvert<WCHAR, char> cvt(szName);
     if (!cvt.Success())
         return E_INVALIDARG;
     
-    md_added_row_t c;
+    mdcursor_t c;
     uint32_t count;
-    if (!md_create_cursor(MetaData(), mdtid_Module, &c, &count)
-        && !md_append_row(MetaData(), mdtid_Module, &c))
-        return E_FAIL;
+    if (!md_create_cursor(MetaData(), mdtid_Module, &c, &count))
+    {
+        if (md_append_row(MetaData(), mdtid_Module, &c))
+        {
+            md_commit_row_add(c);
+        }
+        else
+        {
+            return E_FAIL;
+        }
+    }
 
     // Search for a file name in the provided path
     // and use that as the module name.
     char* modulePath = cvt;
     std::size_t len = std::strlen(modulePath);
     const char* start = modulePath;
-    for (std::size_t i = len - 1; i >= 0; i--)
+    for (const char* p = modulePath + len - 1; p >= modulePath; p--)
     {
-        if (modulePath[i] == '\\')
+        if (*p == '\\' || *p == '/')
         {
-            start = modulePath + i + 1;
+            start = p + 1;
             break;
         }
     }
@@ -2510,11 +2523,19 @@ HRESULT MetadataEmit::DefineAssembly(
     if (!cvt.Success())
         return E_INVALIDARG;
     
-    md_added_row_t c;
+    mdcursor_t c;
     uint32_t count;
-    if (!md_create_cursor(MetaData(), mdtid_Assembly, &c, &count)
-        && !md_append_row(MetaData(), mdtid_Assembly, &c))
-        return E_FAIL;
+    if (!md_create_cursor(MetaData(), mdtid_Assembly, &c, &count))
+    {
+        if (md_append_row(MetaData(), mdtid_Assembly, &c))
+        {
+            md_commit_row_add(c);
+        }
+        else
+        {
+            return E_FAIL;
+        }
+    }
 
     uint32_t assemblyFlags = dwAssemblyFlags;
     if (cbPublicKey != 0)

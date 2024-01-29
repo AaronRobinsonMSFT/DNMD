@@ -1,25 +1,4 @@
-#include <cor.h>
-#include <dncp.h>
-#include <dnmd_interfaces.hpp>
-#include <gtest/gtest.h>
-#include <array>
-
-#ifdef BUILD_WINDOWS
-using WSTR_string = std::wstring;
-#else
-#define W(x) u##x
-using WSTR_string = std::u16string;
-#endif
-
-namespace
-{
-    void CreateEmit(dncp::com_ptr<IMetaDataEmit>& emit)
-    {
-        dncp::com_ptr<IMetaDataDispenser> dispenser;
-        ASSERT_EQ(S_OK, GetDispenser(IID_IMetaDataDispenser, (void**)&dispenser));
-        ASSERT_EQ(S_OK, dispenser->DefineScope(CLSID_CorMetaDataRuntime, 0, IID_IMetaDataEmit, (IUnknown**)&emit));
-    }
-}
+#include "emit.hpp"
 
 TEST(TypeRef, ValidScopeAndDottedName)
 {

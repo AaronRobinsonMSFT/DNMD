@@ -1,6 +1,10 @@
-set(SOURCES typeref.cpp)
+set(SOURCES
+	typeref.cpp
+	module.cpp)
 
-add_executable(emit ${SOURCES})
+set(HEADERS emit.hpp)
+
+add_executable(emit ${SOURCES} ${HEADERS})
 target_link_libraries(emit PRIVATE dnmd::interfaces_static gtest_main)
 
 gtest_discover_tests(emit)
