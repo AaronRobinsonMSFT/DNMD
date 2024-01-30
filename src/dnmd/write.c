@@ -726,9 +726,10 @@ static bool add_new_row_to_list(mdcursor_t list_owner, col_index_t list_col, mdc
     if (!md_get_column_value_as_range(list_owner, list_col, &range, &count))
         return false;
     
-    // Assert that the insertion location is in our range.
+    // Assert that the insertion location is in our range or points to the first row of the next range.
+    // For a zero-length range, row_to_insert_before will be the first row of the next range, so we need to account for that.
     assert(CursorTable(&range) == CursorTable(&row_to_insert_before));
-    assert(CursorRow(&range) <= CursorRow(&row_to_insert_before) && CursorRow(&row_to_insert_before) <= CursorRow(&range) + count);
+    assert(CursorRow(&range) <= CursorRow(&row_to_insert_before) && CursorRow(&row_to_insert_before) <= CursorRow(&range) + max(count, 1));
 
     mdcursor_t target_row;
     // If the range is in an indirection table, we'll normalize our insert to the actual target table.

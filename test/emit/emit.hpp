@@ -1,5 +1,11 @@
 #ifndef DNMD_TEST_EMIT_EMIT_HPP
 #define DNMD_TEST_EMIT_EMIT_HPP
+
+#ifdef BUILD_WINDOWS
+#include <wtypes.h>
+#endif
+#include <cstdint>
+
 #include <dncp.h>
 #include <cor.h>
 #include <dnmd_interfaces.hpp>

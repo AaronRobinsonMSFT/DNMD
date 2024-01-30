@@ -658,7 +658,7 @@ uint32_t add_to_blob_heap(mdcxt_t* cxt, uint8_t const* data, uint32_t length)
 
     // TODO: Deduplicate heap
     uint8_t compressed_length[4];
-    size_t compressed_length_size = 0;
+    size_t compressed_length_size = 4;
     if (!compress_u32(length, compressed_length, &compressed_length_size))
         return 0;
 
@@ -724,7 +724,7 @@ uint32_t add_to_user_string_heap(mdcxt_t* cxt, char16_t const* str)
         return 0;
 
     uint8_t compressed_length[sizeof(str_len)];
-    size_t compressed_length_size = 0;
+    size_t compressed_length_size = 4;
     if (!compress_u32(str_len, compressed_length, &compressed_length_size))
         return 0;
 
