@@ -1,6 +1,7 @@
 set(SOURCES
 	typeref.cpp
-	module.cpp)
+	module.cpp
+	typedef.cpp)
 
 set(HEADERS emit.hpp)
 

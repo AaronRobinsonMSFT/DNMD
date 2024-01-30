@@ -200,7 +200,7 @@ namespace
                 i += read;
             }
 
-            enumImpl = cleanup.release();
+            *pEnumImpl = cleanup.release();
             return S_OK;
         }
     }
@@ -397,8 +397,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumInterfaceImpls(
         if (!md_create_cursor(_md_ptr.get(), mdtid_InterfaceImpl, &cursor, &rows))
             return CLDB_E_RECORD_NOTFOUND;
 
-        uint32_t id = RidFromToken(td);
-        RETURN_IF_FAILED(CreateEnumTokenRangeForSortedTableKey(_md_ptr.get(), mdtid_InterfaceImpl, mdtInterfaceImpl_Class, id, &enumImpl));
+        RETURN_IF_FAILED(CreateEnumTokenRangeForSortedTableKey(_md_ptr.get(), mdtid_InterfaceImpl, mdtInterfaceImpl_Class, td, &enumImpl));
         *phEnum = enumImpl;
     }
     return enumImpl->ReadTokens(rImpls, cMax, pcImpls);

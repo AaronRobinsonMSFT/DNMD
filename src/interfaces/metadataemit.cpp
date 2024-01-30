@@ -176,6 +176,8 @@ HRESULT MetadataEmit::DefineTypeDef(
         return E_FAIL;
     
     pal::StringConvert<WCHAR, char> cvt(szTypeDef);
+    if (!cvt.Success())
+        return E_INVALIDARG;
     
     // TODO: Check for duplicate type definitions
 
@@ -198,20 +200,32 @@ HRESULT MetadataEmit::DefineTypeDef(
     mdcursor_t fieldCursor;
     uint32_t numFields;
     if (!md_create_cursor(MetaData(), mdtid_Field, &fieldCursor, &numFields))
-        return E_FAIL;
-    
-    md_cursor_move(&fieldCursor, numFields);
-    if (1 != md_set_column_value_as_cursor(c, mdtTypeDef_FieldList, 1, &fieldCursor))
-        return E_FAIL;
+    {
+        mdToken nilField = mdFieldDefNil;
+        if (1 != md_set_column_value_as_token(c, mdtTypeDef_FieldList, 1, &nilField))
+            return E_FAIL;
+    }
+    else
+    {
+        md_cursor_move(&fieldCursor, numFields);
+        if (1 != md_set_column_value_as_cursor(c, mdtTypeDef_FieldList, 1, &fieldCursor))
+            return E_FAIL;
+    }
     
     mdcursor_t methodCursor;
     uint32_t numMethods;
     if (!md_create_cursor(MetaData(), mdtid_MethodDef, &methodCursor, &numMethods))
-        return E_FAIL;
-    
-    md_cursor_move(&methodCursor, numMethods);
-    if (1 != md_set_column_value_as_cursor(c, mdtTypeDef_MethodList, 1, &methodCursor))
-        return E_FAIL;
+    {
+        mdToken nilMethod = mdMethodDefNil;
+        if (1 != md_set_column_value_as_token(c, mdtTypeDef_MethodList, 1, &nilMethod))
+            return E_FAIL;
+    }
+    else
+    {
+        md_cursor_move(&methodCursor, numMethods);
+        if (1 != md_set_column_value_as_cursor(c, mdtTypeDef_MethodList, 1, &methodCursor))
+            return E_FAIL;
+    }
     
     size_t i = 0;
     
