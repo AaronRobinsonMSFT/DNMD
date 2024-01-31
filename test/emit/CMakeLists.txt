@@ -5,6 +5,7 @@ set(SOURCES
 	moduleref.cpp
 	methoddef.cpp
 	standalonesig.cpp
+	memberref.cpp
 )
 
 set(HEADERS emit.hpp)
