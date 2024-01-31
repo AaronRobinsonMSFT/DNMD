@@ -3,7 +3,9 @@ set(SOURCES
 	module.cpp
 	typedef.cpp
 	moduleref.cpp
-	methoddef.cpp)
+	methoddef.cpp
+	standalonesig.cpp
+)
 
 set(HEADERS emit.hpp)
 
