@@ -21,4 +21,18 @@ inline void CreateEmit(dncp::com_ptr<IMetaDataEmit>& emit)
     ASSERT_EQ(S_OK, GetDispenser(IID_IMetaDataDispenser, (void**)&dispenser));
     ASSERT_EQ(S_OK, dispenser->DefineScope(CLSID_CorMetaDataRuntime, 0, IID_IMetaDataEmit, (IUnknown**)&emit));
 }
+
+inline void CreateEmit(dncp::com_ptr<IMetaDataEmit2>& emit)
+{
+    dncp::com_ptr<IMetaDataDispenser> dispenser;
+    ASSERT_EQ(S_OK, GetDispenser(IID_IMetaDataDispenser, (void**)&dispenser));
+    ASSERT_EQ(S_OK, dispenser->DefineScope(CLSID_CorMetaDataRuntime, 0, IID_IMetaDataEmit2, (IUnknown**)&emit));
+}
+
+inline void CreateEmit(dncp::com_ptr<IMetaDataAssemblyEmit>& emit)
+{
+    dncp::com_ptr<IMetaDataDispenser> dispenser;
+    ASSERT_EQ(S_OK, GetDispenser(IID_IMetaDataDispenser, (void**)&dispenser));
+    ASSERT_EQ(S_OK, dispenser->DefineScope(CLSID_CorMetaDataRuntime, 0, IID_IMetaDataAssemblyEmit, (IUnknown**)&emit));
+}
 #endif // DNMD_TEST_EMIT_EMIT_HPP

@@ -5,6 +5,13 @@ bool try_get_string(mdcxt_t* cxt, size_t offset, char const** str)
     assert(cxt != NULL && str != NULL);
 
     mdstream_t* h = &cxt->strings_heap;
+
+    if (h->size == 0 && offset == 0)
+    {
+        *str = '\0'; // II.24.2.3 'The first character must be the '\0' character.
+        return true;
+    }
+
     if (h->size <= offset)
         return false;
 
@@ -81,6 +88,15 @@ bool try_get_blob(mdcxt_t* cxt, size_t offset, uint8_t const** blob, uint32_t* b
     assert(cxt != NULL && blob != NULL && blob_len != NULL);
 
     mdstream_t* h = &cxt->blob_heap;
+
+    if (h->size == 0 && offset == 0)
+    {
+        // The first element must be the 0 - II.24.2.4
+        *blob = h->ptr;
+        *blob_len = 0;
+        return true;
+    }
+
     if (h->size <= offset)
         return false;
 
