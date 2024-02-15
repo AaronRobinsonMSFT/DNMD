@@ -7,7 +7,7 @@ set(SOURCES
 	standalonesig.cpp
 	memberref.cpp
 	typespec.cpp
- "assembly.cpp" "assemblyref.cpp")
+ "assembly.cpp" "assemblyref.cpp" "param.cpp")
 
 set(HEADERS emit.hpp)
 

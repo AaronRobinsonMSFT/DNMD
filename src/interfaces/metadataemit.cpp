@@ -302,6 +302,9 @@ HRESULT MetadataEmit::DefineMethod(
         DWORD           dwImplFlags,
         mdMethodDef     *pmd)
 {
+    if (TypeFromToken(td) != mdtTypeDef)
+        return E_INVALIDARG;
+
     mdcursor_t type;
     if (!md_token_to_cursor(MetaData(), td, &type))
         return CLDB_E_FILE_CORRUPT;
