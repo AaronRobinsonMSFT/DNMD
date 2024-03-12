@@ -5,6 +5,7 @@
 #include <wtypes.h>
 #endif
 #include <cstdint>
+#include <cstddef>
 
 #include <dncp.h>
 #include <cor.h>
