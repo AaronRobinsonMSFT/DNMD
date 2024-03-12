@@ -228,18 +228,21 @@ HRESULT MetadataEmit::DefineTypeDef(
     }
     
     size_t i = 0;
-    
-    for (mdToken currentImplementation = rtkImplements[i]; currentImplementation != mdTokenNil; currentImplementation = rtkImplements[++i])
+
+    if (rtkImplements != nullptr)
     {
-        md_added_row_t interfaceImpl;
-        if (!md_append_row(MetaData(), mdtid_InterfaceImpl, &interfaceImpl))
-            return E_FAIL;
-        
-        if (1 != md_set_column_value_as_cursor(interfaceImpl, mdtInterfaceImpl_Class, 1, &c))
-            return E_FAIL;
-        
-        if (1 != md_set_column_value_as_token(interfaceImpl, mdtInterfaceImpl_Interface, 1, &currentImplementation))
-            return E_FAIL;
+        for (mdToken currentImplementation = rtkImplements[i]; currentImplementation != mdTokenNil; currentImplementation = rtkImplements[++i])
+        {
+            md_added_row_t interfaceImpl;
+            if (!md_append_row(MetaData(), mdtid_InterfaceImpl, &interfaceImpl))
+                return E_FAIL;
+
+            if (1 != md_set_column_value_as_cursor(interfaceImpl, mdtInterfaceImpl_Class, 1, &c))
+                return E_FAIL;
+
+            if (1 != md_set_column_value_as_token(interfaceImpl, mdtInterfaceImpl_Interface, 1, &currentImplementation))
+                return E_FAIL;
+        }
     }
     
     // TODO: Update Enc Log
@@ -595,7 +598,7 @@ namespace
         md_added_row_t addedRow;
         uint32_t count;
         if (!md_create_cursor(md, childTable, &c, &count)
-            && !md_find_row_from_cursor(c, parentCol, parent, &c))
+            || !md_find_row_from_cursor(c, parentCol, parent, &c))
         {
             // TODO: Update EncLog
             if (!md_append_row(md, childTable, &addedRow))
@@ -2245,36 +2248,26 @@ HRESULT MetadataEmit::SetFieldRVA(
 {
     uint32_t rva = (uint32_t)ulRVA;
 
-    mdcursor_t c;
-    uint32_t count;
-    if (!md_create_cursor(MetaData(), mdtid_FieldRva, &c, &count))
-        return E_FAIL;
-
-    if (!md_find_row_from_cursor(c, mdtFieldRva_Field, RidFromToken(fd), &c))
+    HRESULT hr = FindOrCreateParentedRow(MetaData(), fd, mdtid_FieldRva, mdtFieldRva_Field, [=](mdcursor_t c)
     {
-        mdcursor_t field;
-        if (!md_token_to_cursor(MetaData(), fd, &field))
-            return E_INVALIDARG;
-        
-        uint32_t flags;
-        if (1 != md_get_column_value_as_constant(field, mdtField_Flags, 1, &flags))
-            return CLDB_E_FILE_CORRUPT;
-        
-        flags |= fdHasFieldRVA;
-        if (1 != md_set_column_value_as_constant(field, mdtField_Flags, 1, &flags))
+        if (1 != md_set_column_value_as_constant(c, mdtFieldRva_Rva, 1, &rva))
             return E_FAIL;
 
-        md_added_row_t new_row;
-        if (!md_append_row(MetaData(), mdtid_FieldRva, &new_row))
-            return E_FAIL;
-        
-        c = new_row;
-        
-        if (1 != md_set_column_value_as_token(c, mdtFieldRva_Field, 1, &fd))
-            return E_FAIL;
-    }
-        
-    if (1 != md_set_column_value_as_constant(c, mdtFieldRva_Rva, 1, &rva))
+        return S_OK;
+    });
+
+    RETURN_IF_FAILED(hr);
+
+    mdcursor_t field;
+    if (!md_token_to_cursor(MetaData(), fd, &field))
+        return E_INVALIDARG;
+
+    uint32_t flags;
+    if (1 != md_get_column_value_as_constant(field, mdtField_Flags, 1, &flags))
+        return CLDB_E_FILE_CORRUPT;
+
+    flags |= fdHasFieldRVA;
+    if (1 != md_set_column_value_as_constant(field, mdtField_Flags, 1, &flags))
         return E_FAIL;
 
     // TODO: Update ENC log

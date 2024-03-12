@@ -8,7 +8,7 @@ bool try_get_string(mdcxt_t* cxt, size_t offset, char const** str)
 
     if (h->size == 0 && offset == 0)
     {
-        *str = '\0'; // II.24.2.3 'The first character must be the '\0' character.
+        *str = "\0"; // II.24.2.3 'The first character must be the '\0' character.
         return true;
     }
 
