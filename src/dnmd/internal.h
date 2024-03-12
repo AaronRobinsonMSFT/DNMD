@@ -6,7 +6,6 @@
 #include <stdbool.h>
 #include <assert.h>
 #include <string.h>
-#include <math.h>
 #include <corhdr.h>
 #include <dnmd.h>
 #ifdef DNMD_PORTABLE_PDB
