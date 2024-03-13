@@ -12,7 +12,7 @@ TEST(Assembly, DefineNoPublicKey)
     assemblyMetadata.usMinorVersion = 2;
     assemblyMetadata.usBuildNumber = 3;
     assemblyMetadata.usRevisionNumber = 4;
-    assemblyMetadata.szLocale = L"en-us";
+    assemblyMetadata.szLocale = W("en-us");
     assemblyMetadata.cbLocale = 5;
     uint32_t hashAlgId = 4;
     ASSERT_EQ(S_OK, emit->DefineAssembly(nullptr, 0, hashAlgId, name.c_str(), &assemblyMetadata, 0, &assembly));

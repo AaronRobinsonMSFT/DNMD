@@ -12,7 +12,7 @@ TEST(AssemblyRef, DefineNoPublicKey)
     assemblyMetadata.usMinorVersion = 2;
     assemblyMetadata.usBuildNumber = 3;
     assemblyMetadata.usRevisionNumber = 4;
-    assemblyMetadata.szLocale = L"en-us";
+    assemblyMetadata.szLocale = W("en-us");
     assemblyMetadata.cbLocale = 5;
     ASSERT_EQ(S_OK, emit->DefineAssemblyRef(nullptr, 0, name.c_str(), &assemblyMetadata, nullptr, 0, 0, &assembly));
     ASSERT_EQ(1, RidFromToken(assembly));
