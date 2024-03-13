@@ -16,7 +16,15 @@ bool apply_deltas(mdhandle_t handle, std::vector<char const*>& deltas, std::vect
             std::fprintf(stderr, "Failed to read '%s'.\n", p);
             return false;
         }
-        if (!md_apply_delta(handle, d, d.size()))
+
+        mdhandle_t delta;
+        if (!md_create_handle(d, d.size(), &delta))
+        {
+            std::fprintf(stderr, "Failed to create handle for '%s'.\n", p);
+            return false;
+        }
+
+        if (!md_apply_delta(handle, delta))
         {
             std::fprintf(stderr, "Failed to apply delta, '%s'.\n", p);
             return false;

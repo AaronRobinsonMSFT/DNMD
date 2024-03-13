@@ -2,6 +2,7 @@ set(SOURCES
   ./dispenser.cpp
   ./symbinder.cpp
   ./metadataimport.cpp
+  ./metadataemit.cpp
   ./hcorenum.cpp
   ./pal.cpp
   ./signatures.cpp
@@ -12,6 +13,7 @@ set(HEADERS
   ../inc/dnmd_interfaces.hpp
   ../inc/internal/span.hpp
   ./metadataimportro.hpp
+  ./metadataemit.hpp
   ./hcorenum.hpp
   ./controllingiunknown.hpp
   ./tearoffbase.hpp

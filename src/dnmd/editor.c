@@ -631,6 +631,9 @@ uint32_t add_to_string_heap(mdcxt_t* cxt, char const* str)
     mdeditor_t* editor = get_editor(cxt);
     if (editor == NULL)
         return 0;
+    
+    if (str[0] == '\0')
+        return 0;
 
     // TODO: Deduplicate heap
     uint32_t str_len = (uint32_t)strlen(str);
@@ -649,9 +652,13 @@ uint32_t add_to_blob_heap(mdcxt_t* cxt, uint8_t const* data, uint32_t length)
     mdeditor_t* editor = get_editor(cxt);
     if (editor == NULL)
         return 0;
+    
+    if (length == 0)
+        return 0;
+
     // TODO: Deduplicate heap
     uint8_t compressed_length[4];
-    size_t compressed_length_size = 0;
+    size_t compressed_length_size = 4;
     if (!compress_u32(length, compressed_length, &compressed_length_size))
         return 0;
 
@@ -713,8 +720,11 @@ uint32_t add_to_user_string_heap(mdcxt_t* cxt, char16_t const* str)
         }
     }
 
+    if (str_len == 0)
+        return 0;
+
     uint8_t compressed_length[sizeof(str_len)];
-    size_t compressed_length_size = 0;
+    size_t compressed_length_size = 4;
     if (!compress_u32(str_len, compressed_length, &compressed_length_size))
         return 0;
 
@@ -738,6 +748,9 @@ uint32_t add_to_guid_heap(mdcxt_t* cxt, mdguid_t guid)
     if (editor == NULL)
         return 0;
     // TODO: Deduplicate heap
+    static const mdguid_t empty_guid = { 0 };
+    if (memcmp(&guid, &empty_guid, sizeof(mdguid_t)) == 0)
+        return 0;
 
     uint32_t heap_offset;
     if (!reserve_heap_space(editor, sizeof(mdguid_t), mdtc_hguid, false, &heap_offset))
@@ -746,7 +759,7 @@ uint32_t add_to_guid_heap(mdcxt_t* cxt, mdguid_t guid)
     }
 
     memcpy(editor->guid_heap.heap.ptr + heap_offset, &guid, sizeof(mdguid_t));
-    return heap_offset / sizeof(mdguid_t);
+    return heap_offset / sizeof(mdguid_t) + 1;
 }
 
 bool append_heap(mdcxt_t* cxt, mdcxt_t* delta, mdtcol_t heap_id)
