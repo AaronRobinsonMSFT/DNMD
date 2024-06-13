@@ -568,7 +568,7 @@ static bool reserve_heap_space(mdeditor_t* editor, uint32_t space_size, mdtcol_t
     {
         // Set the default heap size based on likely reasonable sizes for the heaps.
         // In most images, there won't be more than three guids, so we can start with a small heap in that case.
-        const size_t initial_heap_size = heap_id == mdtc_hguid ? sizeof(mdguid_t) * 3 : 0x100;
+        size_t const initial_heap_size = heap_id == mdtc_hguid ? sizeof(mdguid_t) * 3 : 0x100;
         void* mem = alloc_mdmem(editor->cxt, initial_heap_size);
         if (mem == NULL)
             return false;
@@ -771,7 +771,7 @@ uint32_t add_to_user_string_heap(mdcxt_t* cxt, char16_t const* str)
     return heap_offset;
 }
 
-const mdguid_t empty_guid = { 0 };
+mdguid_t const empty_guid = { 0 };
 
 uint32_t add_to_guid_heap(mdcxt_t* cxt, mdguid_t guid)
 {

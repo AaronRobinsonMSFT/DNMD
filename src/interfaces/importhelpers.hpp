@@ -32,7 +32,7 @@ HRESULT ImportReferenceToTypeDefOrRefOrSpec(
 HRESULT DefineImportMember(
     IMetaDataEmit* emit,
     IMetaDataAssemblyImport *pAssemImport,
-    const void  *pbHashValue,
+    void const  *pbHashValue,
     ULONG        cbHashValue,
     IMetaDataImport *pImport,
     mdToken     mbMember,

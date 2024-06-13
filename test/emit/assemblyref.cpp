@@ -29,9 +29,9 @@ TEST(AssemblyRef, DefineNoPublicKey)
     WSTR_string assemblyName;
     assemblyName.resize(name.capacity() + 1);
     ULONG assemblyNameLen;
-    const void* publicKey;
+    void const* publicKey;
     ULONG publicKeyLength;
-    const void* hash;
+    void const* hash;
     ULONG hashLength;
     ASSERT_EQ(S_OK, import->GetAssemblyRefProps(assembly, &publicKey, &publicKeyLength, assemblyName.data(), (ULONG)assemblyName.capacity(), &assemblyNameLen, &metadata, &hash, &hashLength, &assemblyFlags));
     EXPECT_EQ(0, assemblyFlags);

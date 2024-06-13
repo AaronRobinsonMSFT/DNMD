@@ -101,7 +101,7 @@ public: // IMetaDataEmit
 
     STDMETHOD(DefineImportType)(
         IMetaDataAssemblyImport *pAssemImport,
-        const void  *pbHashValue,
+        void const  *pbHashValue,
         ULONG       cbHashValue,
         IMetaDataImport *pImport,
         mdTypeDef   tdImport,
@@ -117,7 +117,7 @@ public: // IMetaDataEmit
 
     STDMETHOD(DefineImportMember)(
         IMetaDataAssemblyImport *pAssemImport,
-        const void  *pbHashValue,
+        void const  *pbHashValue,
         ULONG       cbHashValue,
         IMetaDataImport *pImport,
         mdToken     mbMember,
@@ -323,7 +323,7 @@ public: // IMetaDataEmit
 
     STDMETHOD(TranslateSigWithScope)(
         IMetaDataAssemblyImport *pAssemImport,
-        const void  *pbHashValue,
+        void const  *pbHashValue,
         ULONG       cbHashValue,
         IMetaDataImport *import,
         PCCOR_SIGNATURE pbSigBlob,
@@ -392,27 +392,27 @@ public: // IMetaDataEmit2
 
 public: // IMetaDataAssemblyEmit
     STDMETHOD(DefineAssembly)(
-        const void  *pbPublicKey,
+        void const  *pbPublicKey,
         ULONG       cbPublicKey,
         ULONG       ulHashAlgId,
         LPCWSTR     szName,
-        const ASSEMBLYMETADATA *pMetaData,
+        ASSEMBLYMETADATA const *pMetaData,
         DWORD       dwAssemblyFlags,
         mdAssembly  *pma) override;
 
     STDMETHOD(DefineAssemblyRef)(
-        const void  *pbPublicKeyOrToken,
+        void const  *pbPublicKeyOrToken,
         ULONG       cbPublicKeyOrToken,
         LPCWSTR     szName,
-        const ASSEMBLYMETADATA *pMetaData,
-        const void  *pbHashValue,
+        ASSEMBLYMETADATA const *pMetaData,
+        void const  *pbHashValue,
         ULONG       cbHashValue,
         DWORD       dwAssemblyRefFlags,
         mdAssemblyRef *pmdar) override;
 
     STDMETHOD(DefineFile)(
         LPCWSTR     szName,
-        const void  *pbHashValue,
+        void const  *pbHashValue,
         ULONG       cbHashValue,
         DWORD       dwFileFlags,
         mdFile      *pmdf) override;
@@ -433,26 +433,26 @@ public: // IMetaDataAssemblyEmit
 
     STDMETHOD(SetAssemblyProps)(
         mdAssembly  pma,
-        const void  *pbPublicKey,
+        void const  *pbPublicKey,
         ULONG       cbPublicKey,
         ULONG       ulHashAlgId,
         LPCWSTR     szName,
-        const ASSEMBLYMETADATA *pMetaData,
+        ASSEMBLYMETADATA const *pMetaData,
         DWORD       dwAssemblyFlags) override;
 
     STDMETHOD(SetAssemblyRefProps)(
         mdAssemblyRef ar,
-        const void  *pbPublicKeyOrToken,
+        void const  *pbPublicKeyOrToken,
         ULONG       cbPublicKeyOrToken,
         LPCWSTR     szName,
-        const ASSEMBLYMETADATA *pMetaData,
-        const void  *pbHashValue,
+        ASSEMBLYMETADATA const *pMetaData,
+        void const  *pbHashValue,
         ULONG       cbHashValue,
         DWORD       dwAssemblyRefFlags) override;
 
     STDMETHOD(SetFileProps)(
         mdFile      file,
-        const void  *pbHashValue,
+        void const  *pbHashValue,
         ULONG       cbHashValue,
         DWORD       dwFileFlags) override;
 

@@ -71,9 +71,9 @@ namespace
 
         // The byte values of the ECMA pseudo public key and its token.
         // Arcade SDK StrongNameKeyId: ECMA
-        // See II.6.2.1.3 for th definition of this key.
+        // See II.6.2.1.3 for the definition of this key.
         uint8_t const EcmaPublicKey[] = { 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0 };
-        const StrongNameToken EcmaToken = { 0xb7, 0x7a, 0x5c, 0x56, 0x19, 0x34, 0xe0, 0x89 };
+        StrongNameToken const EcmaToken = { 0xb7, 0x7a, 0x5c, 0x56, 0x19, 0x34, 0xe0, 0x89 };
 
         // Arcade SDK StrongNameKeyId: Microsoft
         uint8_t const Microsoft[] =
@@ -167,7 +167,7 @@ namespace
             StrongNameToken const& Token;
         };
 
-        static const WellKnownKey WellKnownKeys[] =
+        static WellKnownKey const WellKnownKeys[] =
         {
             { EcmaPublicKey, sizeof(EcmaPublicKey), EcmaToken },
             { Microsoft, sizeof(Microsoft), MicrosoftToken },
@@ -1717,7 +1717,7 @@ HRESULT ImportReferenceToTypeDefOrRefOrSpec(
 HRESULT DefineImportMember(
     IMetaDataEmit* emit,                // [In] Module into which the Member is imported.
     IMetaDataAssemblyImport *pAssemImport,  // [IN] Assembly containing the Member.
-    const void  *pbHashValue,           // [IN] Hash Blob for Assembly.
+    void const  *pbHashValue,           // [IN] Hash Blob for Assembly.
     ULONG        cbHashValue,           // [IN] Count of bytes.
     IMetaDataImport *pImport,           // [IN] Import scope, with member.
     mdToken     mbMember,               // [IN] Member in import scope.

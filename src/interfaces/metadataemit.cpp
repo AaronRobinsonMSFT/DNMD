@@ -75,8 +75,8 @@ HRESULT MetadataEmit::SetModuleProps(
     // and use that as the module name.
     char* modulePath = cvt;
     std::size_t len = std::strlen(modulePath);
-    const char* start = modulePath;
-    for (const char* p = modulePath + len - 1; p >= modulePath; p--)
+    char const* start = modulePath;
+    for (char const* p = modulePath + len - 1; p >= modulePath; p--)
     {
         if (*p == '\\' || *p == '/')
         {
@@ -152,7 +152,7 @@ HRESULT MetadataEmit::SaveToStream(
     while (totalSaved < saveSize)
     {
         ULONG numBytesToWrite = (ULONG)std::min(saveSize, (size_t)std::numeric_limits<ULONG>::max());
-        RETURN_IF_FAILED(pIStream->Write((const char*)buffer.get() + totalSaved, numBytesToWrite, nullptr));
+        RETURN_IF_FAILED(pIStream->Write((char const*)buffer.get() + totalSaved, numBytesToWrite, nullptr));
         totalSaved += numBytesToWrite;
     }
 
@@ -191,8 +191,8 @@ HRESULT MetadataEmit::DefineTypeDef(
     
     // TODO: Check for duplicate type definitions
 
-    const char* ns;
-    const char* name;
+    char const* ns;
+    char const* name;
     SplitTypeName(cvt, &ns, &name);
     if (1 != md_set_column_value_as_utf8(c, mdtTypeDef_TypeNamespace, 1, &ns))
         return E_FAIL;
@@ -328,7 +328,7 @@ HRESULT MetadataEmit::DefineMethod(
 
     pal::StringConvert<WCHAR, char> cvt(szName);
 
-    const char* name = cvt;
+    char const* name = cvt;
     if (1 != md_set_column_value_as_utf8(newMethod, mdtMethodDef_Name, 1, &name))
         return E_FAIL;
     
@@ -394,8 +394,8 @@ HRESULT MetadataEmit::DefineTypeRefByName(
     if (!cv.Success())
         return E_FAIL;
 
-    const char* ns;
-    const char* name;
+    char const* ns;
+    char const* name;
     SplitTypeName(cv, &ns, &name);
 
     if (1 != md_set_column_value_as_utf8(c, mdtTypeRef_TypeNamespace, 1, &ns))
@@ -471,7 +471,7 @@ HRESULT MetadataEmit::DefineMemberRef(
     pal::StringConvert<WCHAR, char> cvt(szName);
     if (!cvt.Success())
         return E_INVALIDARG;
-    const char* name = cvt;
+    char const* name = cvt;
 
     // TODO: Check for duplicates
 
@@ -499,7 +499,7 @@ HRESULT MetadataEmit::DefineMemberRef(
 
 HRESULT MetadataEmit::DefineImportMember(
         IMetaDataAssemblyImport *pAssemImport,
-        const void  *pbHashValue,
+        void const  *pbHashValue,
         ULONG       cbHashValue,
         IMetaDataImport *pImport,
         mdToken     mbMember,
@@ -647,7 +647,7 @@ HRESULT MetadataEmit::DefineEvent(
     if (!cvt.Success())
         return E_INVALIDARG;
     
-    const char* name = cvt;
+    char const* name = cvt;
 
     return FindOrCreateParentedRow(MetaData(), td, mdtid_EventMap, mdtEventMap_Parent, [=](mdcursor_t c)
     {
@@ -944,7 +944,7 @@ HRESULT MetadataEmit::DefineModuleRef(
         return E_FAIL;
 
     pal::StringConvert<WCHAR, char> cvt(szName);
-    const char* name = cvt;
+    char const* name = cvt;
 
     if (1 != md_set_column_value_as_utf8(c, mdtModuleRef_Name, 1, &name))
         return E_FAIL;
@@ -1437,7 +1437,7 @@ HRESULT MetadataEmit::DefinePinvokeMap(
         return E_FAIL;
     
     pal::StringConvert<WCHAR, char> cvt(szImportName);
-    const char* name = cvt;
+    char const* name = cvt;
     if (1 != md_set_column_value_as_utf8(row_to_edit, mdtImplMap_ImportName, 1, &name))
         return E_FAIL;
     
@@ -1482,7 +1482,7 @@ HRESULT MetadataEmit::SetPinvokeMap(
     if (szImportName != nullptr)
     {
         pal::StringConvert<WCHAR, char> cvt(szImportName);
-        const char* name = cvt;
+        char const* name = cvt;
         if (1 != md_set_column_value_as_utf8(row_to_edit, mdtImplMap_ImportName, 1, &name))
             return E_FAIL;
     }
@@ -1658,7 +1658,7 @@ HRESULT MetadataEmit::DefineField(
     if (!cvt.Success())
         return E_INVALIDARG;
     
-    const char* name = cvt;
+    char const* name = cvt;
 
     md_added_row_t c;
     mdcursor_t typeDef;
@@ -1780,7 +1780,7 @@ HRESULT MetadataEmit::DefineProperty(
             if (!cvt.Success())
                 return E_INVALIDARG;
             
-            const char* name = cvt;
+            char const* name = cvt;
             if (1 != md_set_column_value_as_utf8(c, mdtProperty_Name, 1, &name))
                 return E_FAIL;
 
@@ -1884,7 +1884,7 @@ HRESULT MetadataEmit::DefineParam(
     if (!cvt.Success())
         return E_INVALIDARG;
     
-    const char* name = cvt;
+    char const* name = cvt;
 
     md_added_row_t c;
     mdcursor_t method;
@@ -2111,7 +2111,7 @@ HRESULT MetadataEmit::SetParamProps(
     if (!cvt.Success())
         return E_INVALIDARG;
     
-    const char* name = cvt;
+    char const* name = cvt;
     if (1 != md_set_column_value_as_utf8(c, mdtParam_Name, 1, &name))
         return E_FAIL;
     
@@ -2189,7 +2189,7 @@ HRESULT MetadataEmit::ApplyEditAndContinue(
 
 HRESULT MetadataEmit::TranslateSigWithScope(
         IMetaDataAssemblyImport *pAssemImport,
-        const void  *pbHashValue,
+        void const  *pbHashValue,
         ULONG       cbHashValue,
         IMetaDataImport *import,
         PCCOR_SIGNATURE pbSigBlob,
@@ -2410,13 +2410,13 @@ HRESULT MetadataEmit::DefineGenericParam(
         if (!cvt.Success())
             return E_INVALIDARG;
 
-        const char* name = cvt;
+        char const* name = cvt;
         if (1 != md_set_column_value_as_utf8(c, mdtGenericParam_Name, 1, &name))
             return E_FAIL;
     }
     else
     {
-        const char* name = nullptr;
+        char const* name = nullptr;
         if (1 != md_set_column_value_as_utf8(c, mdtGenericParam_Name, 1, &name))
             return E_FAIL;
     }
@@ -2470,7 +2470,7 @@ HRESULT MetadataEmit::SetGenericParamProps(
         if (!cvt.Success())
             return E_INVALIDARG;
 
-        const char* name = cvt;
+        char const* name = cvt;
         if (1 != md_set_column_value_as_utf8(c, mdtGenericParam_Name, 1, &name))
             return E_FAIL;
     }
@@ -2528,11 +2528,11 @@ HRESULT MetadataEmit::ResetENCLog()
 }
 
 HRESULT MetadataEmit::DefineAssembly(
-        const void  *pbPublicKey,
+        void const  *pbPublicKey,
         ULONG       cbPublicKey,
         ULONG       ulHashAlgId,
         LPCWSTR     szName,
-        const ASSEMBLYMETADATA *pMetaData,
+        ASSEMBLYMETADATA const *pMetaData,
         DWORD       dwAssemblyFlags,
         mdAssembly  *pma)
 {
@@ -2580,7 +2580,7 @@ HRESULT MetadataEmit::DefineAssembly(
     if (1 != md_set_column_value_as_constant(c, mdtAssembly_Flags, 1, &assemblyFlags))
         return E_FAIL;
 
-    const char* name = cvt;
+    char const* name = cvt;
     if (1 != md_set_column_value_as_utf8(c, mdtAssembly_Name, 1, &name))
         return E_FAIL;
     
@@ -2610,13 +2610,13 @@ HRESULT MetadataEmit::DefineAssembly(
         if (!cvtLocale.Success())
             return E_INVALIDARG;
 
-        const char* locale = cvtLocale;
+        char const* locale = cvtLocale;
         if (1 != md_set_column_value_as_utf8(c, mdtAssembly_Culture, 1, &locale))
             return E_FAIL;
     }
     else
     {
-        const char* locale = nullptr;
+        char const* locale = nullptr;
         if (1 != md_set_column_value_as_utf8(c, mdtAssembly_Culture, 1, &locale))
             return E_FAIL;
     }
@@ -2630,11 +2630,11 @@ HRESULT MetadataEmit::DefineAssembly(
 }
 
 HRESULT MetadataEmit::DefineAssemblyRef(
-        const void  *pbPublicKeyOrToken,
+        void const  *pbPublicKeyOrToken,
         ULONG       cbPublicKeyOrToken,
         LPCWSTR     szName,
-        const ASSEMBLYMETADATA *pMetaData,
-        const void  *pbHashValue,
+        ASSEMBLYMETADATA const *pMetaData,
+        void const  *pbHashValue,
         ULONG       cbHashValue,
         DWORD       dwAssemblyRefFlags,
         mdAssemblyRef *pmdar)
@@ -2683,7 +2683,7 @@ HRESULT MetadataEmit::DefineAssemblyRef(
     if (1 != md_set_column_value_as_constant(c, mdtAssemblyRef_Flags, 1, &assemblyFlags))
         return E_FAIL;
 
-    const char* name = cvt;
+    char const* name = cvt;
     if (1 != md_set_column_value_as_utf8(c, mdtAssemblyRef_Name, 1, &name))
         return E_FAIL;
 
@@ -2709,13 +2709,13 @@ HRESULT MetadataEmit::DefineAssemblyRef(
         if (!cvtLocale.Success())
             return E_INVALIDARG;
 
-        const char* locale = cvtLocale;
+        char const* locale = cvtLocale;
         if (1 != md_set_column_value_as_utf8(c, mdtAssemblyRef_Culture, 1, &locale))
             return E_FAIL;
     }
     else
     {
-        const char* locale = nullptr;
+        char const* locale = nullptr;
         if (1 != md_set_column_value_as_utf8(c, mdtAssemblyRef_Culture, 1, &locale))
             return E_FAIL;
     }
@@ -2730,7 +2730,7 @@ HRESULT MetadataEmit::DefineAssemblyRef(
 
 HRESULT MetadataEmit::DefineFile(
         LPCWSTR     szName,
-        const void  *pbHashValue,
+        void const  *pbHashValue,
         ULONG       cbHashValue,
         DWORD       dwFileFlags,
         mdFile      *pmdf)
@@ -2792,8 +2792,8 @@ HRESULT MetadataEmit::DefineExportedType(
         return E_INVALIDARG;
     
     // TODO: check for duplicates
-    const char* ns;
-    const char* name;
+    char const* ns;
+    char const* name;
     SplitTypeName(cvt, &ns, &name);
     if (1 != md_set_column_value_as_utf8(c, mdtExportedType_TypeNamespace, 1, &ns))
         return E_FAIL;
@@ -2853,7 +2853,7 @@ HRESULT MetadataEmit::DefineManifestResource(
     if (!cvt.Success())
         return E_INVALIDARG;
     
-    const char* name = cvt;
+    char const* name = cvt;
     if (1 != md_set_column_value_as_utf8(c, mdtManifestResource_Name, 1, &name))
         return E_FAIL;
     
@@ -2888,11 +2888,11 @@ HRESULT MetadataEmit::DefineManifestResource(
 
 HRESULT MetadataEmit::SetAssemblyProps(
         mdAssembly  pma,
-        const void  *pbPublicKey,
+        void const  *pbPublicKey,
         ULONG       cbPublicKey,
         ULONG       ulHashAlgId,
         LPCWSTR     szName,
-        const ASSEMBLYMETADATA *pMetaData,
+        ASSEMBLYMETADATA const *pMetaData,
         DWORD       dwAssemblyFlags)
 {
     mdcursor_t c;
@@ -2922,7 +2922,7 @@ HRESULT MetadataEmit::SetAssemblyProps(
         if (!cvt.Success())
             return E_INVALIDARG;
         
-        const char* name = cvt;
+        char const* name = cvt;
         if (1 != md_set_column_value_as_utf8(c, mdtAssembly_Name, 1, &name))
             return E_FAIL;
     }
@@ -2968,7 +2968,7 @@ HRESULT MetadataEmit::SetAssemblyProps(
         if (!cvtLocale.Success())
             return E_INVALIDARG;
 
-        const char* locale = cvtLocale;
+        char const* locale = cvtLocale;
         if (1 != md_set_column_value_as_utf8(c, mdtAssembly_Culture, 1, &locale))
             return E_FAIL;
     }
@@ -2980,11 +2980,11 @@ HRESULT MetadataEmit::SetAssemblyProps(
 
 HRESULT MetadataEmit::SetAssemblyRefProps(
         mdAssemblyRef ar,
-        const void  *pbPublicKeyOrToken,
+        void const  *pbPublicKeyOrToken,
         ULONG       cbPublicKeyOrToken,
         LPCWSTR     szName,
-        const ASSEMBLYMETADATA *pMetaData,
-        const void  *pbHashValue,
+        ASSEMBLYMETADATA const *pMetaData,
+        void const  *pbHashValue,
         ULONG       cbHashValue,
         DWORD       dwAssemblyRefFlags)
 {
@@ -3023,7 +3023,7 @@ HRESULT MetadataEmit::SetAssemblyRefProps(
         if (!cvt.Success())
             return E_INVALIDARG;
         
-        const char* name = cvt;
+        char const* name = cvt;
         if (1 != md_set_column_value_as_utf8(c, mdtAssemblyRef_Name, 1, &name))
             return E_FAIL;
     }
@@ -3062,7 +3062,7 @@ HRESULT MetadataEmit::SetAssemblyRefProps(
         if (!cvtLocale.Success())
             return E_INVALIDARG;
 
-        const char* locale = cvtLocale;
+        char const* locale = cvtLocale;
         if (1 != md_set_column_value_as_utf8(c, mdtAssemblyRef_Culture, 1, &locale))
             return E_FAIL;
     }
@@ -3074,7 +3074,7 @@ HRESULT MetadataEmit::SetAssemblyRefProps(
 
 HRESULT MetadataEmit::SetFileProps(
         mdFile      file,
-        const void  *pbHashValue,
+        void const  *pbHashValue,
         ULONG       cbHashValue,
         DWORD       dwFileFlags)
 {

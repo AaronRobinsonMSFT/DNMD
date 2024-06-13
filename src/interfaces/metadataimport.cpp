@@ -2736,7 +2736,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetCustomAttributeByName(
     struct
     {
         HRESULT hr;
-        const void** ppData;
+        void const** ppData;
         ULONG* pcbData;
         pal::StringConvert<WCHAR, char> const& cvt;
 
