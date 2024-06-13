@@ -104,22 +104,32 @@ HRESULT MetadataEmit::Save(
     if (!cvt.Success())
         return E_INVALIDARG;
 
-    std::ofstream file(cvt, std::ios::binary);
-    
     size_t saveSize;
     md_write_to_buffer(MetaData(), nullptr, &saveSize);
     std::unique_ptr<uint8_t[]> buffer { new uint8_t[saveSize] };
     if (!md_write_to_buffer(MetaData(), buffer.get(), &saveSize))
         return E_FAIL;
 
+    std::FILE* file = std::fopen(cvt, "wb");
+    if (file == nullptr)
+    {
+        return E_FAIL;
+    }
+
     size_t totalSaved = 0;
     while (totalSaved < saveSize)
     {
-        size_t numBytesToWrite = std::min(saveSize, (size_t)std::numeric_limits<std::streamsize>::max());
-        file.write((const char*)buffer.get() + totalSaved, numBytesToWrite);
-        if (file.bad())
+        totalSaved += std::fwrite(buffer.get(), sizeof(uint8_t), saveSize - totalSaved, file);
+        if (ferror(file) != 0)
+        {
+            std::fclose(file);
             return E_FAIL;
-        totalSaved += numBytesToWrite;
+        }
+    }
+
+    if (std::fclose(file) == EOF)
+    {
+        return E_FAIL;
     }
 
     return S_OK;

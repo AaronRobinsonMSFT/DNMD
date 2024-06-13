@@ -126,9 +126,7 @@ namespace
                 mdhandle_view handle_view{ obj->CreateAndAddTearOff<DNMDOwner>(std::move(md_ptr), std::move(copiedMem), std::move(nowOwned)) };
                 
                 if (!(dwOpenFlags & ofReadOnly))
-                {
                     (void)obj->CreateAndAddTearOff<MetadataEmit>(handle_view);
-                }
 
                 (void)obj->CreateAndAddTearOff<MetadataImportRO>(std::move(handle_view));
             }

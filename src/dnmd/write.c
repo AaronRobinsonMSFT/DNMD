@@ -343,16 +343,10 @@ int32_t md_set_column_value_as_utf8(mdcursor_t c, col_index_t col_idx, uint32_t 
     do
     {
         uint32_t heap_offset;
-        if (str[written][0] == '\0')
-        {
-            heap_offset = 0;
-        }
-        else
-        {
-            heap_offset = add_to_string_heap(CursorTable(&c)->cxt, str[written]);
-            if (heap_offset == 0)
-                return -1;
-        }
+        heap_offset = add_to_string_heap(CursorTable(&c)->cxt, str[written]);
+
+        if (heap_offset == 0 && str[written][0] != '\0')
+            return -1;
 
         if (!write_column_data(&acxt, heap_offset))
             return -1;
@@ -382,17 +376,9 @@ int32_t md_set_column_value_as_blob(mdcursor_t c, col_index_t col_idx, uint32_t 
     int32_t written = 0;
     do
     {
-        if (blob_len[written] == 0)
-        {
-            if (!write_column_data(&acxt, 0))
-                return -1;
-            written++;
-            continue;
-        }
-
         uint32_t heap_offset = add_to_blob_heap(CursorTable(&c)->cxt, blob[written], blob_len[written]);
 
-        if (heap_offset == 0)
+        if (heap_offset == 0 && blob_len[written] != 0)
             return -1;
 
         if (!write_column_data(&acxt, heap_offset))
@@ -423,18 +409,9 @@ int32_t md_set_column_value_as_guid(mdcursor_t c, col_index_t col_idx, uint32_t 
     int32_t written = 0;
     do
     {
-        static const mdguid_t empty_guid = { 0 };
-        if (memcmp(&guid[written], &empty_guid, sizeof(mdguid_t)) == 0)
-        {
-            if (!write_column_data(&acxt, 0))
-                return -1;
-            written++;
-            continue;
-        }
-
         uint32_t index = add_to_guid_heap(CursorTable(&c)->cxt, guid[written]);
 
-        if (index == 0)
+        if (index == 0 && memcmp(&guid[written], &empty_guid, sizeof(mdguid_t)) != 0)
             return -1;
 
         if (!write_column_data(&acxt, index))
@@ -465,17 +442,9 @@ int32_t md_set_column_value_as_userstring(mdcursor_t c, col_index_t col_idx, uin
     int32_t written = 0;
     do
     {
-        if (userstring[written][0] == 0)
-        {
-            if (!write_column_data(&acxt, 0))
-                return -1;
-            written++;
-            continue;
-        }
-
         uint32_t index = add_to_user_string_heap(CursorTable(&c)->cxt, userstring[written]);
 
-        if (index == 0)
+        if (index == 0 && userstring[written][0] != 0)
             return -1;
 
         if (!write_column_data(&acxt, index))

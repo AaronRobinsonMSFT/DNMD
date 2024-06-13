@@ -6,6 +6,10 @@ bool try_get_string(mdcxt_t* cxt, size_t offset, char const** str)
 
     mdstream_t* h = &cxt->strings_heap;
 
+    // II.24.2.3 - When the #String heap is present, the first entry is always the empty string (i.e., \0). 
+    // II.24.2.2 -  Streams need not be there if they are empty.
+    // If the offset into the heap is 0, we can treat that as a "null" index into the heap and return
+    // the empty string.
     if (h->size == 0 && offset == 0)
     {
         *str = "\0"; // II.24.2.3 'The first character must be the '\0' character.

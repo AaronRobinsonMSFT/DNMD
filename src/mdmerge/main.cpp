@@ -18,14 +18,14 @@ bool apply_deltas(mdhandle_t handle, std::vector<char const*>& deltas, std::vect
             return false;
         }
 
-        mdhandle_t delta;
-        if (!md_create_handle(d, d.size(), &delta))
+        mdhandle_ptr delta;
+        if (!create_mdhandle(d, delta))
         {
             std::fprintf(stderr, "Failed to create handle for '%s'.\n", p);
             return false;
         }
 
-        if (!md_apply_delta(handle, delta))
+        if (!md_apply_delta(handle, delta.get()))
         {
             std::fprintf(stderr, "Failed to apply delta, '%s'.\n", p);
             return false;

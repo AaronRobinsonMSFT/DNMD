@@ -28,6 +28,12 @@ if(NOT MSVC)
   list(APPEND SOURCES ./iids.cpp ./options.cpp)
 endif()
 
+if (WIN32)
+  # Disable "secure CRT" warnings when targeting Windows
+  # as the "secure CRT" is not cross-platform.
+  add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
+endif()
+
 add_library(dnmd_interfaces_static
   STATIC
   ${SOURCES}

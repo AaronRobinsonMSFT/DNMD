@@ -1725,7 +1725,7 @@ HRESULT DefineImportMember(
     mdToken     tkImport,               // [IN] Classref or classdef in emit scope.
     mdMemberRef *pmr)                   // [OUT] Put member ref here.
 {
-    HRESULT hr = S_OK;
+    HRESULT hr;
     assert(pImport && pmr);
     assert(TypeFromToken(tkImport) == mdtTypeRef || TypeFromToken(tkImport) == mdtModuleRef ||
                 IsNilToken(tkImport) || TypeFromToken(tkImport) == mdtTypeSpec);
@@ -1743,7 +1743,8 @@ HRESULT DefineImportMember(
     if (TypeFromToken(mbMember) == mdtMethodDef)
     {
         ULONG acutalNameLength;
-        do {
+        for (;;)
+        {
             hr = pImport->GetMethodProps(mbMember, nullptr, memberName.get(), (DWORD)memberNameSize, &acutalNameLength,
                 nullptr, &pvSig, &cbSig, nullptr, nullptr);
             if (hr == CLDB_S_TRUNCATION)
@@ -1753,12 +1754,13 @@ HRESULT DefineImportMember(
                 continue;
             }
             break;
-        } while (1);
+        }
     }
     else    // TypeFromToken(mbMember) == mdtFieldDef
     {
         ULONG acutalNameLength;
-        do {
+        for (;;)
+        {
             hr = pImport->GetMethodProps(mbMember, nullptr, memberName.get(),(DWORD)memberNameSize, &acutalNameLength,
                 nullptr, &pvSig,&cbSig, nullptr, nullptr);
             if (hr == CLDB_S_TRUNCATION)
@@ -1768,11 +1770,12 @@ HRESULT DefineImportMember(
                 continue;
             }
             break;
-        } while (1);
+        }
     }
     RETURN_IF_FAILED(hr);
 
-    std::unique_ptr<uint8_t[]> translatedSig { new uint8_t[cbSig * 3] }; // Set translated signature buffer size conservatively.
+    ULONG sigSizeMax = cbSig * 3;  // Set translated signature buffer size conservatively.  
+    std::unique_ptr<uint8_t[]> translatedSig { new uint8_t[sigSizeMax] };  
 
     RETURN_IF_FAILED(emit->TranslateSigWithScope(
         pAssemImport,
@@ -1784,7 +1787,7 @@ HRESULT DefineImportMember(
         pAssemEmit,
         emit,
         translatedSig.get(),
-        cbSig * 3,
+        sigSizeMax,
         &translatedSigLength));
 
     // Define ModuleRef for imported Member functions
@@ -1812,5 +1815,5 @@ HRESULT DefineImportMember(
         translatedSigLength,
         pmr));
     
-    return hr;
+    return S_OK;
 }
