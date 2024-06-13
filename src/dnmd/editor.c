@@ -687,10 +687,6 @@ uint32_t add_to_blob_heap(mdcxt_t* cxt, uint8_t const* data, uint32_t length)
 
 uint32_t add_to_user_string_heap(mdcxt_t* cxt, char16_t const* str)
 {
-    mdeditor_t* editor = get_editor(cxt);
-    if (editor == NULL)
-        return 0;
-    // TODO: Deduplicate heap
     uint32_t str_len;
     uint8_t has_special_char = 0;
     for (str_len = 0; str[str_len] != (char16_t)0; str_len++)
@@ -738,22 +734,40 @@ uint32_t add_to_user_string_heap(mdcxt_t* cxt, char16_t const* str)
     if (str_len == 0)
         return 0;
 
-    uint8_t compressed_length[sizeof(str_len)];
-    size_t compressed_length_size = 4;
-    if (!compress_u32(str_len, compressed_length, &compressed_length_size))
+    mdeditor_t* editor = get_editor(cxt);
+    if (editor == NULL)
         return 0;
 
-    uint32_t heap_slot_size = str_len + (uint32_t)compressed_length_size + 1;
+    // TODO: Deduplicate heap
+    
+    // II.24.2.4
+    // Strings in the #US (user string) heap are encoded using 16-bit Unicode encodings.
+    // The count on each string is the number of bytes (not characters) in the string.
+    // Furthermore, there is an additional terminal byte (so all byte counts are odd, not even).
+    size_t us_blob_bytes = str_len * sizeof(char16_t) + 1;
+    
+    // The string is too long to represent in the heap.
+    if (us_blob_bytes > INT32_MAX)
+        return 0;
+    uint8_t compressed_length[sizeof(uint32_t)];
+    size_t compressed_length_size = ARRAY_SIZE(compressed_length);
+    if (!compress_u32((uint32_t)us_blob_bytes, compressed_length, &compressed_length_size))
+        return 0;
+
+    uint32_t heap_slot_size = (uint32_t)us_blob_bytes + (uint32_t)compressed_length_size;
     uint32_t heap_offset;
     if (!reserve_heap_space(editor, heap_slot_size, mdtc_hus, false, &heap_offset))
     {
         return 0;
     }
 
+    // Copy the compressed blob length into the heap.
     memcpy(editor->user_string_heap.heap.ptr + heap_offset, compressed_length, compressed_length_size);
-    memcpy(editor->user_string_heap.heap.ptr + heap_offset + compressed_length_size, str, str_len);
+    // Copy the UTF-16-encoded user string into the heap.
+    memcpy(editor->user_string_heap.heap.ptr + heap_offset + compressed_length_size, str, us_blob_bytes - 1);
 
-    editor->user_string_heap.heap.ptr[heap_offset + compressed_length_size + str_len] = has_special_char;
+    // Set the trailing byte.
+    editor->user_string_heap.heap.ptr[heap_offset + compressed_length_size + us_blob_bytes - 1] = has_special_char;
     return heap_offset;
 }
 
