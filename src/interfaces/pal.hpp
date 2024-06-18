@@ -113,6 +113,52 @@ namespace pal
     constexpr size_t SHA1_HASH_SIZE = 20;
 
     bool ComputeSha1Hash(span<uint8_t const> data, std::array<uint8_t, SHA1_HASH_SIZE>& hashDestination);
+    
+    // A simple read-write lock that provides accessors to meet the C++11 BasicLockable requirements.
+    class ReadWriteLock;
+
+    class ReadLock final
+    {
+        ReadWriteLock& _lock;
+        public:
+            ReadLock(ReadWriteLock& lock) noexcept
+                : _lock{ lock }
+            {}
+            void lock() noexcept;
+            void unlock() noexcept;
+    };
+
+    class WriteLock final
+    {
+        ReadWriteLock& _lock;
+        public:
+            WriteLock(ReadWriteLock& lock) noexcept
+                : _lock{ lock }
+            {}
+            void lock() noexcept;
+            void unlock() noexcept;
+    };
+
+    class ReadWriteLock
+    {
+        friend class ReadLock;
+        friend class WriteLock;
+        class Impl;
+        std::unique_ptr<Impl> _impl;
+        ReadLock _readLock = ReadLock(*this);
+        WriteLock _writeLock = WriteLock(*this);
+    public:
+        ReadWriteLock();
+        ~ReadWriteLock();
+        ReadLock& GetReadLock() noexcept
+        {
+            return _readLock;
+        }
+        WriteLock& GetWriteLock() noexcept
+        {
+            return _writeLock;
+        }
+    };
 }
 
 // Implementations for missing bounds checking APIs.

@@ -15,6 +15,13 @@
 #include <openssl/sha.h>
 #endif
 
+#if defined(BUILD_WINDOWS)
+#include <windows.h>
+#else
+#include <pthread.h>
+#endif
+
+// String conversion functions
 HRESULT pal::ConvertUtf16ToUtf8(
     WCHAR const* str,
     char* buffer,
@@ -140,6 +147,7 @@ int strcat_s(char* dest, rsize_t destsz, char const* src)
 }
 #endif // !defined(__STDC_LIB_EXT1__) && !defined(BUILD_WINDOWS)
 
+// SHA1 implementation
 #if defined(BUILD_WINDOWS)
 namespace
 {
@@ -206,3 +214,110 @@ bool pal::ComputeSha1Hash(span<const uint8_t> data, std::array<uint8_t, SHA1_HAS
 }
 
 #endif // defined(BUILD_WINDOWS)
+
+// Read-write lock implementation
+#if defined(BUILD_WINDOWS)
+namespace pal
+{
+    class ReadWriteLock::Impl final
+    {
+        SRWLOCK _lock;
+    public:
+        Impl()
+        {
+            ::InitializeSRWLock(&_lock);
+        }
+
+        void lock_shared() noexcept
+        {
+            ::AcquireSRWLockShared(&_lock);
+        }
+
+        void unlock_shared() noexcept
+        {
+            ::ReleaseSRWLockShared(&_lock);
+        }
+
+        void lock() noexcept
+        {
+            ::AcquireSRWLockExclusive(&_lock);
+        }
+
+        void unlock() noexcept
+        {
+            ::ReleaseSRWLockExclusive(&_lock);
+        }
+    };
+
+    std::unique_ptr<ReadWriteLock> CreateReadWriteLock()
+    {
+        return std::make_unique<ReadWriteLock>();
+    }
+}
+#else
+namespace pal
+{
+    class ReadWriteLock::Impl final
+    {
+        pthread_rwlock_t _lock;
+    public:
+        Impl()
+        {
+            ::pthread_rwlock_init(&_lock, nullptr);
+        }
+
+        void lock_shared() noexcept
+        {
+            ::pthread_rwlock_rdlock(&_lock);
+        }
+
+        void unlock_shared() noexcept
+        {
+            ::pthread_rwlock_unlock(&_lock);
+        }
+
+        void lock() noexcept
+        {
+            ::pthread_rwlock_wrlock(&_lock);
+        }
+
+        void unlock() noexcept
+        {
+            ::pthread_rwlock_unlock(&_lock);
+        }
+    };
+
+    std::unique_ptr<ReadWriteLock> CreateReadWriteLock()
+    {
+        return std::make_unique<ReadWriteLock>();
+    }
+}
+#endif
+
+pal::ReadWriteLock::ReadWriteLock()
+    : _impl{ std::make_unique<Impl>() }
+{
+}
+
+// Define here where pal::ReadWriteLock::Impl is defined
+pal::ReadWriteLock::~ReadWriteLock() = default;
+
+void pal::ReadLock::lock() noexcept
+{
+    _lock._impl->lock_shared();
+}
+
+void pal::ReadLock::unlock() noexcept
+{
+    _lock._impl->unlock_shared();
+}
+
+void pal::WriteLock::lock() noexcept
+{
+    _lock._impl->lock();
+}
+
+void pal::WriteLock::unlock() noexcept
+{
+    _lock._impl->unlock();
+}
