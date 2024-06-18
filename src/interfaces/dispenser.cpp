@@ -28,7 +28,7 @@ namespace
             MetadataImportRO* import = unknown->CreateAndAddTearOff<MetadataImportRO>(std::move(handle_view));
             if (!_threadSafe)
             {
-                return std::move(unknown);
+                return unknown;
             }
             dncp::com_ptr<ControllingIUnknown> threadSafeUnknown;
             threadSafeUnknown.Attach(new ControllingIUnknown());
