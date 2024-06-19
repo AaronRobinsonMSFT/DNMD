@@ -178,7 +178,7 @@ namespace
         public: // IMetaDataDispenserEx
             STDMETHOD(SetOption)(
             REFGUID     optionid,
-            const VARIANT *value)
+            VARIANT const *value)
         {
             if (optionid == MetaDataThreadSafetyOptions)
             {
@@ -273,8 +273,11 @@ HRESULT GetDispenser(
     REFGUID riid,
     void** ppObj)
 {
-    if (riid != IID_IMetaDataDispenser && riid != IID_IMetaDataDispenserEx)
+    if (riid != IID_IMetaDataDispenser
+        && riid != IID_IMetaDataDispenserEx)
+    {
         return E_INVALIDARG;
+    }
 
     if (ppObj == nullptr)
         return E_INVALIDARG;

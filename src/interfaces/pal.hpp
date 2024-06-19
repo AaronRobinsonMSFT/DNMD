@@ -121,9 +121,7 @@ namespace pal
     {
         ReadWriteLock& _lock;
         public:
-            ReadLock(ReadWriteLock& lock) noexcept
-                : _lock{ lock }
-            {}
+            ReadLock(ReadWriteLock& lock) noexcept;
             void lock() noexcept;
             void unlock() noexcept;
     };
@@ -132,9 +130,7 @@ namespace pal
     {
         ReadWriteLock& _lock;
         public:
-            WriteLock(ReadWriteLock& lock) noexcept
-                : _lock{ lock }
-            {}
+            WriteLock(ReadWriteLock& lock) noexcept;
             void lock() noexcept;
             void unlock() noexcept;
     };
@@ -145,8 +141,8 @@ namespace pal
         friend class WriteLock;
         class Impl;
         std::unique_ptr<Impl> _impl;
-        ReadLock _readLock = ReadLock(*this);
-        WriteLock _writeLock = WriteLock(*this);
+        ReadLock _readLock;
+        WriteLock _writeLock;
     public:
         ReadWriteLock();
         ~ReadWriteLock();

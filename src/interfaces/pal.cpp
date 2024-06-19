@@ -216,6 +216,8 @@ bool pal::ComputeSha1Hash(span<const uint8_t> data, std::array<uint8_t, SHA1_HAS
 #endif // defined(BUILD_WINDOWS)
 
 // Read-write lock implementation
+// The implementation type matches the C++11 BasicLockable and the C++14 SharedLockable requirements (excluding the try_lock_shared method).
+// This allows us to move to exposing the C++14 API surface in the future more easily.
 #if defined(BUILD_WINDOWS)
 namespace pal
 {
@@ -248,11 +250,6 @@ namespace pal
             ::ReleaseSRWLockExclusive(&_lock);
         }
     };
-
-    std::unique_ptr<ReadWriteLock> CreateReadWriteLock()
-    {
-        return std::make_unique<ReadWriteLock>();
-    }
 }
 #else
 namespace pal
@@ -286,21 +283,23 @@ namespace pal
             ::pthread_rwlock_unlock(&_lock);
         }
     };
-
-    std::unique_ptr<ReadWriteLock> CreateReadWriteLock()
-    {
-        return std::make_unique<ReadWriteLock>();
-    }
 }
 #endif
 
 pal::ReadWriteLock::ReadWriteLock()
     : _impl{ std::make_unique<Impl>() }
+    , _readLock{ *this }
+    , _writeLock{ *this }
 {
 }
 
 // Define here where pal::ReadWriteLock::Impl is defined
 pal::ReadWriteLock::~ReadWriteLock() = default;
+
+pal::ReadLock::ReadLock(pal::ReadWriteLock& lock) noexcept
+    : _lock{ lock }
+{
+}
 
 void pal::ReadLock::lock() noexcept
 {
@@ -310,6 +309,11 @@ void pal::ReadLock::lock() noexcept
 void pal::ReadLock::unlock() noexcept
 {
     _lock._impl->unlock_shared();
+}
+
+pal::WriteLock::WriteLock(pal::ReadWriteLock& lock) noexcept
+    : _lock{ lock }
+{
 }
 
 void pal::WriteLock::lock() noexcept
