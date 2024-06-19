@@ -58,7 +58,7 @@ namespace
             REFCLSID    rclsid,
             DWORD       dwCreateFlags,
             REFIID      riid,
-            IUnknown** ppIUnk)
+            IUnknown** ppIUnk) override
         {
             if (rclsid != CLSID_CLR_v2_MetaData)
             {
@@ -108,7 +108,7 @@ namespace
             LPCWSTR     szScope,
             DWORD       dwOpenFlags,
             REFIID      riid,
-            IUnknown** ppIUnk)
+            IUnknown** ppIUnk) override
         {
             UNREFERENCED_PARAMETER(szScope);
             UNREFERENCED_PARAMETER(dwOpenFlags);
@@ -122,7 +122,7 @@ namespace
             ULONG       cbData,
             DWORD       dwOpenFlags,
             REFIID      riid,
-            IUnknown** ppIUnk)
+            IUnknown** ppIUnk) override
         {
             if (ppIUnk == nullptr)
                 return E_INVALIDARG;
@@ -178,7 +178,7 @@ namespace
         public: // IMetaDataDispenserEx
             STDMETHOD(SetOption)(
             REFGUID     optionid,
-            VARIANT const *value)
+            VARIANT const *value) override
         {
             if (optionid == MetaDataThreadSafetyOptions)
             {
@@ -190,7 +190,7 @@ namespace
 
         STDMETHOD(GetOption)(
             REFGUID     optionid,
-            VARIANT *pvalue)
+            VARIANT *pvalue) override
         {
             if (optionid == MetaDataThreadSafetyOptions)
             {
@@ -204,7 +204,7 @@ namespace
             ITypeInfo   *pITI,
             DWORD       dwOpenFlags,
             REFIID      riid,
-            IUnknown    **ppIUnk)
+            IUnknown    **ppIUnk) override
         {
             UNREFERENCED_PARAMETER(pITI);
             UNREFERENCED_PARAMETER(dwOpenFlags);
@@ -217,7 +217,7 @@ namespace
         _Out_writes_to_opt_(cchBuffer, *pchBuffer)
             LPWSTR      szBuffer,
             DWORD       cchBuffer,
-            DWORD*      pchBuffer)
+            DWORD*      pchBuffer) override
         {
             UNREFERENCED_PARAMETER(szBuffer);
             UNREFERENCED_PARAMETER(cchBuffer);
@@ -232,7 +232,7 @@ namespace
             LPCWSTR  szAssemblyName,
             LPCWSTR  szName,
             ULONG    cchName,
-            ULONG    *pcName)
+            ULONG    *pcName) override
         {
             UNREFERENCED_PARAMETER(szAppBase);
             UNREFERENCED_PARAMETER(szPrivateBin);
@@ -253,7 +253,7 @@ namespace
         _Out_writes_to_opt_(cchName, *pcName)
             LPWSTR   szName,
             ULONG    cchName,
-            ULONG    *pcName)
+            ULONG    *pcName) override
         {
             UNREFERENCED_PARAMETER(szAppBase);
             UNREFERENCED_PARAMETER(szPrivateBin);
