@@ -89,6 +89,7 @@ public:
         , _import{ import }
         , _emit{ emit }
     {
+        assert(_threadUnsafe.p != nullptr);
         assert(_import != nullptr);
         assert(_emit != nullptr);
     }

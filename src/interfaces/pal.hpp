@@ -122,6 +122,8 @@ namespace pal
         ReadWriteLock& _lock;
         public:
             ReadLock(ReadWriteLock& lock) noexcept;
+            ReadLock(ReadLock const&) = delete;
+            ReadLock(ReadLock&&) = delete;
             void lock() noexcept;
             void unlock() noexcept;
     };
@@ -131,6 +133,8 @@ namespace pal
         ReadWriteLock& _lock;
         public:
             WriteLock(ReadWriteLock& lock) noexcept;
+            WriteLock(WriteLock const&) = delete;
+            WriteLock(WriteLock&&) = delete;
             void lock() noexcept;
             void unlock() noexcept;
     };
