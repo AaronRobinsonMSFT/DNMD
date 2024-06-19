@@ -34,9 +34,9 @@ namespace
             threadSafeUnknown.Attach(new ControllingIUnknown());
             
             // Define an IDNMDOwner* tear-off here so the thread-safe object can be identified as a DNMD object.
-            (void)threadSafeUnknown->CreateAndAddTearOff<DelegatingDNMDOwner>(owner);
-            (void)threadSafeUnknown->CreateAndAddTearOff<ThreadSafeImportEmit<MetadataImportRO, MetadataEmit>>(import, emit);
-            // DelegatingDNMDOwner took ownership of owner, so we can return our thread-safe object here.
+            (void)threadSafeUnknown->CreateAndAddTearOff<DelegatingDNMDOwner>(handle_view);
+            (void)threadSafeUnknown->CreateAndAddTearOff<ThreadSafeImportEmit<MetadataImportRO, MetadataEmit>>(std::move(unknown), import, emit);
+            // ThreadSafeImportEmit took ownership of owner through unknown.
             return threadSafeUnknown;
         }
 

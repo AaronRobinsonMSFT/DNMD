@@ -14,10 +14,10 @@
 #include <cstdint>
 #include <mutex>
 
-// An tear-off that provides ownership semantics of an inner IDNMDOwner object.
+// A tear-off that re-exposes an mdhandle_view as an IDNMDOwner*.
 class DelegatingDNMDOwner final : public TearOffBase<IDNMDOwner>
 {
-    dncp::com_ptr<IDNMDOwner> _inner;
+    mdhandle_view _inner;
 
 protected:
     virtual bool TryGetInterfaceOnThis(REFIID riid, void** ppvObject) override
@@ -31,7 +31,7 @@ protected:
     }
 
 public:
-    DelegatingDNMDOwner(IUnknown* controllingUnknown, IDNMDOwner* inner)
+    DelegatingDNMDOwner(IUnknown* controllingUnknown, mdhandle_view inner)
         : TearOffBase(controllingUnknown)
         , _inner{ inner }
     { }
@@ -40,7 +40,7 @@ public:
 
     mdhandle_t MetaData() override
     {
-        return _inner->MetaData();
+        return _inner.get();
     }
 };
 
@@ -48,6 +48,8 @@ template<typename TImport, typename TEmit>
 class ThreadSafeImportEmit : public TearOffBase<IMetaDataImport2, IMetaDataEmit2, IMetaDataAssemblyImport, IMetaDataAssemblyEmit>
 {
     pal::ReadWriteLock _lock;
+    // owning reference to the thread-unsafe object that provides the underlying implementation.
+    dncp::com_ptr<ControllingIUnknown> _threadUnsafe;
     // non-owning reference to the concrete non-locking implementations
     TImport* _import;
     TEmit* _emit;
@@ -80,12 +82,15 @@ protected:
     }
 
 public:
-    ThreadSafeImportEmit(IUnknown* controllingUnknown, TImport* import, TEmit* emit)
+    ThreadSafeImportEmit(IUnknown* controllingUnknown, dncp::com_ptr<ControllingIUnknown>&& threadUnsafe, TImport* import, TEmit* emit)
         : TearOffBase(controllingUnknown)
         , _lock { }
+        , _threadUnsafe{ std::move(threadUnsafe) }
         , _import{ import }
         , _emit{ emit }
     {
+        assert(_import != nullptr);
+        assert(_emit != nullptr);
     }
 
     virtual ~ThreadSafeImportEmit() = default;
