@@ -28,7 +28,7 @@ struct base_inline_span : public span<T>
 
     base_inline_span& operator=(base_inline_span&& other) noexcept
     {
-        if (size() > NumInlineElements)
+        if (this->size() > NumInlineElements)
         {
             delete[] this->_ptr;
             this->_ptr = nullptr;
@@ -51,19 +51,19 @@ struct base_inline_span : public span<T>
 
     void resize(size_t newSize)
     {
-        if (size() > NumInlineElements && newSize < NumInlineElements)
+        if (this->size() > NumInlineElements && newSize < NumInlineElements)
         {
             // Transitioning from a non-inline buffer to the inline buffer.
             std::copy(this->begin(), this->begin() + newSize, _storage.begin());
             delete[] this->_ptr;
             this->_ptr = _storage.data();
         }
-        else if (size() <= NumInlineElements && newSize <= NumInlineElements)
+        else if (this->size() <= NumInlineElements && newSize <= NumInlineElements)
         {
             // We're staying within the inline buffer, so just update the size.
             this->_size = newSize;
         }
-        else if (size() > NumInlineElements && newSize < size())
+        else if (this->size() > NumInlineElements && newSize < this->size())
         {
             // Shrinking the buffer, but still keeping it as a non-inline buffer.
             this->_size = newSize;
@@ -81,7 +81,7 @@ struct base_inline_span : public span<T>
 
     ~base_inline_span()
     {
-        if (size() > NumInlineElements)
+        if (this->size() > NumInlineElements)
         {
             assert(this->_ptr != _storage.data());
             delete[] this->_ptr;
