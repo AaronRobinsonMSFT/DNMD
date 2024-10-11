@@ -10,7 +10,6 @@
 #error Must define SEARCH_FUNC_NAME(name) macro
 #endif // SEARCH_FUNC_NAME
 
-
 static void const* SEARCH_FUNC_NAME(md_lsearch)(
     void const* key,
     void const* base,
@@ -43,6 +42,10 @@ static void const* SEARCH_FUNC_NAME(md_bsearch)(
     void* cxt)
 {
     assert(key != NULL && base != NULL);
+    // PERF: Do a binary search until we have at most 16 elements.
+    // Then switch to a linear search. A linear search has better cache locality
+    // and better branch prediction and can end up being faster than a binary search
+    // for small data sets.
     while (count > 16)
     {
         void const* row = (uint8_t const*)base + (element_size * (count / 2));

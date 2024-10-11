@@ -301,10 +301,6 @@ bool get_column_value_as_heap_offset(mdcursor_t c, col_index_t col_idx, uint32_t
     if (heap == NULL)
         return false;
 
-#ifdef DEBUG_COLUMN_SORTING
-    validate_column_not_sorted(acxt.table, col_idx);
-#endif
-
     if (!read_column_data(&acxt, offset))
         return false;
 
@@ -321,17 +317,7 @@ bool md_get_column_value_as_utf8(mdcursor_t c, col_index_t col_idx, char const**
     if (!(acxt.col_details & mdtc_hstring))
         return false;
 
-    mdstream_t const* heap = &
-    acxt.table->cxt->strings_heap;
-    if (heap == NULL)
-        return false;
-
-#ifdef DEBUG_COLUMN_SORTING
-    validate_column_not_sorted(acxt.table, col_idx);
-#endif
-
     uint32_t offset;
-
     if (!read_column_data(&acxt, &offset))
         return false;
 
@@ -353,17 +339,7 @@ bool md_get_column_value_as_userstring(mdcursor_t c, col_index_t col_idx, mduser
     if (!(acxt.col_details & mdtc_hus))
         return false;
 
-    mdstream_t const* heap = &
-    acxt.table->cxt->strings_heap;
-    if (heap == NULL)
-        return false;
-
-#ifdef DEBUG_COLUMN_SORTING
-    validate_column_not_sorted(acxt.table, col_idx);
-#endif
-
     uint32_t offset;
-
     if (!read_column_data(&acxt, &offset))
         return false;
 
@@ -386,17 +362,7 @@ bool md_get_column_value_as_blob(mdcursor_t c, col_index_t col_idx, uint8_t cons
     if (!(acxt.col_details & mdtc_hblob))
         return false;
 
-    mdstream_t const* heap = &
-    acxt.table->cxt->strings_heap;
-    if (heap == NULL)
-        return false;
-
-#ifdef DEBUG_COLUMN_SORTING
-    validate_column_not_sorted(acxt.table, col_idx);
-#endif
-
     uint32_t offset;
-
     if (!read_column_data(&acxt, &offset))
         return false;
 
@@ -418,17 +384,7 @@ bool md_get_column_value_as_guid(mdcursor_t c, col_index_t col_idx, mdguid_t* gu
     if (!(acxt.col_details & mdtc_hguid))
         return false;
 
-    mdstream_t const* heap = &
-    acxt.table->cxt->strings_heap;
-    if (heap == NULL)
-        return false;
-
-#ifdef DEBUG_COLUMN_SORTING
-    validate_column_not_sorted(acxt.table, col_idx);
-#endif
-
     uint32_t offset;
-
     if (!read_column_data(&acxt, &offset))
         return false;
 
@@ -483,7 +439,6 @@ int32_t md_get_many_rows_column_value_as_token(mdcursor_t c, uint32_t col_idx, u
 
     return read_in;
 }
-
 
 bool md_get_column_values_raw(mdcursor_t c, uint32_t values_length, bool* values_to_get, uint32_t* values_raw)
 {
@@ -549,7 +504,8 @@ static int32_t col_compare_2bytes(void const* key, void const* row, void* cxt)
     assert(success && col_len == 0);
     (void)success;
 
-    return lhs - rhs;
+    // 0: equal, < 0: (lhs < rhs), > 0: (lhr > rhs)  
+    return lhs - rhs;  
 }
 
 static int32_t col_compare_4bytes(void const* key, void const* row, void* cxt)
@@ -567,7 +523,8 @@ static int32_t col_compare_4bytes(void const* key, void const* row, void* cxt)
     assert(success && col_len == 0);
     (void)success;
 
-    return lhs - rhs;
+    // 0: equal, < 0: (lhs < rhs), > 0: (lhr > rhs)  
+    return lhs - rhs;  
 }
 
 typedef int32_t(*md_bcompare_t)(void const* key, void const* row, void*);

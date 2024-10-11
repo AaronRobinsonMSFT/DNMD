@@ -165,67 +165,67 @@ bool read_i64(uint8_t const** data, size_t* data_len, int64_t* o)
 #else
 bool read_u16(uint8_t const** data, size_t* data_len, uint16_t* o)
 {
-    if (*data_len < 2)
+    if (*data_len < sizeof(*o))
         return false;
 
-    memcpy(o, *data, 2);
-    *data += 2;
-    *data_len -= 2;
+    memcpy(o, *data, sizeof(*o));
+    *data += sizeof(*o);
+    *data_len -= sizeof(*o);
     return true;
 }
 
 bool read_i16(uint8_t const** data, size_t* data_len, int16_t* o)
 {
-    if (*data_len < 2)
+    if (*data_len < sizeof(*o))
         return false;
 
-    memcpy(o, *data, 2);
-    *data += 2;
-    *data_len -= 2;
+    memcpy(o, *data, sizeof(*o));
+    *data += sizeof(*o);
+    *data_len -= sizeof(*o);
     return true;
 }
 
 bool read_u32(uint8_t const** data, size_t* data_len, uint32_t* o)
 {
-    if (*data_len < 4)
+    if (*data_len < sizeof(*o))
         return false;
 
-    memcpy(o, *data, 4);
-    *data += 4;
-    *data_len -= 4;
+    memcpy(o, *data, sizeof(*o));
+    *data += sizeof(*o);
+    *data_len -= sizeof(*o);
     return true;
 }
 
 bool read_i32(uint8_t const** data, size_t* data_len, int32_t* o)
 {
-    if (*data_len < 4)
+    if (*data_len < sizeof(*o))
         return false;
 
-    memcpy(o, *data, 4);
-    *data += 4;
-    *data_len -= 4;
+    memcpy(o, *data, sizeof(*o));
+    *data += sizeof(*o);
+    *data_len -= sizeof(*o);
     return true;
 }
 
 bool read_u64(uint8_t const** data, size_t* data_len, uint64_t* o)
 {
-    if (*data_len < 8)
+    if (*data_len < sizeof(*o))
         return false;
 
-    memcpy(o, *data, 8);
-    *data += 8;
-    *data_len -= 8;
+    memcpy(o, *data, sizeof(*o));
+    *data += sizeof(*o);
+    *data_len -= sizeof(*o);
     return true;
 }
 
 bool read_i64(uint8_t const** data, size_t* data_len, int64_t* o)
 {
-    if (*data_len < 8)
+    if (*data_len < sizeof(*o))
         return false;
 
-    memcpy(o, *data, 8);
-    *data += 8;
-    *data_len -= 8;
+    memcpy(o, *data, sizeof(*o));
+    *data += sizeof(*o);
+    *data_len -= sizeof(*o);
     return true;
 }
 

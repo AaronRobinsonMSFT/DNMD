@@ -41,7 +41,6 @@ bool create_access_context(mdcursor_t* cursor, col_index_t col_idx, bool make_wr
 bool read_column_data(access_cxt_t* acxt, uint32_t* data)
 {
     assert(acxt != NULL && acxt->data != NULL && data != NULL);
-    *data = 0;
 
     uint8_t const* table_data = acxt->data;
 
