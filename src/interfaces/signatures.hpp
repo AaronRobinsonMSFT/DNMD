@@ -17,9 +17,16 @@
 template <typename T, size_t NumInlineElements>
 struct base_inline_span : public span<T>
 {
-    base_inline_span() : span<T>(_storage.data(), 0) {}
+    base_inline_span() : span<T>()
+    {
+        this->_ptr = _storage.data();
+    }
 
-    base_inline_span(size_t size) : span<T>(size > NumInlineElements ? new T[size] : _storage.data(), size) {}
+    base_inline_span(size_t size) : span<T>()
+    {
+        this->_ptr = size > NumInlineElements ? new T[size] : _storage.data();
+        this->_size = size;
+    }
 
     base_inline_span(base_inline_span&& other)
     {
@@ -71,7 +78,7 @@ struct base_inline_span : public span<T>
         else
         {
             // Growing the buffer from the inline buffer to a non-inline buffer.
-            assert(size() <= NumInlineElements && newSize > NumInlineElements);
+            assert(this->size() <= NumInlineElements && newSize > NumInlineElements);
             T* newPtr = new T[newSize];
             std::copy(this->begin(), this->end(), newPtr);
             this->_ptr = newPtr;
