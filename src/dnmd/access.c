@@ -11,7 +11,7 @@ bool create_access_context(mdcursor_t* cursor, col_index_t col_idx, bool make_wr
         return false;
 
     uint8_t idx = col_to_index(col_idx, table);
-    assert(idx < table->row_count);
+    assert(idx < table->column_count);
 
     // Metadata row indexing is 1-based.
     row--;
