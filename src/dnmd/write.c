@@ -69,8 +69,6 @@ static bool set_column_value_as_token_or_cursor(mdcursor_t c, uint32_t col_idx, 
         }
     }
 
-    int32_t written = 0;
-
     mdToken token;
     if (tk != NULL)
     {
@@ -122,7 +120,7 @@ static bool set_column_value_as_token_or_cursor(mdcursor_t c, uint32_t col_idx, 
     {
         assert(keys != NULL && key_idx < key_count);
         mdcursor_t current_row = c;
-        bool success = md_cursor_move(&current_row, written);
+        bool success = md_cursor_next(&current_row);
         assert(success);
         (void)success;
         mdcursor_t prior_row = current_row;
@@ -148,7 +146,7 @@ static bool set_column_value_as_token_or_cursor(mdcursor_t c, uint32_t col_idx, 
         assert(success);
         (void)success;
         mdcursor_t next_row = current_row;
-        if (md_cursor_move(&next_row, 1) && !CursorEnd(&next_row))
+        if (md_cursor_next(&next_row) && !CursorEnd(&next_row))
         {
             // If we have a prior row, then we need to check if we're sorted with respect to it.
             if (!is_row_sorted_with_next_row(keys, key_count, acxt.table->table_id, current_row, next_row))
@@ -499,8 +497,22 @@ static bool set_column_as_end_of_table_cursor(mdcursor_t c, col_index_t col_idx)
 {
     mdtable_t* table = CursorTable(&c);
     assert((table->column_details[col_to_index(col_idx, table)] & mdtc_categorymask) == mdtc_idx_table);
-    mdtable_id_t target_table = ExtractTable(table->column_details[col_to_index(col_idx, table)]);
-    mdcursor_t end_of_table = create_cursor(&table->cxt->tables[target_table], table->cxt->tables[target_table].row_count + 1);
+    mdtable_id_t target_table_id = ExtractTable(table->column_details[col_to_index(col_idx, table)]);
+    mdtable_t* target_table = &table->cxt->tables[target_table_id];
+
+    mdcursor_t end_of_table;
+    if (target_table->cxt == NULL)
+    {
+        if (!initialize_new_table_details(table->cxt, target_table_id, target_table))
+        {
+            return false;
+        }
+        end_of_table = create_cursor(target_table, 0);
+    }
+    else
+    {
+        end_of_table = create_cursor(target_table, target_table->row_count + 1);
+    }
 
     return md_set_column_value_as_cursor(c, col_idx, end_of_table);
 }

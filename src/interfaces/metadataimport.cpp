@@ -197,7 +197,7 @@ namespace
                     }
                     (void)md_cursor_next(&curr);
                 }
-                i ++;
+                i += read;
             }
 
             *pEnumImpl = cleanup.release();
