@@ -625,7 +625,8 @@ md_range_result_t md_find_range_from_cursor(mdcursor_t begin, col_index_t idx, u
     find_cxt_t fcxt;
     // This was already created and validated when the row was found.
     // We assume the data is still valid.
-    (void)create_find_context(table, idx, &fcxt);
+    bool success = create_find_context(table, idx, &fcxt);
+    ASSERT_ASSUME(success);
 
     // A valid value was found, so we are at least within the range.
     // Now find the extrema.
