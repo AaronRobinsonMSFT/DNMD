@@ -278,7 +278,7 @@ void GetMethodDefSigFromMethodRefSig(span<uint8_t> methodRefSig, inline_span<uin
     offset += newParamCountCompressedSize;
 
     // Now that we've re-written the parameter count, we can copy the rest of the signature directly from the MethodRefSig
-    assert(returnTypeAndParameters.size() <= methodDefSigBufferLength - offset);
+    assert(returnTypeAndParameters.size() >= methodDefSigBufferLength - offset);
     std::memcpy(methodDefSig + offset, returnTypeAndParameters, methodDefSigBufferLength - offset);
 
     return;
