@@ -615,7 +615,6 @@ namespace
         else
         {
             assert(!IsAfPublicKey(flags));
-            publicKeyTokenSpan = { nullptr, 0 };
         }
 
         uint32_t majorVersion;
