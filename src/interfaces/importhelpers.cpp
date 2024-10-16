@@ -602,13 +602,15 @@ namespace
         uint32_t publicKeyLength;
         if (1 != md_get_column_value_as_blob(sourceAssembly, mdtAssembly_PublicKey, 1, &publicKey, &publicKeyLength))
             return E_FAIL;
-        
+
+        span<const uint8_t> publicKeyTokenSpan;
         StrongNameToken publicKeyToken;
         if (publicKey != nullptr)
         {
             assert(IsAfPublicKey(flags));
             flags &= ~afPublicKey;
             RETURN_IF_FAILED(StrongNameTokenFromPublicKey({ publicKey, publicKeyLength }, publicKeyToken));
+            publicKeyTokenSpan = { publicKeyToken.data(), publicKeyToken.size() };
         }
         else
         {
@@ -648,7 +650,7 @@ namespace
             flags,
             assemblyName,
             assemblyCulture,
-            { publicKeyToken.data(), publicKeyToken.size() },
+            publicKeyTokenSpan,
             targetAssembly));
 
         if (hr == S_OK)
