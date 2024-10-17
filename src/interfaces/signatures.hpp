@@ -79,7 +79,7 @@ struct base_inline_span : public span<T>
         {
             // Growing the buffer from the inline buffer to a non-inline buffer.
             assert(this->size() <= NumInlineElements && newSize > NumInlineElements);
-            T* newPtr = base_inline_span::allocate_noninline_memory(size);
+            T* newPtr = base_inline_span::allocate_noninline_memory(this->size());
             std::copy(this->begin(), this->end(), newPtr);
             this->_ptr = newPtr;
             this->_size = newSize;
