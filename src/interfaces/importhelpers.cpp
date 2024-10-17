@@ -40,10 +40,10 @@ namespace
         uint32_t count;
         if (!md_create_cursor(image, mdtid_Module, &c, &count))
             return CLDB_E_FILE_CORRUPT;
-        
-        if (1 != md_get_column_value_as_guid(c, mdtModule_Mvid, 1, mvid))
+
+        if (!md_get_column_value_as_guid(c, mdtModule_Mvid, mvid))
             return CLDB_E_FILE_CORRUPT;
-        
+
         return S_OK;
     }
 
@@ -52,14 +52,14 @@ namespace
         mdToken token = mdTokenNil;
         if (!md_cursor_to_token(cursor, &token))
             assert(false);
-        
+
         return (CorTokenType)TypeFromToken(token);
     }
 
     // The strong name token is the last 8 bytes of the SHA1 hash of the public key.
     // See II.6.3
     constexpr size_t StrongNameTokenSize = 8;
-    
+
     using StrongNameToken = std::array<uint8_t, StrongNameTokenSize>;
 
     namespace StrongNameKeys
@@ -205,12 +205,12 @@ namespace
     {
         if (publicKeyBlob.size() < sizeof(PublicKeyBlob))
             return CORSEC_E_INVALID_PUBLICKEY;
-        
+
         PublicKeyBlob const* publicKey = reinterpret_cast<PublicKeyBlob const*>((uint8_t const*)publicKeyBlob);
 
         if (publicKey->PublicKeyLength != publicKeyBlob.size() - sizeof(PublicKeyBlob))
             return CORSEC_E_INVALID_PUBLICKEY;
-        
+
         if (publicKeyBlob.size() == sizeof(StrongNameKeys::EcmaPublicKey)
             && std::memcmp(publicKeyBlob, StrongNameKeys::EcmaPublicKey, sizeof(StrongNameKeys::EcmaPublicKey)) == 0)
         {
@@ -221,17 +221,17 @@ namespace
         {
             if (GET_ALG_CLASS(publicKey->HashAlgID) != ALG_CLASS_HASH)
                 return CORSEC_E_INVALID_PUBLICKEY;
-            
+
             if (GET_ALG_SID(publicKey->HashAlgID) < ALG_SID_SHA1)
                 return CORSEC_E_INVALID_PUBLICKEY;
         }
 
         if (publicKey->SigAlgID != 0 && GET_ALG_CLASS(publicKey->SigAlgID) != ALG_CLASS_SIGNATURE)
             return CORSEC_E_INVALID_PUBLICKEY;
-        
+
         if (publicKey->PublicKeyLength == 0 || publicKey->PublicKey[0] != PUBLICKEYBLOB)
             return CORSEC_E_INVALID_PUBLICKEY;
-        
+
         // Check well-known keys first.
         if (StrongNameKeys::GetTokenForWellKnownKey(publicKey->PublicKey, publicKey->PublicKeyLength, &strongNameTokenBuffer))
             return S_OK;
@@ -271,7 +271,7 @@ namespace
                         {
                             if (std::tolower(*a) != std::tolower(*b))
                                 return false;
-                            
+
                             a++;
                             b++;
                         }
@@ -287,15 +287,15 @@ namespace
                     UNREFERENCED_PARAMETER(buildNumber);
                     UNREFERENCED_PARAMETER(revisionNumber);
                     uint32_t temp;
-                    if (1 != md_get_column_value_as_constant(c, mdtAssemblyRef_MajorVersion, 1, &temp))
+                    if (!md_get_column_value_as_constant(c, mdtAssemblyRef_MajorVersion, &temp))
                         return CLDB_E_FILE_CORRUPT;
-                    
+
                     if (temp != majorVersion)
                         return S_FALSE;
-                    
-                    if (1 != md_get_column_value_as_constant(c, mdtAssemblyRef_MinorVersion, 1, &temp))
+
+                    if (!md_get_column_value_as_constant(c, mdtAssemblyRef_MinorVersion, &temp))
                         return CLDB_E_FILE_CORRUPT;
-                    
+
                     if (temp != minorVersion)
                         return S_FALSE;
 
@@ -312,26 +312,26 @@ namespace
                 [](mdcursor_t c, uint32_t majorVersion, uint32_t minorVersion, uint32_t buildNumber, uint32_t revisionNumber)
                 {
                     uint32_t temp;
-                    if (1 != md_get_column_value_as_constant(c, mdtAssemblyRef_MajorVersion, 1, &temp))
+                    if (!md_get_column_value_as_constant(c, mdtAssemblyRef_MajorVersion, &temp))
                         return CLDB_E_FILE_CORRUPT;
-                    
+
                     if (temp != majorVersion)
                         return S_FALSE;
-                    
-                    if (1 != md_get_column_value_as_constant(c, mdtAssemblyRef_MinorVersion, 1, &temp))
+
+                    if (!md_get_column_value_as_constant(c, mdtAssemblyRef_MinorVersion, &temp))
                         return CLDB_E_FILE_CORRUPT;
-                    
+
                     if (temp != minorVersion)
                         return S_FALSE;
-                    if (1 != md_get_column_value_as_constant(c, mdtAssemblyRef_BuildNumber, 1, &temp))
+                    if (!md_get_column_value_as_constant(c, mdtAssemblyRef_BuildNumber, &temp))
                         return CLDB_E_FILE_CORRUPT;
-                    
+
                     if (temp != buildNumber)
                         return S_FALSE;
-                    
-                    if (1 != md_get_column_value_as_constant(c, mdtAssemblyRef_RevisionNumber, 1, &temp))
+
+                    if (!md_get_column_value_as_constant(c, mdtAssemblyRef_RevisionNumber, &temp))
                         return CLDB_E_FILE_CORRUPT;
-                    
+
                     if (temp != revisionNumber)
                         return S_FALSE;
 
@@ -340,7 +340,7 @@ namespace
             }
         }
     };
-    
+
     AssemblyVersionMatcher const& GetAssemblyVersionMatcher(char const* name)
     {
         for (AssemblyVersionMatcher const& matcher : AssemblyVersionMatchers)
@@ -368,7 +368,7 @@ namespace
         mdcursor_t* assemblyRef)
     {
         HRESULT hr;
-    
+
         bool calculatedPublicKeyToken = false;
         StrongNameToken publicKeyToken{};
         if (IsAfPublicKeyToken(flags) && publicKeyOrToken.size() == StrongNameTokenSize)
@@ -382,9 +382,9 @@ namespace
         uint32_t count;
         if (!md_create_cursor(targetModule, mdtid_AssemblyRef, &c, &count))
             return E_FAIL;
-        
+
         AssemblyVersionMatcher const& matcher = GetAssemblyVersionMatcher(name);
-        
+
         for (uint32_t i = 0; i < count; i++, md_cursor_next(&c))
         {
             // Search the table linearly by manually reading the columns.
@@ -392,25 +392,25 @@ namespace
             RETURN_IF_FAILED(hr);
             if (hr == S_FALSE)
                 continue;
-            
+
             char const* tempString;
-            if (1 != md_get_column_value_as_utf8(c, mdtAssemblyRef_Name, 1, &tempString))
+            if (!md_get_column_value_as_utf8(c, mdtAssemblyRef_Name, &tempString))
                 return CLDB_E_FILE_CORRUPT;
-            
+
             if (std::strcmp(tempString, name) != 0)
                 continue;
-            
-            if (1 != md_get_column_value_as_utf8(c, mdtAssemblyRef_Culture, 1, &tempString))
+
+            if (!md_get_column_value_as_utf8(c, mdtAssemblyRef_Culture, &tempString))
                 return CLDB_E_FILE_CORRUPT;
-            
+
             if (std::strcmp(tempString, culture) != 0)
                 continue;
-            
+
             uint8_t const* tempBlob;
             uint32_t tempBlobLength;
-            if (1 != md_get_column_value_as_blob(c, mdtAssemblyRef_PublicKeyOrToken, 1, &tempBlob, &tempBlobLength))
+            if (!md_get_column_value_as_blob(c, mdtAssemblyRef_PublicKeyOrToken, &tempBlob, &tempBlobLength))
                 return CLDB_E_FILE_CORRUPT;
-            
+
             // If our source has a public key or token, we can only match against an AssemblyRef that has a public key or token.
             // If our source doesn't have a public key or token, we can only match against an AssemblyRef that doesn't have a public key or token.
             if ((publicKeyOrToken.size() == 0) != (tempBlobLength == 0))
@@ -422,9 +422,9 @@ namespace
                 StrongNameToken refPublicKeyToken;
 
                 uint32_t assemblyRefFlags;
-                if (1 != md_get_column_value_as_constant(c, mdtAssemblyRef_Flags, 1, &assemblyRefFlags))
+                if (!md_get_column_value_as_constant(c, mdtAssemblyRef_Flags, &assemblyRefFlags))
                     return CLDB_E_FILE_CORRUPT;
-                
+
                 if (IsAfPublicKey(flags) == IsAfPublicKey(assemblyRefFlags))
                 {
                     // If the source and destination either both have a full key or both have a key token, we can compare them directly.
@@ -458,7 +458,7 @@ namespace
                 if (publicKeyToken != refPublicKeyToken)
                     continue;
             }
-            
+
             *assemblyRef = c;
             return S_OK;
         }
@@ -475,36 +475,36 @@ namespace
     {
         HRESULT hr;
         uint32_t flags;
-        if (1 != md_get_column_value_as_constant(sourceAssemblyRef, mdtAssemblyRef_Flags, 1, &flags))
+        if (!md_get_column_value_as_constant(sourceAssemblyRef, mdtAssemblyRef_Flags, &flags))
             return E_FAIL;
 
         uint8_t const* publicKey;
         uint32_t publicKeyLength;
-        if (1 != md_get_column_value_as_blob(sourceAssemblyRef, mdtAssemblyRef_PublicKeyOrToken, 1, &publicKey, &publicKeyLength))
+        if (!md_get_column_value_as_blob(sourceAssemblyRef, mdtAssemblyRef_PublicKeyOrToken, &publicKey, &publicKeyLength))
             return E_FAIL;
 
         uint32_t majorVersion;
-        if (1 != md_get_column_value_as_constant(sourceAssemblyRef, mdtAssemblyRef_MajorVersion, 1, &majorVersion))
+        if (!md_get_column_value_as_constant(sourceAssemblyRef, mdtAssemblyRef_MajorVersion, &majorVersion))
             return E_FAIL;
-        
+
         uint32_t minorVersion;
-        if (1 != md_get_column_value_as_constant(sourceAssemblyRef, mdtAssemblyRef_MinorVersion, 1, &minorVersion))
+        if (!md_get_column_value_as_constant(sourceAssemblyRef, mdtAssemblyRef_MinorVersion, &minorVersion))
             return E_FAIL;
-        
+
         uint32_t buildNumber;
-        if (1 != md_get_column_value_as_constant(sourceAssemblyRef, mdtAssemblyRef_BuildNumber, 1, &buildNumber))
+        if (!md_get_column_value_as_constant(sourceAssemblyRef, mdtAssemblyRef_BuildNumber, &buildNumber))
             return E_FAIL;
-        
+
         uint32_t revisionNumber;
-        if (1 != md_get_column_value_as_constant(sourceAssemblyRef, mdtAssemblyRef_RevisionNumber, 1, &revisionNumber))
+        if (!md_get_column_value_as_constant(sourceAssemblyRef, mdtAssemblyRef_RevisionNumber, &revisionNumber))
             return E_FAIL;
-        
+
         char const* assemblyName;
-        if (1 != md_get_column_value_as_utf8(sourceAssemblyRef, mdtAssemblyRef_Name, 1, &assemblyName))
+        if (!md_get_column_value_as_utf8(sourceAssemblyRef, mdtAssemblyRef_Name, &assemblyName))
             return E_FAIL;
-        
+
         char const* assemblyCulture;
-        if (1 != md_get_column_value_as_utf8(sourceAssemblyRef, mdtAssemblyRef_Culture, 1, &assemblyCulture))
+        if (!md_get_column_value_as_utf8(sourceAssemblyRef, mdtAssemblyRef_Culture, &assemblyCulture))
             return E_FAIL;
 
         RETURN_IF_FAILED(FindAssemblyRef(
@@ -527,33 +527,33 @@ namespace
         md_added_row_t assemblyRef;
         if (!md_append_row(targetModule, mdtid_AssemblyRef, &assemblyRef))
             return E_FAIL;
-        
+
         onRowAdded(assemblyRef);
-  
-        if (1 != md_set_column_value_as_constant(assemblyRef, mdtAssemblyRef_MajorVersion, 1, &majorVersion))
+
+        if (!md_set_column_value_as_constant(assemblyRef, mdtAssemblyRef_MajorVersion, majorVersion))
             return E_FAIL;
 
-        if (1 != md_set_column_value_as_constant(assemblyRef, mdtAssemblyRef_MinorVersion, 1, &minorVersion))
+        if (!md_set_column_value_as_constant(assemblyRef, mdtAssemblyRef_MinorVersion, minorVersion))
             return E_FAIL;
 
-        if (1 != md_set_column_value_as_constant(assemblyRef, mdtAssemblyRef_BuildNumber, 1, &buildNumber))
+        if (!md_set_column_value_as_constant(assemblyRef, mdtAssemblyRef_BuildNumber, buildNumber))
             return E_FAIL;
 
-        if (md_set_column_value_as_constant(assemblyRef, mdtAssemblyRef_RevisionNumber, 1, &revisionNumber))
+        if (md_set_column_value_as_constant(assemblyRef, mdtAssemblyRef_RevisionNumber, revisionNumber))
             return E_FAIL;
 
-        if (1 != md_set_column_value_as_constant(assemblyRef, mdtAssemblyRef_Flags, 1, &flags))
-            return E_FAIL;
-        
-        if (1 != md_set_column_value_as_utf8(assemblyRef, mdtAssemblyRef_Name, 1, &assemblyName))
+        if (!md_set_column_value_as_constant(assemblyRef, mdtAssemblyRef_Flags, flags))
             return E_FAIL;
 
-        if (1 != md_set_column_value_as_utf8(assemblyRef, mdtAssemblyRef_Culture, 1, &assemblyCulture))
+        if (!md_set_column_value_as_utf8(assemblyRef, mdtAssemblyRef_Name, assemblyName))
             return E_FAIL;
 
-        if (1 != md_set_column_value_as_blob(assemblyRef, mdtAssemblyRef_PublicKeyOrToken, 1, &publicKey, &publicKeyLength))
+        if (!md_set_column_value_as_utf8(assemblyRef, mdtAssemblyRef_Culture, assemblyCulture))
             return E_FAIL;
-        
+
+        if (!md_set_column_value_as_blob(assemblyRef, mdtAssemblyRef_PublicKeyOrToken, publicKey, publicKeyLength))
+            return E_FAIL;
+
         *targetAssembly = assemblyRef;
         return S_OK;
     }
@@ -569,7 +569,7 @@ namespace
         mdcursor_t* assemblyRefInTargetModule)
     {
         HRESULT hr;
-        
+
         // Add a reference to the assembly in the target module.
         RETURN_IF_FAILED(ImportReferenceToAssemblyRef(sourceAssemblyRef, targetModule, onRowAdded, assemblyRefInTargetModule));
 
@@ -595,12 +595,12 @@ namespace
     {
         HRESULT hr;
         uint32_t flags;
-        if (1 != md_get_column_value_as_constant(sourceAssembly, mdtAssembly_Flags, 1, &flags))
+        if (!md_get_column_value_as_constant(sourceAssembly, mdtAssembly_Flags, &flags))
             return E_FAIL;
 
         uint8_t const* publicKey;
         uint32_t publicKeyLength;
-        if (1 != md_get_column_value_as_blob(sourceAssembly, mdtAssembly_PublicKey, 1, &publicKey, &publicKeyLength))
+        if (!md_get_column_value_as_blob(sourceAssembly, mdtAssembly_PublicKey, &publicKey, &publicKeyLength))
             return E_FAIL;
 
         span<const uint8_t> publicKeyTokenSpan;
@@ -618,27 +618,27 @@ namespace
         }
 
         uint32_t majorVersion;
-        if (1 != md_get_column_value_as_constant(sourceAssembly, mdtAssembly_MajorVersion, 1, &majorVersion))
+        if (!md_get_column_value_as_constant(sourceAssembly, mdtAssembly_MajorVersion, &majorVersion))
             return E_FAIL;
-        
+
         uint32_t minorVersion;
-        if (1 != md_get_column_value_as_constant(sourceAssembly, mdtAssembly_MinorVersion, 1, &minorVersion))
+        if (!md_get_column_value_as_constant(sourceAssembly, mdtAssembly_MinorVersion, &minorVersion))
             return E_FAIL;
-        
+
         uint32_t buildNumber;
-        if (1 != md_get_column_value_as_constant(sourceAssembly, mdtAssembly_BuildNumber, 1, &buildNumber))
+        if (!md_get_column_value_as_constant(sourceAssembly, mdtAssembly_BuildNumber, &buildNumber))
             return E_FAIL;
-        
+
         uint32_t revisionNumber;
-        if (1 != md_get_column_value_as_constant(sourceAssembly, mdtAssembly_RevisionNumber, 1, &revisionNumber))
+        if (!md_get_column_value_as_constant(sourceAssembly, mdtAssembly_RevisionNumber, &revisionNumber))
             return E_FAIL;
-        
+
         char const* assemblyName;
-        if (1 != md_get_column_value_as_utf8(sourceAssembly, mdtAssembly_Name, 1, &assemblyName))
+        if (!md_get_column_value_as_utf8(sourceAssembly, mdtAssembly_Name, &assemblyName))
             return E_FAIL;
-        
+
         char const* assemblyCulture;
-        if (1 != md_get_column_value_as_utf8(sourceAssembly, mdtAssembly_Culture, 1, &assemblyCulture))
+        if (!md_get_column_value_as_utf8(sourceAssembly, mdtAssembly_Culture, &assemblyCulture))
             return E_FAIL;
 
         RETURN_IF_FAILED(FindAssemblyRef(
@@ -661,40 +661,40 @@ namespace
         md_added_row_t assemblyRef;
         if (!md_append_row(targetModule, mdtid_AssemblyRef, &assemblyRef))
             return E_FAIL;
-        
+
         onRowAdded(assemblyRef);
-  
-        if (1 != md_set_column_value_as_constant(assemblyRef, mdtAssemblyRef_MajorVersion, 1, &majorVersion))
+
+        if (!md_set_column_value_as_constant(assemblyRef, mdtAssemblyRef_MajorVersion, majorVersion))
             return E_FAIL;
 
-        if (1 != md_set_column_value_as_constant(assemblyRef, mdtAssemblyRef_MinorVersion, 1, &minorVersion))
+        if (!md_set_column_value_as_constant(assemblyRef, mdtAssemblyRef_MinorVersion, minorVersion))
             return E_FAIL;
 
-        if (1 != md_set_column_value_as_constant(assemblyRef, mdtAssemblyRef_BuildNumber, 1, &buildNumber))
+        if (!md_set_column_value_as_constant(assemblyRef, mdtAssemblyRef_BuildNumber, buildNumber))
             return E_FAIL;
 
-        if (md_set_column_value_as_constant(assemblyRef, mdtAssemblyRef_RevisionNumber, 1, &revisionNumber))
+        if (md_set_column_value_as_constant(assemblyRef, mdtAssemblyRef_RevisionNumber, revisionNumber))
             return E_FAIL;
 
-        if (1 != md_set_column_value_as_constant(assemblyRef, mdtAssemblyRef_Flags, 1, &flags))
-            return E_FAIL;
-        
-        if (1 != md_set_column_value_as_utf8(assemblyRef, mdtAssemblyRef_Name, 1, &assemblyName))
+        if (!md_set_column_value_as_constant(assemblyRef, mdtAssemblyRef_Flags, flags))
             return E_FAIL;
 
-        if (1 != md_set_column_value_as_utf8(assemblyRef, mdtAssemblyRef_Culture, 1, &assemblyCulture))
+        if (!md_set_column_value_as_utf8(assemblyRef, mdtAssemblyRef_Name, assemblyName))
+            return E_FAIL;
+
+        if (!md_set_column_value_as_utf8(assemblyRef, mdtAssemblyRef_Culture, assemblyCulture))
             return E_FAIL;
 
         uint8_t const* hash = sourceAssemblyHash;
         uint32_t hashLength = (uint32_t)sourceAssemblyHash.size();
-        if (1 != md_set_column_value_as_blob(assemblyRef, mdtAssemblyRef_HashValue, 1, &hash, &hashLength))
+        if (!md_set_column_value_as_blob(assemblyRef, mdtAssemblyRef_HashValue, hash, hashLength))
             return E_FAIL;
 
         uint8_t const* publicKeyTokenBlob = publicKeyToken.data();
         uint32_t publicKeyTokenLength = (uint32_t)publicKeyToken.size();
-        if (1 != md_set_column_value_as_blob(assemblyRef, mdtAssemblyRef_PublicKeyOrToken, 1, &publicKeyTokenBlob, &publicKeyTokenLength))
+        if (!md_set_column_value_as_blob(assemblyRef, mdtAssemblyRef_PublicKeyOrToken, publicKeyTokenBlob, publicKeyTokenLength))
             return E_FAIL;
-        
+
         *targetAssembly = assemblyRef;
         return S_OK;
     }
@@ -714,7 +714,7 @@ namespace
         mdcursor_t importAssembly;
         if (!md_token_to_cursor(sourceAssembly, TokenFromRid(1, mdtAssembly), &importAssembly))
             return E_FAIL;
-        
+
         // Add a reference to the assembly in the target module.
         RETURN_IF_FAILED(ImportReferenceToAssembly(importAssembly, sourceAssemblyHash, targetModule, onRowAdded, assemblyRefInTargetModule));
 
@@ -771,7 +771,7 @@ HRESULT ImportReferenceToTypeDef(
             // All images with the same MVID should have the same metadata tables.
             if (!md_token_to_cursor(targetModule, token, targetTypeDef))
                 return CLDB_E_FILE_CORRUPT;
-            
+
             return S_OK;
         }
         uint32_t count;
@@ -784,14 +784,14 @@ HRESULT ImportReferenceToTypeDef(
         mdcursor_t importModule;
         uint32_t count;
         if (!md_create_cursor(sourceModule, mdtid_Module, &importModule, &count)
-            || 1 != md_get_column_value_as_utf8(importModule, mdtModule_Name, 1, &importName))
+            || !md_get_column_value_as_utf8(importModule, mdtModule_Name, &importName))
         {
             return E_FAIL;
         }
 
         md_added_row_t moduleRef;
         if (!md_append_row(targetModule, mdtid_ModuleRef, &moduleRef)
-            || 1 != md_set_column_value_as_utf8(moduleRef, mdtModuleRef_Name, 1, &importName))
+            || !md_set_column_value_as_utf8(moduleRef, mdtModuleRef_Name, importName))
         {
             return E_FAIL;
         }
@@ -819,22 +819,22 @@ HRESULT ImportReferenceToTypeDef(
         mdcursor_t importType;
         if (!md_token_to_cursor(sourceModule, tdImport, &importType))
             return CLDB_E_FILE_CORRUPT;
-        
+
         typesForTypeRefs.push(importType);
-        
+
         mdcursor_t nestedClasses;
         uint32_t nestedClassCount;
         if (!md_create_cursor(sourceModule, mdtid_NestedClass, &nestedClasses, &nestedClassCount))
             return E_FAIL;
-        
+
         mdToken nestedTypeToken = tdImport;
         mdcursor_t nestedClass;
         while (md_find_row_from_cursor(nestedClasses, mdtNestedClass_NestedClass, RidFromToken(nestedTypeToken), &nestedClass))
         {
             mdcursor_t enclosingClass;
-            if (1 != md_get_column_value_as_cursor(nestedClass, mdtNestedClass_EnclosingClass, 1, &enclosingClass))
+            if (!md_get_column_value_as_cursor(nestedClass, mdtNestedClass_EnclosingClass, &enclosingClass))
                 return E_FAIL;
-            
+
             typesForTypeRefs.push(enclosingClass);
             if (!md_cursor_to_token(enclosingClass, &nestedTypeToken))
                 return E_FAIL;
@@ -846,20 +846,20 @@ HRESULT ImportReferenceToTypeDef(
             md_added_row_t typeRef;
             if (!md_append_row(targetModule, mdtid_TypeRef, &typeRef))
                 return E_FAIL;
-            
-            if (1 != md_set_column_value_as_cursor(typeRef, mdtTypeRef_ResolutionScope, 1, &resolutionScope))
+
+            if (!md_set_column_value_as_cursor(typeRef, mdtTypeRef_ResolutionScope, resolutionScope))
                 return E_FAIL;
-            
+
             char const* typeName;
-            if (1 != md_get_column_value_as_utf8(typeDef, mdtTypeDef_TypeName, 1, &typeName)
-                || 1 != md_set_column_value_as_utf8(typeRef, mdtTypeRef_TypeName, 1, &typeName))
+            if (!md_get_column_value_as_utf8(typeDef, mdtTypeDef_TypeName, &typeName)
+                || !md_set_column_value_as_utf8(typeRef, mdtTypeRef_TypeName, typeName))
             {
                 return E_FAIL;
             }
-            
+
             char const* typeNamespace;
-            if (1 != md_get_column_value_as_utf8(typeDef, mdtTypeDef_TypeNamespace, 1, &typeNamespace)
-                || 1 != md_set_column_value_as_utf8(typeRef, mdtTypeRef_TypeNamespace, 1, &typeNamespace))
+            if (!md_get_column_value_as_utf8(typeDef, mdtTypeDef_TypeNamespace, &typeNamespace)
+                || !md_set_column_value_as_utf8(typeRef, mdtTypeRef_TypeNamespace, typeNamespace))
             {
                 return E_FAIL;
             }
@@ -886,13 +886,13 @@ namespace
         uint32_t count;
         if (!md_create_cursor(image, mdtid_ModuleRef, &c, &count))
             return false;
-        
+
         for (uint32_t i = 0; i < count; i++, md_cursor_next(&c))
         {
             char const* name;
-            if (1 != md_get_column_value_as_utf8(c, mdtModuleRef_Name, 1, &name))
+            if (!md_get_column_value_as_utf8(c, mdtModuleRef_Name, &name))
                 return false;
-            
+
             if (std::strcmp(name, moduleName) == 0)
             {
                 *existingModuleRef = c;
@@ -925,13 +925,13 @@ namespace
             for (uint32_t i = 0; i < count; ++i, md_cursor_next(&exportedType))
             {
                 char const* exportedTypeName;
-                if (1 != md_get_column_value_as_utf8(exportedType, mdtExportedType_TypeName, 1, &exportedTypeName))
+                if (!md_get_column_value_as_utf8(exportedType, mdtExportedType_TypeName, &exportedTypeName))
                     return E_FAIL;
-                
+
                 char const* exportedTypeNamespace;
-                if (1 != md_get_column_value_as_utf8(exportedType, mdtExportedType_TypeNamespace, 1, &exportedTypeNamespace))
+                if (!md_get_column_value_as_utf8(exportedType, mdtExportedType_TypeNamespace, &exportedTypeNamespace))
                     return E_FAIL;
-                
+
                 if (std::strcmp(typeName, exportedTypeName) == 0 && std::strcmp(typeNamespace, exportedTypeNamespace) == 0)
                 {
                     foundExportedType = true;
@@ -945,28 +945,28 @@ namespace
             // If we found an ExportedType, then the type is defined in another module or is forwarded to another assembly.
             // We need to find the imported scope for the type.
             mdcursor_t implementation;
-            if (1 != md_get_column_value_as_cursor(exportedType, mdtExportedType_Implementation, 1, &implementation))
+            if (!md_get_column_value_as_cursor(exportedType, mdtExportedType_Implementation, &implementation))
                 return E_FAIL;
-            
+
             switch (GetTokenTypeFromCursor(implementation))
             {
                 // If the ExportedType.Implementation is a File:
-                // - If the File refers to module's module, then we can use the module cursor in module as the imported scope. 
+                // - If the File refers to module's module, then we can use the module cursor in module as the imported scope.
                 // - If the File refers to another module, then we'll create a ModuleRef to that module.
                 case mdtFile:
                 {
                     char const* fileName;
-                    if (1 != md_get_column_value_as_utf8(implementation, mdtFile_Name, 1, &fileName))
+                    if (!md_get_column_value_as_utf8(implementation, mdtFile_Name, &fileName))
                         return E_FAIL;
-                    
+
                     mdcursor_t moduleCursor;
                     if (!md_token_to_cursor(module, TokenFromRid(1, mdtModule), &moduleCursor))
                         return E_FAIL;
 
                     char const* moduleName;
-                    if (1 != md_get_column_value_as_utf8(moduleCursor, mdtModule_Name, 1, &moduleName))
+                    if (!md_get_column_value_as_utf8(moduleCursor, mdtModule_Name, &moduleName))
                         return E_FAIL;
-                    
+
                     if (std::strcmp(fileName, moduleName) == 0)
                     {
                         *importedScope = moduleCursor;
@@ -978,10 +978,10 @@ namespace
                             md_added_row_t moduleRef;
                             if (!md_append_row(module, mdtid_ModuleRef, &moduleRef))
                                 return E_FAIL;
-                            
-                            if (1 != md_set_column_value_as_utf8(moduleRef, mdtModuleRef_Name, 1, &fileName))
+
+                            if (!md_set_column_value_as_utf8(moduleRef, mdtModuleRef_Name, fileName))
                                 return E_FAIL;
-                            
+
                             *importedScope = moduleRef;
                             onRowAdded(moduleRef);
                         }
@@ -1007,15 +1007,15 @@ namespace
         mdcursor_t typeDef;
         if (!md_create_cursor(assembly, mdtid_TypeDef, &typeDef, &count))
             return E_FAIL;
-        
+
         for (uint32_t i = 0; i < count; ++i, md_cursor_next(&typeDef))
         {
             char const* typeDefName;
-            if (1 != md_get_column_value_as_utf8(typeDef, mdtTypeDef_TypeName, 1, &typeDefName))
+            if (!md_get_column_value_as_utf8(typeDef, mdtTypeDef_TypeName, &typeDefName))
                 return E_FAIL;
-            
+
             char const* typeDefNamespace;
-            if (1 != md_get_column_value_as_utf8(typeDef, mdtTypeDef_TypeNamespace, 1, &typeDefNamespace))
+            if (!md_get_column_value_as_utf8(typeDef, mdtTypeDef_TypeNamespace, &typeDefNamespace))
                 return E_FAIL;
 
             if (std::strcmp(typeName, typeDefName) == 0 && std::strcmp(typeNamespace, typeDefNamespace) == 0)
@@ -1026,7 +1026,7 @@ namespace
                 uint32_t nestedTypeCount;
                 if (!md_create_cursor(assembly, mdtid_NestedClass, &nestedType, &nestedTypeCount))
                     return E_FAIL;
-                
+
                 mdToken typeDefToken;
                 if (!md_cursor_to_token(typeDef, &typeDefToken))
                     return CLDB_E_FILE_CORRUPT;
@@ -1042,19 +1042,19 @@ namespace
                 mdcursor_t assemblyModule;
                 if (!md_token_to_cursor(assembly, TokenFromRid(1, mdtModule), &assemblyModule))
                     return CLDB_E_FILE_CORRUPT;
-                
+
                 char const* assemblyModuleName;
-                if (1 != md_get_column_value_as_utf8(assemblyModule, mdtModule_Name, 1, &assemblyModuleName))
+                if (!md_get_column_value_as_utf8(assemblyModule, mdtModule_Name, &assemblyModuleName))
                     return E_FAIL;
-                
+
                 mdcursor_t moduleCursor;
                 if (!md_token_to_cursor(module, TokenFromRid(1, mdtModule), &moduleCursor))
                     return CLDB_E_FILE_CORRUPT;
-                
+
                 char const* moduleName;
-                if (1 != md_get_column_value_as_utf8(moduleCursor, mdtModule_Name, 1, &moduleName))
+                if (!md_get_column_value_as_utf8(moduleCursor, mdtModule_Name, &moduleName))
                     return E_FAIL;
-                
+
                 if (std::strcmp(assemblyModuleName, moduleName) == 0)
                 {
                     // If the assembly module has the same name as the current module,
@@ -1066,10 +1066,10 @@ namespace
                     md_added_row_t moduleRef;
                     if (!md_append_row(module, mdtid_ModuleRef, &moduleRef))
                         return E_FAIL;
-                    
-                    if (1 != md_set_column_value_as_utf8(moduleRef, mdtModuleRef_Name, 1, &assemblyModuleName))
+
+                    if (!md_set_column_value_as_utf8(moduleRef, mdtModuleRef_Name, assemblyModuleName))
                         return E_FAIL;
-                    
+
                     *importedScope = moduleRef;
                     onRowAdded(moduleRef);
                 }
@@ -1086,96 +1086,96 @@ namespace
         HRESULT hr;
         // Compare version, Name, Locale, and PublicKeyOrToken (possibly creating token from the assembly's key if needed)
         uint32_t refMajorVersion;
-        if (1 != md_get_column_value_as_constant(assemblyRef, mdtAssemblyRef_MajorVersion, 1, &refMajorVersion))
+        if (!md_get_column_value_as_constant(assemblyRef, mdtAssemblyRef_MajorVersion, &refMajorVersion))
             return CLDB_E_FILE_CORRUPT;
-        
+
         uint32_t majorVersion;
-        if (1 != md_get_column_value_as_constant(assembly, mdtAssembly_MajorVersion, 1, &majorVersion))
+        if (!md_get_column_value_as_constant(assembly, mdtAssembly_MajorVersion, &majorVersion))
             return CLDB_E_FILE_CORRUPT;
-        
+
         if (refMajorVersion != majorVersion)
             return S_FALSE;
 
         uint32_t refMinorVersion;
-        if (1 != md_get_column_value_as_constant(assemblyRef, mdtAssemblyRef_MinorVersion, 1, &refMinorVersion))
+        if (!md_get_column_value_as_constant(assemblyRef, mdtAssemblyRef_MinorVersion, &refMinorVersion))
             return CLDB_E_FILE_CORRUPT;
-        
+
         uint32_t minorVersion;
-        if (1 != md_get_column_value_as_constant(assembly, mdtAssembly_MinorVersion, 1, &minorVersion))
+        if (!md_get_column_value_as_constant(assembly, mdtAssembly_MinorVersion, &minorVersion))
             return CLDB_E_FILE_CORRUPT;
-        
+
         if (refMinorVersion != minorVersion)
             return S_FALSE;
-        
+
         uint32_t refBuildNumber;
-        if (1 != md_get_column_value_as_constant(assemblyRef, mdtAssemblyRef_BuildNumber, 1, &refBuildNumber))
+        if (!md_get_column_value_as_constant(assemblyRef, mdtAssemblyRef_BuildNumber, &refBuildNumber))
             return CLDB_E_FILE_CORRUPT;
-        
+
         uint32_t buildNumber;
-        if (1 != md_get_column_value_as_constant(assembly, mdtAssembly_BuildNumber, 1, &buildNumber))
+        if (!md_get_column_value_as_constant(assembly, mdtAssembly_BuildNumber, &buildNumber))
             return CLDB_E_FILE_CORRUPT;
-        
+
         if (refBuildNumber != buildNumber)
             return S_FALSE;
 
         uint32_t refRevisionNumber;
-        if (1 != md_get_column_value_as_constant(assemblyRef, mdtAssemblyRef_RevisionNumber, 1, &refRevisionNumber))
+        if (!md_get_column_value_as_constant(assemblyRef, mdtAssemblyRef_RevisionNumber, &refRevisionNumber))
             return CLDB_E_FILE_CORRUPT;
-        
+
         uint32_t revisionNumber;
-        if (1 != md_get_column_value_as_constant(assembly, mdtAssembly_RevisionNumber, 1, &revisionNumber))
+        if (!md_get_column_value_as_constant(assembly, mdtAssembly_RevisionNumber, &revisionNumber))
             return CLDB_E_FILE_CORRUPT;
-        
+
         if (refRevisionNumber != revisionNumber)
             return S_FALSE;
-        
+
         char const* refName;
-        if (1 != md_get_column_value_as_utf8(assemblyRef, mdtAssemblyRef_Name, 1, &refName))
+        if (!md_get_column_value_as_utf8(assemblyRef, mdtAssemblyRef_Name, &refName))
             return CLDB_E_FILE_CORRUPT;
-        
+
         char const* name;
-        if (1 != md_get_column_value_as_utf8(assembly, mdtAssembly_Name, 1, &name))
+        if (!md_get_column_value_as_utf8(assembly, mdtAssembly_Name, &name))
             return CLDB_E_FILE_CORRUPT;
-        
+
         if (std::strcmp(refName, name) != 0)
             return S_FALSE;
-        
+
         char const* refCulture;
-        if (1 != md_get_column_value_as_utf8(assemblyRef, mdtAssemblyRef_Culture, 1, &refCulture))
+        if (!md_get_column_value_as_utf8(assemblyRef, mdtAssemblyRef_Culture, &refCulture))
             return CLDB_E_FILE_CORRUPT;
-        
+
         char const* culture;
-        if (1 != md_get_column_value_as_utf8(assembly, mdtAssembly_Culture, 1, &culture))
+        if (!md_get_column_value_as_utf8(assembly, mdtAssembly_Culture, &culture))
             return CLDB_E_FILE_CORRUPT;
-        
+
         if (std::strcmp(refCulture, culture) != 0)
             return S_FALSE;
-        
+
         uint8_t const* refPublicKeyOrToken;
         uint32_t refPublicKeyOrTokenLength;
-        if (1 != md_get_column_value_as_blob(assemblyRef, mdtAssemblyRef_PublicKeyOrToken, 1, &refPublicKeyOrToken, &refPublicKeyOrTokenLength))
+        if (!md_get_column_value_as_blob(assemblyRef, mdtAssemblyRef_PublicKeyOrToken, &refPublicKeyOrToken, &refPublicKeyOrTokenLength))
             return CLDB_E_FILE_CORRUPT;
-        
+
         uint8_t const* publicKey;
         uint32_t publicKeyLength;
-        if (1 != md_get_column_value_as_blob(assembly, mdtAssembly_PublicKey, 1, &publicKey, &publicKeyLength))
+        if (!md_get_column_value_as_blob(assembly, mdtAssembly_PublicKey, &publicKey, &publicKeyLength))
             return CLDB_E_FILE_CORRUPT;
-        
+
         if ((refPublicKeyOrTokenLength == 0) != (publicKeyLength == 0))
             return S_FALSE;
-        
+
         if (refPublicKeyOrTokenLength != 0)
         {
             uint32_t refFlags;
-            if (1 != md_get_column_value_as_constant(assemblyRef, mdtAssemblyRef_Flags, 1, &refFlags))
+            if (!md_get_column_value_as_constant(assemblyRef, mdtAssemblyRef_Flags, &refFlags))
                 return CLDB_E_FILE_CORRUPT;
-            
+
             if (IsAfPublicKey(refFlags))
             {
                 // If we have a full public key for the reference, then we can compare the full public key.
                 if (refPublicKeyOrTokenLength != publicKeyLength || std::memcmp(refPublicKeyOrToken, publicKey, publicKeyLength) != 0)
                     return S_FALSE;
-                
+
                 return S_OK;
             }
 
@@ -1184,7 +1184,7 @@ namespace
 
             if (refPublicKeyOrTokenLength != asmPublicKeyToken.size() || !std::equal(asmPublicKeyToken.begin(), asmPublicKeyToken.end(), refPublicKeyOrToken))
                 return S_FALSE;
-            
+
             return S_OK;
         }
         return S_OK;
@@ -1204,18 +1204,18 @@ namespace
         HRESULT hr;
         std::stack<mdcursor_t> typesForTypeRefs;
         typesForTypeRefs.push(sourceTypeRef);
-        
+
         mdcursor_t scope = sourceTypeRef;
         while (GetTokenTypeFromCursor(scope) == mdtTypeRef)
         {
             mdcursor_t resolutionScope;
-            if (1 != md_get_column_value_as_cursor(scope, mdtTypeRef_ResolutionScope, 1, &resolutionScope))
+            if (!md_get_column_value_as_cursor(scope, mdtTypeRef_ResolutionScope, &resolutionScope))
                 return E_FAIL;
-            
+
             typesForTypeRefs.push(resolutionScope);
             scope = resolutionScope;
         }
-        
+
         mdhandle_t sourceModule = md_extract_handle_from_cursor(sourceTypeRef);
         mdguid_t targetModuleMvid = {};
         mdguid_t targetAssemblyMvid = {};
@@ -1241,10 +1241,10 @@ namespace
             mdToken token;
             if (!md_cursor_to_token(sourceTypeRef, &token))
                 return E_FAIL;
-            
+
             if (!md_token_to_cursor(targetModule, token, targetTypeRef))
                 return CLDB_E_FILE_CORRUPT;
-            
+
             return S_OK;
         }
         else if (sameAssemblyMvid && !sameModuleMvid)
@@ -1266,7 +1266,7 @@ namespace
             {
                 // Create a ModuleRef from the target module to the source module.
                 char const* moduleName;
-                if (1 != md_get_column_value_as_utf8(scope, mdtModule_Name, 1, &moduleName))
+                if (!md_get_column_value_as_utf8(scope, mdtModule_Name, &moduleName))
                     return CLDB_E_FILE_CORRUPT;
 
                 if (!FindModuleRef(targetModule, moduleName, &targetOutermostScope))
@@ -1274,10 +1274,10 @@ namespace
                     md_added_row_t moduleRef;
                     if (!md_append_row(targetModule, mdtid_ModuleRef, &moduleRef))
                         return E_FAIL;
-                    
-                    if (1 != md_set_column_value_as_utf8(moduleRef, mdtModuleRef_Name, 1, &moduleName))
+
+                    if (!md_set_column_value_as_utf8(moduleRef, mdtModuleRef_Name, moduleName))
                         return E_FAIL;
-                    
+
                     targetOutermostScope = moduleRef;
                     onRowAdded(moduleRef);
                 }
@@ -1288,18 +1288,18 @@ namespace
                 // then we can use the Module token as the outermost scope.
                 // otherwise, create ModuleRef to the module that the source ModuleRef points to.
                 char const* moduleName;
-                if (1 != md_get_column_value_as_utf8(scope, mdtModuleRef_Name, 1, &moduleName))
+                if (!md_get_column_value_as_utf8(scope, mdtModuleRef_Name, &moduleName))
                     return CLDB_E_FILE_CORRUPT;
-                
+
                 mdcursor_t targetModuleCursor;
                 uint32_t count;
                 if (!md_create_cursor(targetModule, mdtid_Module, &targetModuleCursor, &count))
                     return E_FAIL;
-                
+
                 char const* targetModuleName;
-                if (1 != md_get_column_value_as_utf8(targetModuleCursor, mdtModule_Name, 1, &targetModuleName))
+                if (!md_get_column_value_as_utf8(targetModuleCursor, mdtModule_Name, &targetModuleName))
                     return E_FAIL;
-                
+
                 if (std::strcmp(moduleName, targetModuleName) == 0)
                 {
                     targetOutermostScope = targetModuleCursor;
@@ -1309,10 +1309,10 @@ namespace
                     md_added_row_t moduleRef;
                     if (!md_append_row(targetModule, mdtid_ModuleRef, &moduleRef))
                         return E_FAIL;
-                    
-                    if (1 != md_set_column_value_as_utf8(moduleRef, mdtModuleRef_Name, 1, &moduleName))
+
+                    if (!md_set_column_value_as_utf8(moduleRef, mdtModuleRef_Name, moduleName))
                         return E_FAIL;
-                    
+
                     targetOutermostScope = moduleRef;
                     onRowAdded(moduleRef);
                 }
@@ -1334,7 +1334,7 @@ namespace
             mdToken scopeToken;
             if (!md_cursor_to_token(scope, &scopeToken))
                 return E_FAIL;
-            
+
             if (IsNilToken(scopeToken))
             {
                 // Lookup ExportedType entry in the source assembly for this type.
@@ -1346,29 +1346,29 @@ namespace
                 {
                     mdcursor_t outermostTypeRef = typesForTypeRefs.top();
                     char const* typeName;
-                    if (1 != md_get_column_value_as_utf8(outermostTypeRef, mdtTypeRef_TypeName, 1, &typeName))
+                    if (!md_get_column_value_as_utf8(outermostTypeRef, mdtTypeRef_TypeName, &typeName))
                         return E_FAIL;
-                    
+
                     char const* typeNamespace;
-                    if (1 != md_get_column_value_as_utf8(outermostTypeRef, mdtTypeRef_TypeNamespace, 1, &typeNamespace))
+                    if (!md_get_column_value_as_utf8(outermostTypeRef, mdtTypeRef_TypeNamespace, &typeNamespace))
                         return E_FAIL;
-                    
+
                     // If we can't find an ExportedType entry for this type, we'll just move over the TypeRef with a Nil ResolutionScope.
                     for (uint32_t i = 0; i < count; ++i, md_cursor_next(&exportedType))
                     {
                         char const* exportedTypeName;
-                        if (1 != md_get_column_value_as_utf8(exportedType, mdtExportedType_TypeName, 1, &exportedTypeName))
+                        if (!md_get_column_value_as_utf8(exportedType, mdtExportedType_TypeName, &exportedTypeName))
                             return E_FAIL;
-                        
+
                         char const* exportedTypeNamespace;
-                        if (1 != md_get_column_value_as_utf8(exportedType, mdtExportedType_TypeNamespace, 1, &exportedTypeNamespace))
+                        if (!md_get_column_value_as_utf8(exportedType, mdtExportedType_TypeNamespace, &exportedTypeNamespace))
                             return E_FAIL;
-                        
+
                         if (std::strcmp(typeName, exportedTypeName) == 0 && std::strcmp(typeNamespace, exportedTypeNamespace) == 0)
                         {
-                            if (1 != md_get_column_value_as_cursor(exportedType, mdtExportedType_Implementation, 1, &implementation))
+                            if (!md_get_column_value_as_cursor(exportedType, mdtExportedType_Implementation, &implementation))
                                 return E_FAIL;
-                            
+
                             foundExportedType = true;
                             break;
                         }
@@ -1422,30 +1422,30 @@ namespace
                     uint32_t sourceAssemblyTypeDefCount;
                     if (!md_create_cursor(sourceAssembly, mdtid_TypeDef, &sourceAssemblyTypeDef, &sourceAssemblyTypeDefCount))
                         return E_FAIL;
-                    
+
                     mdcursor_t outermostTypeRef = typesForTypeRefs.top();
                     char const* typeName;
-                    if (1 != md_get_column_value_as_utf8(outermostTypeRef, mdtTypeRef_TypeName, 1, &typeName))
+                    if (!md_get_column_value_as_utf8(outermostTypeRef, mdtTypeRef_TypeName, &typeName))
                         return E_FAIL;
-                    
+
                     char const* typeNamespace;
-                    if (1 != md_get_column_value_as_utf8(outermostTypeRef, mdtTypeRef_TypeNamespace, 1, &typeNamespace))
+                    if (!md_get_column_value_as_utf8(outermostTypeRef, mdtTypeRef_TypeNamespace, &typeNamespace))
                         return E_FAIL;
 
                     bool found = false;
                     for (uint32_t i = 0; i < sourceAssemblyTypeDefCount; ++i, md_cursor_next(&sourceAssemblyTypeDef))
                     {
                         char const* sourceAssemblyTypeDefName;
-                        if (1 != md_get_column_value_as_utf8(sourceAssemblyTypeDef, mdtTypeDef_TypeName, 1, &sourceAssemblyTypeDefName))
+                        if (!md_get_column_value_as_utf8(sourceAssemblyTypeDef, mdtTypeDef_TypeName, &sourceAssemblyTypeDefName))
                             return E_FAIL;
-                        
+
                         char const* sourceAssemblyTypeDefNamespace;
-                        if (1 != md_get_column_value_as_utf8(sourceAssemblyTypeDef, mdtTypeDef_TypeNamespace, 1, &sourceAssemblyTypeDefNamespace))
+                        if (!md_get_column_value_as_utf8(sourceAssemblyTypeDef, mdtTypeDef_TypeNamespace, &sourceAssemblyTypeDefNamespace))
                             return E_FAIL;
-                        
+
                         if (std::strcmp(typeName, sourceAssemblyTypeDefName) != 0 && std::strcmp(typeNamespace, sourceAssemblyTypeDefNamespace) != 0)
                             continue;
-                        
+
                         mdcursor_t sourceAssemblyTypeDefEnclosingClass;
                         uint32_t ignored;
                         if (md_create_cursor(sourceAssembly, mdtid_NestedClass, &sourceAssemblyTypeDefEnclosingClass, &ignored)
@@ -1454,12 +1454,12 @@ namespace
                             // If the type is nested, then it can't be the right type as we're already at the outermost scope.
                             continue;
                         }
-                        
+
                         // If we found the type defined in the source assembly, then the correct imported scope is the assembly module.
                         mdcursor_t importAssembly;
                         if (!md_token_to_cursor(sourceAssembly, TokenFromRid(1, mdtAssembly), &importAssembly))
                             return E_FAIL;
-                        
+
                         // Add a reference to the assembly in the target module and assembly.
                         RETURN_IF_FAILED(ImportReferenceToAssembly(sourceAssembly, sourceAssemblyHash, targetModule, targetAssembly, onRowAdded, &targetOutermostScope));
                         found = true;
@@ -1475,7 +1475,7 @@ namespace
                 // Create an AssemblyRef from the destination assembly to the source assembly.
                 RETURN_IF_FAILED(ImportReferenceToAssembly(sourceAssembly, sourceAssemblyHash, targetModule, targetAssembly, onRowAdded, &targetOutermostScope));
             }
-            
+
             // The IsNilToken case can resolve to an ExportedType entry whose scope is an AssemblyRef.
             // We want to catch that case here, so we split this out to a separate if instead of a chained else if.
             if (TypeFromToken(scopeToken) == mdtAssemblyRef)
@@ -1492,11 +1492,11 @@ namespace
                     // The type is defined in the target assembly, so we need to correctly define its scope.
                     mdcursor_t outermostTypeRef = typesForTypeRefs.top();
                     char const* typeName;
-                    if (1 != md_get_column_value_as_utf8(outermostTypeRef, mdtTypeRef_TypeName, 1, &typeName))
+                    if (!md_get_column_value_as_utf8(outermostTypeRef, mdtTypeRef_TypeName, &typeName))
                         return E_FAIL;
-                    
+
                     char const* typeNamespace;
-                    if (1 != md_get_column_value_as_utf8(outermostTypeRef, mdtTypeRef_TypeNamespace, 1, &typeNamespace))
+                    if (!md_get_column_value_as_utf8(outermostTypeRef, mdtTypeRef_TypeNamespace, &typeNamespace))
                         return E_FAIL;
 
                     RETURN_IF_FAILED(ImportScopeForTypeByNameInAssembly(
@@ -1533,7 +1533,7 @@ namespace
         mdToken targetOutermostScopeToken;
         if (!md_cursor_to_token(targetOutermostScope, &targetOutermostScopeToken))
             return E_FAIL;
-        
+
         if (TypeFromToken(targetOutermostScopeToken) == mdtModule && !IsNilToken(targetOutermostScopeToken))
         {
             // Find a nested TypeDef in the target module that matches the name and namespace of the source TypeRef.
@@ -1550,17 +1550,17 @@ namespace
                 mdcursor_t sourceEnclosingTypeRef = typesForTypeRefs.top();
 
                 char const* typeName;
-                if (1 != md_get_column_value_as_utf8(sourceEnclosingTypeRef, mdtTypeRef_TypeName, 1, &typeName))
+                if (!md_get_column_value_as_utf8(sourceEnclosingTypeRef, mdtTypeRef_TypeName, &typeName))
                     return E_FAIL;
-                
+
                 char const* typeNamespace;
-                if (1 != md_get_column_value_as_utf8(sourceEnclosingTypeRef, mdtTypeRef_TypeNamespace, 1, &typeNamespace))
+                if (!md_get_column_value_as_utf8(sourceEnclosingTypeRef, mdtTypeRef_TypeNamespace, &typeNamespace))
                     return E_FAIL;
-                
+
                 mdToken enclosingScopeToken;
                 if (!md_cursor_to_token(enclosingScope, &enclosingScopeToken))
                     return E_FAIL;
-                
+
                 bool shouldHaveEnclosingType = !IsNilToken(enclosingScopeToken) && TypeFromToken(enclosingScopeToken) == mdtTypeDef;
                 // The TypeDef table must be sorted such that enclosing types are defined before nesting types.
                 // Therefore, we can search the table linearly.
@@ -1569,13 +1569,13 @@ namespace
                 do
                 {
                     char const* targetTypeName;
-                    if (1 != md_get_column_value_as_utf8(targetTypeDef, mdtTypeDef_TypeName, 1, &targetTypeName))
+                    if (!md_get_column_value_as_utf8(targetTypeDef, mdtTypeDef_TypeName, &targetTypeName))
                         return E_FAIL;
-                    
+
                     char const* targetTypeNamespace;
-                    if (1 != md_get_column_value_as_utf8(targetTypeDef, mdtTypeDef_TypeNamespace, 1, &targetTypeNamespace))
+                    if (!md_get_column_value_as_utf8(targetTypeDef, mdtTypeDef_TypeNamespace, &targetTypeNamespace))
                         return E_FAIL;
-                    
+
                     // Check the name of the type.
                     if (std::strcmp(typeName, targetTypeName) != 0 || std::strcmp(typeNamespace, targetTypeNamespace) != 0)
                         continue;
@@ -1588,7 +1588,7 @@ namespace
 
                     mdcursor_t targetNestedClass;
                     uint32_t targetNestedClassCount;
-                    if (shouldHaveEnclosingType != 
+                    if (shouldHaveEnclosingType !=
                         (md_create_cursor(targetModule, mdtid_NestedClass, &targetNestedClass, &targetNestedClassCount)
                             && md_find_row_from_cursor(targetNestedClass, mdtNestedClass_NestedClass, RidFromToken(targetTypeDefToken), &targetNestedClass)))
                     {
@@ -1599,7 +1599,7 @@ namespace
                     if (shouldHaveEnclosingType)
                     {
                         mdToken targetEnclosingType;
-                        if (1 != md_get_column_value_as_token(targetNestedClass, mdtNestedClass_EnclosingClass, 1, &targetEnclosingType))
+                        if (!md_get_column_value_as_token(targetNestedClass, mdtNestedClass_EnclosingClass, &targetEnclosingType))
                             return E_FAIL;
 
                         // If the enclosing type doesn't match, then we are in a failure state.
@@ -1627,20 +1627,20 @@ namespace
             md_added_row_t targetEnclosingTypeRef;
             if (!md_append_row(targetModule, mdtid_TypeRef, &targetEnclosingTypeRef))
                 return E_FAIL;
-            
-            if (1 != md_set_column_value_as_cursor(targetEnclosingTypeRef, mdtTypeRef_ResolutionScope, 1, &resolutionScope))
+
+            if (!md_set_column_value_as_cursor(targetEnclosingTypeRef, mdtTypeRef_ResolutionScope, resolutionScope))
                 return E_FAIL;
-            
+
             char const* typeName;
-            if (1 != md_get_column_value_as_utf8(sourceEnclosingTypeRef, mdtTypeRef_TypeName, 1, &typeName)
-                || 1 != md_set_column_value_as_utf8(targetEnclosingTypeRef, mdtTypeRef_TypeName, 1, &typeName))
+            if (!md_get_column_value_as_utf8(sourceEnclosingTypeRef, mdtTypeRef_TypeName, &typeName)
+                || !md_set_column_value_as_utf8(targetEnclosingTypeRef, mdtTypeRef_TypeName, typeName))
             {
                 return E_FAIL;
             }
-            
+
             char const* typeNamespace;
-            if (1 != md_get_column_value_as_utf8(sourceEnclosingTypeRef, mdtTypeRef_TypeNamespace, 1, &typeNamespace)
-                || 1 != md_set_column_value_as_utf8(targetEnclosingTypeRef, mdtTypeRef_TypeNamespace, 1, &typeNamespace))
+            if (!md_get_column_value_as_utf8(sourceEnclosingTypeRef, mdtTypeRef_TypeNamespace, &typeNamespace)
+                || !md_set_column_value_as_utf8(targetEnclosingTypeRef, mdtTypeRef_TypeNamespace, typeNamespace))
             {
                 return E_FAIL;
             }
@@ -1668,7 +1668,7 @@ HRESULT ImportReferenceToTypeDefOrRefOrSpec(
     mdcursor_t sourceCursor;
     if (!md_token_to_cursor(sourceModule, *importedToken, &sourceCursor))
         return CLDB_E_FILE_CORRUPT;
-    
+
     switch (GetTokenTypeFromCursor(sourceCursor))
     {
         case mdtTypeDef:
@@ -1677,7 +1677,7 @@ HRESULT ImportReferenceToTypeDefOrRefOrSpec(
             RETURN_IF_FAILED(ImportReferenceToTypeDef(sourceCursor, sourceAssembly, sourceAssemblyHash, targetAssembly, targetModule, true, onRowAdded, &targetCursor));
             if (!md_cursor_to_token(targetCursor, importedToken))
                 return E_FAIL;
-            
+
             return S_OK;
         }
         case mdtTypeRef:
@@ -1686,30 +1686,32 @@ HRESULT ImportReferenceToTypeDefOrRefOrSpec(
             RETURN_IF_FAILED(ImportReferenceToTypeRef(sourceCursor, sourceAssembly, sourceAssemblyHash, targetAssembly, targetModule, onRowAdded, &targetCursor));
             if (!md_cursor_to_token(targetCursor, importedToken))
                 return E_FAIL;
-            
+
             return S_OK;
         }
         case mdtTypeSpec:
         {
             uint8_t const* signature;
             uint32_t signatureLength;
-            if (1 != md_get_column_value_as_blob(sourceCursor, mdtTypeSpec_Signature, 1, &signature, &signatureLength))
+            if (!md_get_column_value_as_blob(sourceCursor, mdtTypeSpec_Signature, &signature, &signatureLength))
                 return E_FAIL;
-            
-            malloc_span<uint8_t> importedSignature;
+
+            inline_span<uint8_t> importedSignature;
             RETURN_IF_FAILED(ImportTypeSpecBlob(sourceAssembly, sourceModule, sourceAssemblyHash, targetAssembly, targetModule, {signature, signatureLength}, onRowAdded, importedSignature));
 
             md_added_row_t typeSpec;
             if (!md_append_row(targetModule, mdtid_TypeSpec, &typeSpec))
                 return E_FAIL;
-            
+
             uint8_t const* importedSignatureData = importedSignature;
             uint32_t importedSignatureLength = (uint32_t)importedSignature.size();
-            if (1 != md_set_column_value_as_blob(typeSpec, mdtTypeSpec_Signature, 1, &importedSignatureData, &importedSignatureLength))
+            if (!md_set_column_value_as_blob(typeSpec, mdtTypeSpec_Signature, importedSignatureData, importedSignatureLength))
                 return E_FAIL;
-            
+
             if (!md_cursor_to_token(typeSpec, importedToken))
                 return E_FAIL;
+
+            return S_OK;
         }
         default:
             return E_INVALIDARG;
@@ -1776,8 +1778,8 @@ HRESULT DefineImportMember(
     }
     RETURN_IF_FAILED(hr);
 
-    ULONG sigSizeMax = cbSig * 3;  // Set translated signature buffer size conservatively.  
-    std::unique_ptr<uint8_t[]> translatedSig { new uint8_t[sigSizeMax] };  
+    ULONG sigSizeMax = cbSig * 3;  // Set translated signature buffer size conservatively.
+    std::unique_ptr<uint8_t[]> translatedSig { new uint8_t[sigSizeMax] };
 
     RETURN_IF_FAILED(emit->TranslateSigWithScope(
         pAssemImport,
@@ -1816,6 +1818,6 @@ HRESULT DefineImportMember(
         translatedSig.get(),
         translatedSigLength,
         pmr));
-    
+
     return S_OK;
 }
