@@ -111,6 +111,7 @@ private:
 
     static void free_noninline_memory(T* ptr, size_t numElements)
     {
+        UNREFERENCED_PARAMETER(numElements);
         assert(numElements > NumInlineElements);
         delete[] ptr;
     }
