@@ -438,7 +438,7 @@ HRESULT ImportSignatureIntoModule(
     {
         importedSignature.resize(importedSignature.size());
     }
-    catch(const std::bad_alloc&)
+    catch (std::bad_alloc const&)
     {
         return E_OUTOFMEMORY;
     }

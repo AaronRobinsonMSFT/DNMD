@@ -24,7 +24,7 @@ struct base_inline_span : public span<T>
 
     base_inline_span(size_t size) : span<T>()
     {
-        this->_ptr = size > NumInlineElements ? new T[size] : _storage.data();
+        this->_ptr = size > NumInlineElements ? base_inline_span::allocate_noninline_memory(size) : _storage.data();
         this->_size = size;
     }
 
@@ -37,7 +37,7 @@ struct base_inline_span : public span<T>
     {
         if (this->size() > NumInlineElements)
         {
-            delete[] this->_ptr;
+            base_inline_span::free_noninline_memory(this->_ptr, this->size());
             this->_ptr = nullptr;
         }
 
@@ -62,7 +62,7 @@ struct base_inline_span : public span<T>
         {
             // Transitioning from a non-inline buffer to the inline buffer.
             std::copy(this->begin(), this->begin() + newSize, _storage.begin());
-            delete[] this->_ptr;
+            base_inline_span::free_noninline_memory(this->_ptr, this->size());
             this->_ptr = _storage.data();
         }
         else if (this->size() <= NumInlineElements && newSize <= NumInlineElements)
@@ -79,7 +79,7 @@ struct base_inline_span : public span<T>
         {
             // Growing the buffer from the inline buffer to a non-inline buffer.
             assert(this->size() <= NumInlineElements && newSize > NumInlineElements);
-            T* newPtr = new T[newSize];
+            T* newPtr = base_inline_span::allocate_noninline_memory(size);
             std::copy(this->begin(), this->end(), newPtr);
             this->_ptr = newPtr;
             this->_size = newSize;
@@ -91,7 +91,7 @@ struct base_inline_span : public span<T>
         if (this->size() > NumInlineElements)
         {
             assert(this->_ptr != _storage.data());
-            delete[] this->_ptr;
+            base_inline_span::free_noninline_memory(this->_ptr, this->size());
             this->_ptr = nullptr;
         }
         else
@@ -102,6 +102,18 @@ struct base_inline_span : public span<T>
 
 private:
     std::array<T, NumInlineElements> _storage;
+
+    static T* allocate_noninline_memory(size_t numElements)
+    {
+        assert(numElements > NumInlineElements);
+        return new T[numElements];
+    }
+
+    static void free_noninline_memory(T* ptr, size_t numElements)
+    {
+        assert(numElements > NumInlineElements);
+        delete[] ptr;
+    }
 };
 
 /// @brief An span with inline storage for up to 64 bytes.
