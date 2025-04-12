@@ -227,7 +227,7 @@ typedef struct md_pdb__
     uint32_t type_system_table_rows[MDTABLE_MAX_COUNT];
 } md_pdb_t;
 
-// Check if the context has a non-null PDB stream.
+// Check if the context has a non-empty PDB stream.
 bool has_pdb(mdcxt_t* cxt);
 
 // Interpret in the PDB data stream
