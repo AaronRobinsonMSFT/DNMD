@@ -298,6 +298,7 @@ bool has_pdb(mdcxt_t* cxt)
     assert(cxt != NULL);
     return cxt->pdb.size != 0;
 #else
+    (void)cxt;
     return false;
 #endif // !DNMD_PORTABLE_PDB
 }
