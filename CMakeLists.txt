@@ -26,6 +26,7 @@ if (DNMD_ENABLE_FUZZING)
     )
 
     set(ANTLR_BUILD_CPP_TESTS OFF CACHE BOOL "" FORCE)
+    set(FUZZTEST_FUZZING_MODE ON)
 
     FetchContent_MakeAvailable(fuzztest)
 
