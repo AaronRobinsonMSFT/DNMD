@@ -23,4 +23,3 @@ if(WIN32)
 endif()
 
 link_fuzztest(regfuzz)
-gtest_discover_tests(regfuzz)
