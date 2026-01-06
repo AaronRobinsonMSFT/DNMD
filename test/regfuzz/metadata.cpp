@@ -1591,6 +1591,7 @@ namespace
             import->CloseEnum(hcorenum);
             throw;
         }
+        import->CloseEnum(hcorenum);
         return tokens;
     }
 
