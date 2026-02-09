@@ -52,4 +52,9 @@ if(WIN32)
                         COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:nethost> $<TARGET_FILE_DIR:regtest>)
 endif()
 
-gtest_discover_tests(regtest DISCOVERY_TIMEOUT 1200)
+if (DNMD_ENABLE_SANITIZERS)
+    # Suppressing ODR due to IID issues
+    gtest_discover_tests(regtest DISCOVERY_TIMEOUT 1200 PROPERTIES ENVIRONMENT "ASAN_OPTIONS=detect_odr_violation=0")
+else()
+    gtest_discover_tests(regtest DISCOVERY_TIMEOUT 1200)
+endif()
