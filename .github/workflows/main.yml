@@ -63,6 +63,8 @@ jobs:
     name: Build (Sanitizers)
     env:
       ASAN_OPTIONS: detect_odr_violation=0
+      LSAN_OPTIONS: suppressions=${{ github.workspace }}/test/sanitizers/lsan.supp
+      UBSAN_OPTIONS: suppressions=${{ github.workspace }}/test/sanitizers/ubsan.supp
     steps:
     - uses: actions/checkout@v4
       with:
