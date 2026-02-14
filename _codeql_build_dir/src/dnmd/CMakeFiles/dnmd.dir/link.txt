@@ -1,2 +1,0 @@
-/usr/bin/ar qc libdnmd.a CMakeFiles/dnmd.dir/access.c.o CMakeFiles/dnmd.dir/bytes.c.o CMakeFiles/dnmd.dir/deltas.c.o CMakeFiles/dnmd.dir/editor.c.o CMakeFiles/dnmd.dir/entry.c.o CMakeFiles/dnmd.dir/query.c.o CMakeFiles/dnmd.dir/streams.c.o CMakeFiles/dnmd.dir/tables.c.o CMakeFiles/dnmd.dir/write.c.o
-/usr/bin/ranlib libdnmd.a

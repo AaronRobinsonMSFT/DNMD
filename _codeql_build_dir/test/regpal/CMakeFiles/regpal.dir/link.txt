@@ -1,2 +1,0 @@
-/usr/bin/ar qc libregpal.a CMakeFiles/regpal.dir/pal.cpp.o
-/usr/bin/ranlib libregpal.a

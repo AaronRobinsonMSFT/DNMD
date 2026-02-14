@@ -1,1 +1,0 @@
-/home/runner/work/DNMD/.codeql-scratch/dbs/cpp/working/autobuild/bin/c++ -O3 -DNDEBUG -Wl,--dependency-file=CMakeFiles/dncp_test.dir/link.d CMakeFiles/dncp_test.dir/main.cpp.o -o dncp_test  ../../src/libdncp.a
