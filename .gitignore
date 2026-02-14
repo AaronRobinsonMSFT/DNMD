@@ -4,3 +4,4 @@ artifacts/
 *~
 TestResults/
 .DS_Store
+_codeql_build_dir/
