@@ -123,6 +123,7 @@ typedef enum
     mdc_extra_data        = 0x0040,
     mdc_image_flags       = 0xffff,
     mdc_minimal_delta     = 0x00010000,
+    mdc_uncompressed_table_heap = 0x00020000,
 } mdcxt_flag_t;
 
 // Macros used to insert/extract the column offset.

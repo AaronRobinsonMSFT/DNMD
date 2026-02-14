@@ -225,6 +225,10 @@ bool md_create_handle(void const* data, size_t data_len, mdhandle_t* handle)
     if ((bool)(cxt.context_flags & mdc_minimal_delta) && !tables_heap_uncompressed)
         return false;
 
+    // Record whether the table heap is uncompressed (#-).
+    if (tables_heap_uncompressed)
+        cxt.context_flags |= mdc_uncompressed_table_heap;
+
     // Header initialization is complete.
     cxt.magic = MDLIB_MAGIC_NUMBER;
     cxt.raw_metadata.ptr = data;
