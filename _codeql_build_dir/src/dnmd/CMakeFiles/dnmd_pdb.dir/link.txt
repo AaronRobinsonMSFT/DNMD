@@ -1,0 +1,2 @@
+/usr/bin/ar qc libdnmd_pdb.a CMakeFiles/dnmd_pdb.dir/access.c.o CMakeFiles/dnmd_pdb.dir/bytes.c.o CMakeFiles/dnmd_pdb.dir/deltas.c.o CMakeFiles/dnmd_pdb.dir/editor.c.o CMakeFiles/dnmd_pdb.dir/entry.c.o CMakeFiles/dnmd_pdb.dir/query.c.o CMakeFiles/dnmd_pdb.dir/streams.c.o CMakeFiles/dnmd_pdb.dir/tables.c.o CMakeFiles/dnmd_pdb.dir/write.c.o CMakeFiles/dnmd_pdb.dir/pdb_blobs.c.o
+/usr/bin/ranlib libdnmd_pdb.a

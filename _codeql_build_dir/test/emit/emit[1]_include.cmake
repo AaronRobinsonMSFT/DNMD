@@ -1,0 +1,5 @@
+if(EXISTS "/home/runner/work/DNMD/DNMD/_codeql_build_dir/test/emit/emit[1]_tests.cmake")
+  include("/home/runner/work/DNMD/DNMD/_codeql_build_dir/test/emit/emit[1]_tests.cmake")
+else()
+  add_test(emit_NOT_BUILT emit_NOT_BUILT)
+endif()
