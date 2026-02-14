@@ -5,3 +5,4 @@ _codeql_build_dir/
 *~
 TestResults/
 .DS_Store
+_codeql_detected_source_root
