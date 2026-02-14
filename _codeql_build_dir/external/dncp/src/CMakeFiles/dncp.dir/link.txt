@@ -1,2 +1,0 @@
-/usr/bin/ar qc libdncp.a CMakeFiles/dncp.dir/bstr.c.o CMakeFiles/dncp.dir/guids.c.o CMakeFiles/dncp.dir/interfaces.c.o CMakeFiles/dncp.dir/memory.c.o CMakeFiles/dncp.dir/strings.c.o
-/usr/bin/ranlib libdncp.a

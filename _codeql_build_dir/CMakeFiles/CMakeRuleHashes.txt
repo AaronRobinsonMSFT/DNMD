@@ -1,2 +1,0 @@
-# Hashes of file build rules.
-d79acbeb69703acd6d6b04e660fdd391 test/regtest/CMakeFiles/Regression.TargetAssembly
