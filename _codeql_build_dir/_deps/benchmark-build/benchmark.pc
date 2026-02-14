@@ -1,0 +1,12 @@
+prefix=/home/runner/work/DNMD/DNMD/_codeql_build_dir
+exec_prefix=${prefix}
+libdir=/home/runner/work/DNMD/DNMD/_codeql_build_dir/lib
+includedir=/home/runner/work/DNMD/DNMD/_codeql_build_dir/include
+
+Name: benchmark
+Description: Google microbenchmark framework
+Version: 1.8.3
+
+Libs: -L${libdir} -lbenchmark
+Libs.private: -lpthread
+Cflags: -I${includedir}

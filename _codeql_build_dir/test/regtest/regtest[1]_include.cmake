@@ -1,0 +1,5 @@
+if(EXISTS "/home/runner/work/DNMD/DNMD/_codeql_build_dir/test/regtest/regtest[1]_tests.cmake")
+  include("/home/runner/work/DNMD/DNMD/_codeql_build_dir/test/regtest/regtest[1]_tests.cmake")
+else()
+  add_test(regtest_NOT_BUILT regtest_NOT_BUILT)
+endif()
