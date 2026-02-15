@@ -290,7 +290,9 @@ bool validate_tables(mdcxt_t* cxt)
 {
     assert(cxt != NULL);
 
-    // II.24.2.6 - Do not allow the *Ptr indirection tables
+    // [TODO] Reference ECMA-335 and encode table verification.
+
+    // Do not allow the *Ptr indirection tables
     // to be present in a compressed table heap (#~).
     if (!(cxt->context_flags & mdc_uncompressed_table_heap))
     {
