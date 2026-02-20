@@ -89,6 +89,7 @@ struct mdcursor final
     private:
         mdcursor_t cursor;
     public:
+        mdcursor() = default;
         explicit mdcursor(mdcursor_t c) : cursor{ c }
         {
             mdtoken tk;
@@ -117,7 +118,7 @@ struct mdcursor final
         }
 
         template<mdtable_id_t TargetTableId>
-        bool get_column_value_as_token(mdcolumn<TableId, mdcursor<TargetTableId>> column, mdToken& tk)
+        bool get_column_value(mdcolumn<TableId, mdcursor<TargetTableId>> column, mdToken& tk)
         {
             return md_get_column_value_as_token(cursor, column.column_index, &tk);
         }
@@ -125,8 +126,7 @@ struct mdcursor final
         template<mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
         bool get_column_value(mdcolumn<TableId, mdcursor_indirect<DirectTableId, IndirectTableId>> column, mdcursor_indirect<DirectTableId, IndirectTableId>& target_cursor)
         {
-            mdcursor<IndirectTableId> indirect_cursor;
-            return md_get_column_value_as_cursor(cursor, column.column_index, &indirect_cursor.cursor);
+            return md_get_column_value_as_cursor(cursor, column.column_index, &target_cursor.cursor);
         }
 
         bool get_column_value(mdcolumn<TableId, md_column_type_blob> column, uint8_t const** blob, uint32_t* blob_len)
@@ -148,6 +148,12 @@ struct mdcursor final
         {
             return md_get_column_value_as_utf8(cursor, column.column_index, str);
         }
+
+        template<mdtable_id_t TargetTableId, mdtable_id_t IndirectTableId>
+        bool get_column_value_as_range(mdcolumn<TableId, mdcursor_indirect<TargetTableId, IndirectTableId>> column, mdcursor_indirect<TargetTableId, IndirectTableId>& range_cursor, uint32_t* count)
+        {
+            return md_get_column_value_as_range(cursor, column.column_index, &range_cursor.cursor, count)
+        }
 };
 
 template<mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
@@ -156,6 +162,7 @@ struct mdcursor_indirect
     private:
         mdcursor_t cursor;
     public:
+        mdcursor_indirect() = default;
         explicit mdcursor_indirect(mdcursor_t c) : cursor{ c }
         {
             mdtoken tk;
@@ -192,6 +199,7 @@ struct mdcoded_index final
     private:
         mdcursor_t cursor;
     public:
+        mdcoded_index() = default;
         constexpr mdcoded_index(mdcursor_t c)
             : cursor{ c }
         {
@@ -230,6 +238,114 @@ struct mdcoded_index final
             callable(mdcursor<CodedTableId>(cursor));
         }
 };
+
+template<mdtable_id_t TableId>
+inline bool md_cursor_next(mdcursor<TableId>& cursor)
+{
+    mdcursor_t c = cursor;
+    if (!md_cursor_next(&c))
+        return false;
+    cursor = mdcursor<TableId>{c};
+    return true;
+}
+
+template<mdtable_id_t TableId, mdtable_id_t IndirectTableId>
+inline bool md_cursor_next(mdcursor_indirect<TableId, IndirectTableId>& cursor)
+{
+    mdcursor_t c = cursor;
+    if (!md_cursor_next(&c))
+        return false;
+    cursor = mdcursor_indirect<TableId, IndirectTableId>{c};
+    return true;
+}
+
+// Strongly-typed overloads for md_find_row_from_cursor
+
+// Overload for constant columns
+template<mdtable_id_t TableId>
+inline bool md_find_row_from_cursor(mdcursor<TableId> begin, mdcolumn<TableId, md_column_type_constant> column, uint32_t value, mdcursor<TableId>& cursor)
+{
+    mdcursor_t c;
+    bool result = ::md_find_row_from_cursor(begin, column.column_index, value, &c);
+    if (result)
+        cursor = mdcursor<TableId>{c};
+    return result;
+}
+
+// Overload for cursor columns
+template<mdtable_id_t TableId, mdtable_id_t TargetTableId>
+inline bool md_find_row_from_cursor(mdcursor<TableId> begin, mdcolumn<TableId, mdcursor<TargetTableId>> column, mdToken tk, mdcursor<TableId>& cursor)
+{
+    mdToken tk;
+    if (!::md_cursor_to_token(value, &tk))
+        return false;
+    
+    uint32_t rid = tk & 0x00FFFFFF; // Extract RID from token
+    mdcursor_t c;
+    bool result = ::md_find_row_from_cursor(begin, column.column_index, rid, &c);
+    if (result)
+        cursor = mdcursor<TableId>{c};
+    return result;
+}
+
+// Overload for cursor columns
+template<mdtable_id_t TableId, mdtable_id_t TargetTableId>
+inline bool md_find_row_from_cursor(mdcursor<TableId> begin, mdcolumn<TableId, mdcursor<TargetTableId>> column, mdcursor<TargetTableId> value, mdcursor<TableId>& cursor)
+{
+    mdToken tk;
+    if (!::md_cursor_to_token(value, &tk))
+        return false;
+    
+    return md_find_row_from_cursor(begin, column, tk, cursor);
+}
+
+// Overload for indirect cursor columns
+template<mdtable_id_t TableId, mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
+inline bool md_find_row_from_cursor(mdcursor<TableId> begin, mdcolumn<TableId, mdcursor_indirect<DirectTableId, IndirectTableId>> column, mdcursor<DirectTableId> value, mdcursor<TableId>& cursor)
+{
+    mdToken tk;
+    if (!::md_cursor_to_token(value, &tk))
+        return false;
+    
+    uint32_t rid = tk & 0x00FFFFFF; // Extract RID from token
+    mdcursor_t c;
+    bool result = ::md_find_row_from_cursor(begin, column.column_index, rid, &c);
+    if (result)
+        cursor = mdcursor<TableId>{c};
+    return result;
+}
+
+// Overload for coded index columns
+template<mdtable_id_t TableId, mdtable_id_t... CodedTableIds>
+inline bool md_find_row_from_cursor(mdcursor<TableId> begin, mdcolumn<TableId, mdcoded_index<CodedTableIds...>> column, mdToken tk, mdcursor<TableId>& cursor)
+{
+    mdcursor_t c;
+    bool result = ::md_find_row_from_cursor(begin, column.column_index, tk, &c);
+    if (result)
+        cursor = mdcursor<TableId>{c};
+    return result;
+}
+
+// Overload for coded index columns
+template<mdtable_id_t TableId, mdtable_id_t... CodedTableIds, mdtable_id_t SearchTableId>
+inline bool md_find_row_from_cursor(mdcursor<TableId> begin, mdcolumn<TableId, mdcoded_index<CodedTableIds...>> column, mdcursor<SearchTableId> value, mdcursor<TableId>& cursor)
+{
+    mdToken tk;
+    if (!::md_cursor_to_token(value, &tk))
+        return false;
+
+    return md_find_row_from_cursor(begin, column, tk, cursor);
+}
+
+template<mdtable_id_t TableId>
+inline bool md_create_cursor(mdhandle_t handle, mdcursor<TableId>& cursor, uint32_t* count)
+{
+    mdcursor_t c;
+    bool result = ::md_create_cursor(handle, TableId, &c, count);
+    if (result)
+        cursor = mdcursor<TableId>{c};
+    return result;
+}
 
 namespace dnmd_columns
 {
