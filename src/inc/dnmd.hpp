@@ -59,7 +59,6 @@ struct md_column_type_guid {};
 struct md_column_type_userstring {};
 struct md_column_type_constant {};
 
-
 template<mdtable_id_t TableId>
 struct mdcursor;
 
@@ -74,7 +73,7 @@ struct mdcolumn final
 
     col_index_t column_index;
     public:
-        constexpr mdcolumn(col_index_t col)
+        explicit constexpr mdcolumn(col_index_t col)
             : column_index{ col }
         {
         }
@@ -157,13 +156,13 @@ struct mdcursor final
 };
 
 template<mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
-struct mdcursor_indirect
+struct mdcursor_indirect final
 {
     private:
         mdcursor_t cursor;
     public:
         mdcursor_indirect() = default;
-        explicit mdcursor_indirect(mdcursor_t c) : cursor{ c }
+        explicit constexpr mdcursor_indirect(mdcursor_t c) : cursor{ c }
         {
             mdtoken tk;
             if (md_cursor_to_token(cursor, &tk))
@@ -200,7 +199,7 @@ struct mdcoded_index final
         mdcursor_t cursor;
     public:
         mdcoded_index() = default;
-        constexpr mdcoded_index(mdcursor_t c)
+        explicit constexpr mdcoded_index(mdcursor_t c)
             : cursor{ c }
         {
             mdtoken tk;
@@ -229,7 +228,7 @@ struct mdcoded_index final
         template<typename TCallable>
         void visit(TCallable&& callable)
         {
-            (visit_impl<TableIds>(std::forward<TCallable>(callable)) , ...);
+            (visit_impl<TableIds>(std::forward<TCallable>(callable)) || false ...);
         }
 
     private:
@@ -238,10 +237,11 @@ struct mdcoded_index final
         {
             mdtoken tk;
             if (!md_cursor_to_token(cursor, &tk))
-                return;
+                return false;
             if (ExtractTokenType(tk) != CodedTableId)
-                return;
+                return false;
             callable(mdcursor<CodedTableId>(cursor));
+            return true;
         }
 };
 
