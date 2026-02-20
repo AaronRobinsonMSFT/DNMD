@@ -203,6 +203,12 @@ struct mdcoded_index final
         constexpr mdcoded_index(mdcursor_t c)
             : cursor{ c }
         {
+            mdtoken tk;
+            if (md_cursor_to_token(cursor, &tk))
+            {
+                mdtable_id_t table_id = ExtractTokenType(tk);
+                assert(((table_id == TableIds) || ...));
+            }
         }
     
         template<mdtable_id_t CodedTableId>
