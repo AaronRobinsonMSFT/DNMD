@@ -4,7 +4,10 @@
 #include "metadataimportro.hpp"
 #include "hcorenum.hpp"
 #include "signatures.hpp"
+#include "dnmd.hpp"
 #include <cstring>
+
+using namespace dnmd_columns;
 
 #define MD_MODULE_TOKEN TokenFromRid(1, mdtModule)
 #define MD_GLOBAL_PARENT_TOKEN TokenFromRid(1, mdtTypeDef)
@@ -755,16 +758,18 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumMembersWithName(
         if (TypeFromToken(cl) != mdtTypeDef)
             return E_INVALIDARG;
 
-        mdcursor_t cursor;
-        if (!md_token_to_cursor(_md_ptr.get(), cl, &cursor))
+        mdcursor_t raw_cursor;
+        if (!md_token_to_cursor(_md_ptr.get(), cl, &raw_cursor))
             return CLDB_E_INDEX_NOTFOUND;
+        mdcursor<mdtid_TypeDef> cursor(raw_cursor);
 
-        mdcursor_t methodList;
+        mdcursor_indirect<mdtid_MethodDef, mdtid_MethodPtr> methodList;
         uint32_t methodListCount;
-        mdcursor_t fieldList;
+        mdcursor_indirect<mdtid_Field, mdtid_FieldPtr> fieldList;
         uint32_t fieldListCount;
-        if (!md_get_column_value_as_range(cursor, mdtTypeDef_FieldList, &fieldList, &fieldListCount)
-            || !md_get_column_value_as_range(cursor, mdtTypeDef_MethodList, &methodList, &methodListCount))
+
+        if (!cursor.get_column_value_as_range(TypeDef_FieldList, fieldList, &fieldListCount)
+             || !cursor.get_column_value_as_range(TypeDef_MethodList, methodList, &methodListCount))
         {
             return CLDB_E_FILE_CORRUPT;
         }
@@ -783,10 +788,11 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumMembersWithName(
         // Iterate the Type's methods
         for (uint32_t i = 0; i < methodListCount; ++i)
         {
-            mdcursor_t methodCursor;
-            if (!md_resolve_indirect_cursor(methodList, &methodCursor))
+            mdcursor<mdtid_MethodDef> methodCursor;
+            if (!methodList.try_get(methodCursor))
                 return CLDB_E_FILE_CORRUPT;
-            if (!md_get_column_value_as_utf8(methodCursor, mdtMethodDef_Name, &toMatch))
+            
+            if (!methodCursor.get_column_value(MethodDef_Name, &toMatch))
                 return CLDB_E_FILE_CORRUPT;
 
             if (0 == ::strcmp(toMatch, cvt))
@@ -794,16 +800,17 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumMembersWithName(
                 (void)md_cursor_to_token(methodCursor, &matchedTk);
                 RETURN_IF_FAILED(HCORENUMImpl::AddToDynamicEnum(*enumImpl, matchedTk));
             }
-            (void)md_cursor_next(&methodList);
+            (void)md_cursor_next(methodList);
         }
 
         // Iterate the Type's fields
         for (uint32_t i = 0; i < fieldListCount; ++i)
         {
-            mdcursor_t fieldCursor;
-            if (!md_resolve_indirect_cursor(fieldList, &fieldCursor))
+            mdcursor<mdtid_Field> fieldCursor;
+            if (!fieldList.try_get(fieldCursor))
                 return CLDB_E_FILE_CORRUPT;
-            if (!md_get_column_value_as_utf8(fieldCursor, mdtField_Name, &toMatch))
+            
+            if (!fieldCursor.get_column_value(Field_Name, &toMatch))
                 return CLDB_E_FILE_CORRUPT;
 
             if (0 == ::strcmp(toMatch, cvt))
@@ -811,7 +818,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumMembersWithName(
                 (void)md_cursor_to_token(fieldCursor, &matchedTk);
                 RETURN_IF_FAILED(HCORENUMImpl::AddToDynamicEnum(*enumImpl, matchedTk));
             }
-            (void)md_cursor_next(&fieldList);
+            (void)md_cursor_next(fieldList);
         }
 
         *phEnum = cleanup.release();
@@ -2745,45 +2752,43 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetCustomAttributeByName(
             char const* nspace;
             char const* name;
 
-            mdcursor_t type;
             mdcursor_t tgtType;
-            mdToken typeTk;
             size_t len;
             char const* curr;
 
-            if (!md_get_column_value_as_cursor(custAttrCurr, mdtCustomAttribute_Type, &type))
+            mdcursor<mdtid_CustomAttribute> custAttr(custAttrCurr);
+            mdcoded_index<mdtid_MethodDef, mdtid_MemberRef> type;
+            if (!custAttr.get_column_value(CustomAttribute_Type, type))
             {
                 hr = CLDB_E_FILE_CORRUPT;
                 return true;
             }
 
-            // Cursor was returned so must be valid.
-            (void)md_cursor_to_token(type, &typeTk);
+            // Resolve the cursor based on its type using visit().
+            type.visit([&]<mdtable_id_t TableId>(mdcursor<TableId> typeCursor) {
+                if constexpr (TableId == mdtid_MethodDef)
+                {
+                    if (!md_find_cursor_of_range_element(typeCursor, &tgtType))
+                    {
+                        hr = CLDB_E_FILE_CORRUPT;
+                    }
+                }
+                else if constexpr (TableId == mdtid_MemberRef)
+                {
+                    mdcursor_t raw_memberRefClass;
+                    if (!md_get_column_value_as_cursor(typeCursor, mdtMemberRef_Class, &raw_memberRefClass))
+                    {
+                        hr = CLDB_E_FILE_CORRUPT;
+                    }
+                    else
+                    {
+                        tgtType = raw_memberRefClass;
+                    }
+                }
+            });
 
-            // Resolve the cursor based on its type.
-            switch (TypeFromToken(typeTk))
-            {
-            case mdtMethodDef:
-                if (!md_find_cursor_of_range_element(type, &tgtType))
-                {
-                    hr = CLDB_E_FILE_CORRUPT;
-                    return true;
-                }
-                break;
-            case mdtMemberRef:
-                if (!md_get_column_value_as_cursor(type, mdtMemberRef_Class, &tgtType))
-                {
-                    hr = CLDB_E_FILE_CORRUPT;
-                    return true;
-                }
-                break;
-            default:
-                assert(!"Unexpected token in GetCustomAttributeByName");
-                {
-                    hr = COR_E_BADIMAGEFORMAT;
-                    return true;
-                }
-            }
+            if (FAILED(hr))
+                return true;
 
             if (FAILED(hr = ResolveTypeDefRefSpecToName(tgtType, &nspace, &name)))
             {
@@ -2810,7 +2815,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetCustomAttributeByName(
                 {
                     uint8_t const* data;
                     uint32_t dataLen;
-                    if (!md_get_column_value_as_blob(custAttrCurr, mdtCustomAttribute_Value, &data, &dataLen))
+                    if (!custAttr.get_column_value(CustomAttribute_Value, &data, &dataLen))
                     {
                         hr = CLDB_E_FILE_CORRUPT;
                         return true;
@@ -2852,20 +2857,23 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetNestedClassProps(
     if (TypeFromToken(tdNestedClass) != mdtTypeDef)
         return E_INVALIDARG;
 
-    mdcursor_t cursor;
+    mdcursor<mdtid_NestedClass> cursor;
     uint32_t count;
-    mdcursor_t nestedClassRow;
-    if (!md_create_cursor(_md_ptr.get(), mdtid_NestedClass, &cursor, &count)
-        || !md_find_row_from_cursor(cursor, mdtNestedClass_NestedClass, RidFromToken(tdNestedClass), &nestedClassRow))
+    if (!md_create_cursor(_md_ptr.get(), cursor, &count))
+        return CLDB_E_RECORD_NOTFOUND;
+
+    mdcursor<mdtid_NestedClass> nestedClassRow;
+    if (!md_find_row_from_cursor(cursor, NestedClass_NestedClass, tdNestedClass, nestedClassRow))
     {
         return CLDB_E_RECORD_NOTFOUND;
     }
 
-    mdTypeDef enclosed;
-    if (!md_get_column_value_as_token(nestedClassRow, mdtNestedClass_EnclosingClass, &enclosed))
+    mdcursor<mdtid_TypeDef> enclosingClass;
+    if (!nestedClassRow.get_column_value(NestedClass_EnclosingClass, enclosingClass))
         return CLDB_E_FILE_CORRUPT;
 
-    *ptdEnclosingClass = enclosed;
+    if (!md_cursor_to_token(enclosingClass, ptdEnclosingClass))
+        return CLDB_E_FILE_CORRUPT;
     return S_OK;
 }
 
