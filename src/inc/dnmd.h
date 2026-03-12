@@ -139,6 +139,10 @@ typedef enum
 #endif // DNMD_PORTABLE_PDB
 } mdtable_id_t;
 
+// Macros for computing token types.
+#define CreateTokenType(tk) (mdToken)(((uint32_t)tk << 24) & 0xff000000)
+#define ExtractTokenType(tk) ((tk >> 24) & 0xff)
+
 // Table cursor definition
 typedef struct mdcursor__
 {

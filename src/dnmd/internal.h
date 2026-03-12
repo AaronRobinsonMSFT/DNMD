@@ -69,10 +69,6 @@ static_assert(MDTABLE_MAX_COUNT <= 64, "Specification sets max table count to 64
 
 #define MDTABLE_MAX_COLUMN_COUNT 9
 
-// Macros for computing token types.
-#define CreateTokenType(tk) (mdToken)(((uint32_t)tk << 24) & 0xff000000)
-#define ExtractTokenType(tk) ((tk >> 24) & 0xff)
-
 // Flags and masks used to embed column details for
 // interpreting table rows.
 typedef enum
