@@ -1160,7 +1160,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::FindMethod(
             if (!md_get_column_value_as_blob(target, mdtMethodDef_Signature, &sig, &sigLen))
                 return CLDB_E_FILE_CORRUPT;
             if (sigLen != methodDefSig.size()
-                || ::memcmp(methodDefSig, sig, sigLen) != 0)
+                || ::memcmp((uint8_t*)methodDefSig, sig, sigLen) != 0)
             {
                 continue;
             }
@@ -2757,7 +2757,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetCustomAttributeByName(
             char const* curr;
 
             mdcursor<mdtid_CustomAttribute> custAttr(custAttrCurr);
-            mdcoded_index<mdtid_MethodDef, mdtid_MemberRef> type;
+            mdcursor_raw<mdtid_MethodDef, mdtid_MemberRef> type;
             if (!custAttr.get_column_value(CustomAttribute_Type, type))
             {
                 hr = CLDB_E_FILE_CORRUPT;
@@ -2765,15 +2765,15 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetCustomAttributeByName(
             }
 
             // Resolve the cursor based on its type using visit().
-            type.visit([&]<mdtable_id_t TableId>(mdcursor<TableId> typeCursor) {
-                if constexpr (TableId == mdtid_MethodDef)
+            type.visit([&](auto typeCursor) {
+                if constexpr (mdcursor_tableid_v<decltype(typeCursor)> == mdtid_MethodDef)
                 {
                     if (!md_find_cursor_of_range_element(typeCursor, &tgtType))
                     {
                         hr = CLDB_E_FILE_CORRUPT;
                     }
                 }
-                else if constexpr (TableId == mdtid_MemberRef)
+                else if constexpr (mdcursor_tableid_v<decltype(typeCursor)> == mdtid_MemberRef)
                 {
                     mdcursor_t raw_memberRefClass;
                     if (!md_get_column_value_as_cursor(typeCursor, mdtMemberRef_Class, &raw_memberRefClass))
@@ -2862,14 +2862,15 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetNestedClassProps(
     if (!md_create_cursor(_md_ptr.get(), cursor, &count))
         return CLDB_E_RECORD_NOTFOUND;
 
-    mdcursor<mdtid_NestedClass> nestedClassRow;
+    mdcursor_raw<mdtid_TypeDef> nestedClassRow;
     if (!md_find_row_from_cursor(cursor, NestedClass_NestedClass, tdNestedClass, nestedClassRow))
     {
         return CLDB_E_RECORD_NOTFOUND;
     }
 
     mdcursor<mdtid_TypeDef> enclosingClass;
-    if (!nestedClassRow.get_column_value(NestedClass_EnclosingClass, enclosingClass))
+
+    if (!nestedClassRow.get_as<mdtid_TypeDef>(enclosingClass))
         return CLDB_E_FILE_CORRUPT;
 
     if (!md_cursor_to_token(enclosingClass, ptdEnclosingClass))

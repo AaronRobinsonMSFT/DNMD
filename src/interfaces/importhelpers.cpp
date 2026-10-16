@@ -212,7 +212,7 @@ namespace
             return CORSEC_E_INVALID_PUBLICKEY;
 
         if (publicKeyBlob.size() == sizeof(StrongNameKeys::EcmaPublicKey)
-            && std::memcmp(publicKeyBlob, StrongNameKeys::EcmaPublicKey, sizeof(StrongNameKeys::EcmaPublicKey)) == 0)
+            && std::memcmp((uint8_t const*)publicKeyBlob, StrongNameKeys::EcmaPublicKey, sizeof(StrongNameKeys::EcmaPublicKey)) == 0)
         {
             return S_OK;
         }
@@ -685,7 +685,7 @@ namespace
         if (!md_set_column_value_as_utf8(assemblyRef, mdtAssemblyRef_Culture, assemblyCulture))
             return E_FAIL;
 
-        uint8_t const* hash = sourceAssemblyHash;
+        uint8_t const* hash = (uint8_t const*)sourceAssemblyHash;
         uint32_t hashLength = (uint32_t)sourceAssemblyHash.size();
         if (!md_set_column_value_as_blob(assemblyRef, mdtAssemblyRef_HashValue, hash, hashLength))
             return E_FAIL;
@@ -1703,7 +1703,7 @@ HRESULT ImportReferenceToTypeDefOrRefOrSpec(
             if (!md_append_row(targetModule, mdtid_TypeSpec, &typeSpec))
                 return E_FAIL;
 
-            uint8_t const* importedSignatureData = importedSignature;
+            uint8_t const* importedSignatureData = (uint8_t const*)importedSignature;
             uint32_t importedSignatureLength = (uint32_t)importedSignature.size();
             if (!md_set_column_value_as_blob(typeSpec, mdtTypeSpec_Signature, importedSignatureData, importedSignatureLength))
                 return E_FAIL;

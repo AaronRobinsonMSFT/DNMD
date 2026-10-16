@@ -28,8 +28,6 @@ FetchContent_MakeAvailable(googletest benchmark)
 
 include(GoogleTest)
 
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_subdirectory(regpal)
 add_subdirectory(regperf)
 add_subdirectory(regtest)

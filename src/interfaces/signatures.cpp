@@ -11,7 +11,7 @@ namespace
     std::tuple<uint32_t, span<T>> read_compressed_uint(span<T> signature)
     {
         ULONG value = 0;
-        signature = slice(signature, CorSigUncompressData(signature, &value));
+        signature = slice(signature, CorSigUncompressData((T*)signature, &value));
         return std::make_tuple(value, signature);
     }
 
@@ -19,7 +19,7 @@ namespace
     std::tuple<int32_t, span<T>> read_compressed_int(span<T> signature)
     {
         int value = 0;
-        signature = slice(signature, CorSigUncompressSignedInt(signature, &value));
+        signature = slice(signature, CorSigUncompressSignedInt((T*)signature, &value));
         return std::make_tuple(value, signature);
     }
 
@@ -27,7 +27,7 @@ namespace
     std::tuple<mdToken, span<T>> read_compressed_token(span<T> signature)
     {
         mdToken value = mdTokenNil;
-        signature = slice(signature, CorSigUncompressToken(signature, &value));
+        signature = slice(signature, CorSigUncompressToken((T*)signature, &value));
         return std::make_tuple(value, signature);
     }
 
@@ -272,14 +272,14 @@ void GetMethodDefSigFromMethodRefSig(span<uint8_t> methodRefSig, inline_span<uin
     methodDefSig[offset++] = callingConvention;
     if ((callingConvention & IMAGE_CEE_CS_CALLCONV_GENERIC) == IMAGE_CEE_CS_CALLCONV_GENERIC)
     {
-        offset += CorSigCompressData(genericParameterCount, methodDefSig + offset);
+        offset += CorSigCompressData(genericParameterCount, (uint8_t*)methodDefSig + offset);
     }
-    std::memcpy(methodDefSig + offset, compressedNewParamCount, newParamCountCompressedSize);
+    std::memcpy((uint8_t*)methodDefSig + offset, (uint8_t*)compressedNewParamCount, newParamCountCompressedSize);
     offset += newParamCountCompressedSize;
 
     // Now that we've re-written the parameter count, we can copy the rest of the signature directly from the MethodRefSig
     assert(returnTypeAndParameters.size() >= methodDefSigBufferLength - offset);
-    std::memcpy(methodDefSig + offset, returnTypeAndParameters, methodDefSigBufferLength - offset);
+    std::memcpy((uint8_t*)methodDefSig + offset, (uint8_t*)returnTypeAndParameters, methodDefSigBufferLength - offset);
 
     return;
 }
