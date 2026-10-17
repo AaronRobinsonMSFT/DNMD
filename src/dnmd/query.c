@@ -59,6 +59,13 @@ bool md_cursor_next(mdcursor_t* c)
     return md_cursor_move(c, 1);
 }
 
+bool md_cursor_is_dereferenceable(mdcursor_t c)
+{
+    mdtable_t* table = CursorTable(&c);
+    uint32_t row = CursorRow(&c);
+    return table != NULL && row != 0 && row <= table->row_count;
+}
+
 bool md_token_to_cursor(mdhandle_t handle, mdToken tk, mdcursor_t* c)
 {
     assert(c != NULL);
@@ -907,13 +914,14 @@ bool md_resolve_indirect_cursor(mdcursor_t c, mdcursor_t* target)
     }
     col_index_t col_idx = index_to_col(0, table->table_id);
 
-    // If the cursor points to the end of the indirection table (just after the last row),
-    // then we'll manually resolve it to the end of the target table.
-    if (CursorEnd(&c))
+    // Sentinel positions do not have a row to read in the indirection table.
+    if (CursorNull(&c) || CursorEnd(&c))
     {
         mdtable_id_t tgt_table_id = ExtractTable(table->column_details[col_idx]);
         mdtable_t* tgt_table = type_to_table(table->cxt, tgt_table_id);
-        *target = create_cursor(tgt_table, tgt_table->row_count + 1);
+        if (tgt_table->table_id == 0 && tgt_table_id != 0)
+            tgt_table->table_id = tgt_table_id;
+        *target = create_cursor(tgt_table, CursorNull(&c) ? 0 : tgt_table->row_count + 1);
         return true;
     }
 

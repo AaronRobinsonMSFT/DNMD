@@ -10,7 +10,7 @@
 #include "dnmd_platform.hpp"
 #include "span.hpp"
 
-inline bool create_mdhandle(malloc_span<uint8_t> const& buffer, mdhandle_ptr& handle)
+inline bool create_mdhandle(malloc_span<uint8_t> const& buffer, dnmd::handle_ptr& handle)
 {
     mdhandle_t h;
     if (!md_create_handle((uint8_t const*)buffer, buffer.size(), &h))

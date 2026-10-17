@@ -159,6 +159,9 @@ bool md_cursor_move(mdcursor_t* c, int32_t delta);
 // Move to the next row.
 bool md_cursor_next(mdcursor_t* c);
 
+// Return whether the cursor points to an existing row, rather than nil or one past the end.
+bool md_cursor_is_dereferenceable(mdcursor_t c);
+
 // Convert between a token and location in metadata tables.
 bool md_token_to_cursor(mdhandle_t handle, mdToken tk, mdcursor_t* c);
 bool md_cursor_to_token(mdcursor_t c, mdToken* tk);
@@ -499,6 +502,7 @@ bool md_find_token_of_range_element(mdcursor_t element, mdToken* tk);
 bool md_find_cursor_of_range_element(mdcursor_t element, mdcursor_t* cursor);
 
 // Given a cursor, resolve any indirections to the final cursor or return the original cursor if it does not point to an indirection table.
+// Nil and one-past-the-end indirection cursors resolve to the corresponding target table positions.
 // Returns true if the cursor was not an indirect cursor or if the indirection was resolved, or false if the cursor pointed to an invalid indirection table entry.
 bool md_resolve_indirect_cursor(mdcursor_t c, mdcursor_t* target);
 

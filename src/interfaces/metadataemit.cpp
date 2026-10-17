@@ -181,7 +181,7 @@ HRESULT MetadataEmit::DefineTypeDef(
         mdToken     rtkImplements[],
         mdTypeDef   *ptd)
 {
-    md_added_row_t c;
+    dnmd::added_row_t c;
     if (!md_append_row(MetaData(), mdtid_TypeDef, &c))
         return E_FAIL;
 
@@ -243,7 +243,7 @@ HRESULT MetadataEmit::DefineTypeDef(
     {
         for (mdToken currentImplementation = rtkImplements[i]; currentImplementation != mdTokenNil; currentImplementation = rtkImplements[++i])
         {
-            md_added_row_t interfaceImpl;
+            dnmd::added_row_t interfaceImpl;
             if (!md_append_row(MetaData(), mdtid_InterfaceImpl, &interfaceImpl))
                 return E_FAIL;
 
@@ -281,7 +281,7 @@ HRESULT MetadataEmit::DefineNestedType(
 
     RETURN_IF_FAILED(DefineTypeDef(szTypeDef, dwTypeDefFlags, tkExtends, rtkImplements, ptd));
 
-    md_added_row_t c;
+    dnmd::added_row_t c;
     if (!md_append_row(MetaData(), mdtid_NestedClass, &c))
         return E_FAIL;
 
@@ -322,7 +322,7 @@ HRESULT MetadataEmit::DefineMethod(
     if (!md_token_to_cursor(MetaData(), td, &type))
         return CLDB_E_FILE_CORRUPT;
 
-    md_added_row_t newMethod;
+    dnmd::added_row_t newMethod;
     if (!md_add_new_row_to_list(type, mdtTypeDef_MethodList, &newMethod))
         return E_FAIL;
 
@@ -360,7 +360,7 @@ HRESULT MetadataEmit::DefineMethodImpl(
         mdToken     tkBody,
         mdToken     tkDecl)
 {
-    md_added_row_t c;
+    dnmd::added_row_t c;
     if (!md_append_row(MetaData(), mdtid_MethodImpl, &c))
         return E_FAIL;
 
@@ -382,7 +382,7 @@ HRESULT MetadataEmit::DefineTypeRefByName(
         LPCWSTR     szName,
         mdTypeRef   *ptr)
 {
-    md_added_row_t c;
+    dnmd::added_row_t c;
     if (!md_append_row(MetaData(), mdtid_TypeRef, &c))
         return E_FAIL;
 
@@ -475,7 +475,7 @@ HRESULT MetadataEmit::DefineMemberRef(
 
     // TODO: Check for duplicates
 
-    md_added_row_t c;
+    dnmd::added_row_t c;
     if (!md_append_row(MetaData(), mdtid_MemberRef, &c))
         return E_FAIL;
 
@@ -523,7 +523,7 @@ namespace
 {
     HRESULT AddMethodSemantic(mdhandle_t md, mdcursor_t parent, CorMethodSemanticsAttr semantic, mdMethodDef method)
     {
-        md_added_row_t addMethodSemantic;
+        dnmd::added_row_t addMethodSemantic;
         if (!md_append_row(md, mdtid_MethodSemantics, &addMethodSemantic))
             return E_FAIL;
 
@@ -605,7 +605,7 @@ namespace
     {
         HRESULT hr;
         mdcursor_t c;
-        md_added_row_t addedRow;
+        dnmd::added_row_t addedRow;
         uint32_t count;
         if (!md_create_cursor(md, childTable, &c, &count)
             || !md_find_row_from_cursor(c, parentCol, parent, &c))
@@ -653,7 +653,7 @@ HRESULT MetadataEmit::DefineEvent(
     {
         HRESULT hr;
         // TODO: Check for duplicates
-        md_added_row_t addedEvent;
+        dnmd::added_row_t addedEvent;
         if (!md_add_new_row_to_list(c, mdtEventMap_EventList, &addedEvent))
             return E_FAIL;
 
@@ -855,7 +855,7 @@ HRESULT MetadataEmit::DefinePermissionSet(
     assert(TypeFromToken(tk) == mdtTypeDef || TypeFromToken(tk) == mdtMethodDef ||
              TypeFromToken(tk) == mdtAssembly);
 
-    md_added_row_t c;
+    dnmd::added_row_t c;
     if (!md_append_row(MetaData(), mdtid_DeclSecurity, &c))
         return E_FAIL;
 
@@ -920,7 +920,7 @@ HRESULT MetadataEmit::GetTokenFromSig(
         ULONG       cbSig,
         mdSignature *pmsig)
 {
-    md_added_row_t c;
+    dnmd::added_row_t c;
     if (!md_append_row(MetaData(), mdtid_StandAloneSig, &c))
         return E_FAIL;
 
@@ -939,7 +939,7 @@ HRESULT MetadataEmit::DefineModuleRef(
         LPCWSTR     szName,
         mdModuleRef *pmur)
 {
-    md_added_row_t c;
+    dnmd::added_row_t c;
     if (!md_append_row(MetaData(), mdtid_ModuleRef, &c))
         return E_FAIL;
 
@@ -977,7 +977,7 @@ HRESULT MetadataEmit::GetTokenFromTypeSpec(
         ULONG       cbSig,
         mdTypeSpec *ptypespec)
 {
-    md_added_row_t c;
+    dnmd::added_row_t c;
     if (!md_append_row(MetaData(), mdtid_TypeSpec, &c))
         return E_FAIL;
 
@@ -1243,7 +1243,7 @@ HRESULT MetadataEmit::SetTypeDefProps(
         mdToken currentImplementation = rtkImplements[implIndex];
         do
         {
-            md_added_row_t interfaceImpl;
+            dnmd::added_row_t interfaceImpl;
             if (!md_append_row(MetaData(), mdtid_InterfaceImpl, &interfaceImpl))
                 return E_FAIL;
 
@@ -1415,13 +1415,13 @@ HRESULT MetadataEmit::DefinePinvokeMap(
     // If we found a duplicate and ENC is off, fail.
     // Otherwise, we need to make a new row
     mdcursor_t row_to_edit;
-    md_added_row_t added_row_wrapper;
+    dnmd::added_row_t added_row_wrapper;
 
     // TODO: We don't expose tokens for the ImplMap table, so as long as we aren't generating ENC deltas
     // we can insert in-place.
     if (!md_append_row(MetaData(), mdtid_ImplMap, &row_to_edit))
         return E_FAIL;
-    added_row_wrapper = md_added_row_t(row_to_edit);
+    added_row_wrapper = dnmd::added_row_t(row_to_edit);
 
     if (!md_set_column_value_as_token(row_to_edit, mdtImplMap_MemberForwarded, tk))
         return E_FAIL;
@@ -1538,7 +1538,7 @@ HRESULT MetadataEmit::DefineCustomAttribute(
     // TODO: Recognize pseudoattributes and handle them appropriately.
 
     // We hand out tokens here, so we can't move rows to keep the parent column sorted.
-    md_added_row_t new_row;
+    dnmd::added_row_t new_row;
     if (!md_append_row(MetaData(), mdtid_CustomAttribute, &new_row))
         return E_FAIL;
 
@@ -1660,7 +1660,7 @@ HRESULT MetadataEmit::DefineField(
 
     char const* name = cvt;
 
-    md_added_row_t c;
+    dnmd::added_row_t c;
     mdcursor_t typeDef;
     if (!md_token_to_cursor(MetaData(), td, &typeDef))
         return CLDB_E_FILE_CORRUPT;
@@ -1721,7 +1721,7 @@ HRESULT MetadataEmit::DefineField(
 
     if (hasConstant)
     {
-        md_added_row_t constant;
+        dnmd::added_row_t constant;
         if (!md_append_row(MetaData(), mdtid_Constant, &constant))
             return E_FAIL;
 
@@ -1772,7 +1772,7 @@ HRESULT MetadataEmit::DefineProperty(
         [=] (mdcursor_t map)
         {
             HRESULT hr;
-            md_added_row_t c;
+            dnmd::added_row_t c;
             if (!md_add_new_row_to_list(map, mdtPropertyMap_Parent, &c))
                 return E_FAIL;
 
@@ -1839,7 +1839,7 @@ HRESULT MetadataEmit::DefineProperty(
 
             if (hasConstant)
             {
-                md_added_row_t constant;
+                dnmd::added_row_t constant;
                 if (!md_append_row(MetaData(), mdtid_Constant, &constant))
                     return E_FAIL;
 
@@ -1886,7 +1886,7 @@ HRESULT MetadataEmit::DefineParam(
 
     char const* name = cvt;
 
-    md_added_row_t c;
+    dnmd::added_row_t c;
     mdcursor_t method;
     if (!md_token_to_cursor(MetaData(), md, &method))
         return CLDB_E_FILE_CORRUPT;
@@ -1924,7 +1924,7 @@ HRESULT MetadataEmit::DefineParam(
 
     if (hasConstant)
     {
-        md_added_row_t constant;
+        dnmd::added_row_t constant;
         if (!md_append_row(MetaData(), mdtid_Constant, &constant))
             return E_FAIL;
 
@@ -2315,7 +2315,7 @@ HRESULT MetadataEmit::DefineMethodSpec(
     if (cbSigBlob == 0 || pvSigBlob == nullptr || pmi == nullptr)
         return META_E_BAD_INPUT_PARAMETER;
 
-    md_added_row_t c;
+    dnmd::added_row_t c;
     if (!md_append_row(MetaData(), mdtid_MethodSpec, &c))
         return E_FAIL;
 
@@ -2389,7 +2389,7 @@ HRESULT MetadataEmit::DefineGenericParam(
 
     // TODO: Check for duplicates
 
-    md_added_row_t c;
+    dnmd::added_row_t c;
     if (!md_append_row(MetaData(), mdtid_GenericParam, &c))
         return E_FAIL;
 
@@ -2425,7 +2425,7 @@ HRESULT MetadataEmit::DefineGenericParam(
     {
         for (size_t i = 0; RidFromToken(rtkConstraints[i]) != mdTokenNil; i++)
         {
-            md_added_row_t added_row;
+            dnmd::added_row_t added_row;
             if (!md_append_row(MetaData(), mdtid_GenericParamConstraint, &added_row))
                 return E_FAIL;
 
@@ -2503,7 +2503,7 @@ HRESULT MetadataEmit::SetGenericParamProps(
 
         for (size_t i = 0; RidFromToken(rtkConstraints[i]) != mdTokenNil; i++)
         {
-            md_added_row_t added_row;
+            dnmd::added_row_t added_row;
             if (!md_append_row(MetaData(), mdtid_GenericParamConstraint, &added_row))
                 return E_FAIL;
 
@@ -2646,7 +2646,7 @@ HRESULT MetadataEmit::DefineAssemblyRef(
     if (!cvt.Success())
         return E_INVALIDARG;
 
-    md_added_row_t c;
+    dnmd::added_row_t c;
     if (!md_append_row(MetaData(), mdtid_AssemblyRef, &c))
         return E_FAIL;
 
@@ -2740,7 +2740,7 @@ HRESULT MetadataEmit::DefineFile(
     if (!cvt.Success())
         return E_INVALIDARG;
 
-    md_added_row_t c;
+    dnmd::added_row_t c;
 
     if (!md_append_row(MetaData(), mdtid_File, &c))
         return E_FAIL;
@@ -2783,7 +2783,7 @@ HRESULT MetadataEmit::DefineExportedType(
         DWORD       dwExportedTypeFlags,
         mdExportedType   *pmdct)
 {
-    md_added_row_t c;
+    dnmd::added_row_t c;
     if (!md_append_row(MetaData(), mdtid_ExportedType, &c))
         return E_FAIL;
 
@@ -2845,7 +2845,7 @@ HRESULT MetadataEmit::DefineManifestResource(
         mdManifestResource  *pmdmr)
 {
     // TODO: check for duplicates
-    md_added_row_t c;
+    dnmd::added_row_t c;
     if (!md_append_row(MetaData(), mdtid_ManifestResource, &c))
         return E_FAIL;
 

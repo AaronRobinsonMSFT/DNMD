@@ -22,7 +22,52 @@ The primary goal of DNMD is to explore the benefits of a rewrite of the metadata
 
 - [CMake](https://cmake.org/download/) 3.10
 
-- C11 and C++14 compliant compilers
+- C11 and C++17 compliant compilers
+
+## C++ API
+
+`dnmd.hpp` provides typed cursors and column descriptors in the `dnmd` namespace.
+The C API names and types in `dnmd.h` remain global.
+`dnmd::cursor<TableId>` represents an existing, dereferenceable row and cannot be
+default-constructed or constructed directly from a C cursor.
+`dnmd::cursor_raw<TableIds...>` and `dnmd::cursor_indirect<DirectTableId, IndirectTableId>`
+represent positions, including nil and one-past-the-end positions. Test a position
+before calling `as()` to obtain a row; calling `as()` on a non-dereferenceable
+position violates its precondition.
+
+```cpp
+dnmd::handle_ptr handle{md_create_new_handle()};
+auto types = dnmd::md_create_cursor<mdtid_TypeDef>(handle.get());
+if (types)
+{
+    auto type = types.as();
+    char const* name;
+    if (!type.get_column_value(dnmd::columns::TypeDef_TypeName, &name))
+        return false;
+}
+```
+
+Pass a `uint32_t*` as the second argument when the row count is also needed.
+
+Only single-table raw cursors expose `as()`. Narrow a multi-table position with
+`get_as<TableId>()`, which returns a single-table raw cursor, or use `visit()` to
+dispatch to the matching row type. `visit()` returns false without invoking the
+callable for nil or end positions.
+
+`dnmd::md_token_to_cursor<TableIds...>` also accepts multiple possible table IDs.
+Use `dnmd::md_is_valid_token` when only validation is needed. Rows provide
+`get_column_values` for bulk token reads and `get_parent_token` for list owners.
+Typed range searches use column descriptors and return a raw cursor in the
+searched table along with the range status and count.
+
+Raw and indirect cursors expose `get_token(mdToken&)`, including for sentinel
+positions. An indirect cursor additionally exposes `get_target_token(mdToken&)`
+for its resolved target. Indirect cursors cache their resolved targets and
+dereferenceability when constructed or advanced; reacquire them after metadata
+edits that affect their source or target positions. Advance positions with
+`dnmd::md_cursor_next` or `dnmd::md_cursor_move`, not row cursors. Typed row searches return a
+raw cursor in the searched table, rather than the table referenced by the column.
+The metadata handle must outlive its cursors.
 
 ## Build
 

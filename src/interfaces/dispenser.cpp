@@ -71,7 +71,7 @@ namespace
                 return E_INVALIDARG;
             }
 
-            mdhandle_ptr md_ptr { md_create_new_handle() };
+            dnmd::handle_ptr md_ptr { md_create_new_handle() };
             if (md_ptr == nullptr)
                 return E_OUTOFMEMORY;
             
@@ -146,7 +146,7 @@ namespace
             if (!md_create_handle(pData, cbData, &mdhandle))
                 return CLDB_E_FILE_CORRUPT;
 
-            mdhandle_ptr md_ptr{ mdhandle };
+            dnmd::handle_ptr md_ptr{ mdhandle };
 
             dncp::com_ptr<ControllingIUnknown> obj;
             obj.Attach(new (std::nothrow) ControllingIUnknown());

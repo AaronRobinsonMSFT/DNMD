@@ -524,7 +524,7 @@ namespace
             return S_OK;
         }
 
-        md_added_row_t assemblyRef;
+        dnmd::added_row_t assemblyRef;
         if (!md_append_row(targetModule, mdtid_AssemblyRef, &assemblyRef))
             return E_FAIL;
 
@@ -658,7 +658,7 @@ namespace
             return S_OK;
         }
 
-        md_added_row_t assemblyRef;
+        dnmd::added_row_t assemblyRef;
         if (!md_append_row(targetModule, mdtid_AssemblyRef, &assemblyRef))
             return E_FAIL;
 
@@ -789,7 +789,7 @@ HRESULT ImportReferenceToTypeDef(
             return E_FAIL;
         }
 
-        md_added_row_t moduleRef;
+        dnmd::added_row_t moduleRef;
         if (!md_append_row(targetModule, mdtid_ModuleRef, &moduleRef)
             || !md_set_column_value_as_utf8(moduleRef, mdtModuleRef_Name, importName))
         {
@@ -843,7 +843,7 @@ HRESULT ImportReferenceToTypeDef(
         for (; !typesForTypeRefs.empty(); typesForTypeRefs.pop())
         {
             mdcursor_t typeDef = typesForTypeRefs.top();
-            md_added_row_t typeRef;
+            dnmd::added_row_t typeRef;
             if (!md_append_row(targetModule, mdtid_TypeRef, &typeRef))
                 return E_FAIL;
 
@@ -975,7 +975,7 @@ namespace
                     {
                         if (!FindModuleRef(module, fileName, importedScope))
                         {
-                            md_added_row_t moduleRef;
+                            dnmd::added_row_t moduleRef;
                             if (!md_append_row(module, mdtid_ModuleRef, &moduleRef))
                                 return E_FAIL;
 
@@ -1063,7 +1063,7 @@ namespace
                 }
                 else if (!FindModuleRef(module, assemblyModuleName, importedScope))
                 {
-                    md_added_row_t moduleRef;
+                    dnmd::added_row_t moduleRef;
                     if (!md_append_row(module, mdtid_ModuleRef, &moduleRef))
                         return E_FAIL;
 
@@ -1271,7 +1271,7 @@ namespace
 
                 if (!FindModuleRef(targetModule, moduleName, &targetOutermostScope))
                 {
-                    md_added_row_t moduleRef;
+                    dnmd::added_row_t moduleRef;
                     if (!md_append_row(targetModule, mdtid_ModuleRef, &moduleRef))
                         return E_FAIL;
 
@@ -1306,7 +1306,7 @@ namespace
                 }
                 else if (!FindModuleRef(targetModule, moduleName, &targetOutermostScope))
                 {
-                    md_added_row_t moduleRef;
+                    dnmd::added_row_t moduleRef;
                     if (!md_append_row(targetModule, mdtid_ModuleRef, &moduleRef))
                         return E_FAIL;
 
@@ -1624,7 +1624,7 @@ namespace
         for (; !typesForTypeRefs.empty(); typesForTypeRefs.pop())
         {
             mdcursor_t sourceEnclosingTypeRef = typesForTypeRefs.top();
-            md_added_row_t targetEnclosingTypeRef;
+            dnmd::added_row_t targetEnclosingTypeRef;
             if (!md_append_row(targetModule, mdtid_TypeRef, &targetEnclosingTypeRef))
                 return E_FAIL;
 
@@ -1699,7 +1699,7 @@ HRESULT ImportReferenceToTypeDefOrRefOrSpec(
             inline_span<uint8_t> importedSignature;
             RETURN_IF_FAILED(ImportTypeSpecBlob(sourceAssembly, sourceModule, sourceAssemblyHash, targetAssembly, targetModule, {signature, signatureLength}, onRowAdded, importedSignature));
 
-            md_added_row_t typeSpec;
+            dnmd::added_row_t typeSpec;
             if (!md_append_row(targetModule, mdtid_TypeSpec, &typeSpec))
                 return E_FAIL;
 

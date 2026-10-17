@@ -1,4 +1,5 @@
 set(SOURCES
+	cursor.cpp
 	typeref.cpp
 	module.cpp
 	typedef.cpp
