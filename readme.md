@@ -60,6 +60,13 @@ Use `dnmd::md_is_valid_token` when only validation is needed. Rows provide
 Typed range searches use column descriptors and return a raw cursor in the
 searched table along with the range status and count.
 
+Rows provide matching `set_column_value` overloads for constants, UTF-8 strings,
+blobs, GUIDs, user strings, and table references. Setters return `bool` without
+exception-based error handling and retain the C setters' input preconditions.
+References accept tokens, typed rows, and raw positions, including nil and end
+positions. An indirect value supplies its resolved target for a reference column,
+but its source position for a list column so pointer-table indices are preserved.
+
 Raw and indirect cursors expose `get_token(mdToken&)`, including for sentinel
 positions. An indirect cursor additionally exposes `get_target_token(mdToken&)`
 for its resolved target. Indirect cursors cache their resolved targets and

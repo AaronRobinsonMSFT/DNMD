@@ -25,7 +25,7 @@ using handle_ptr = std::unique_ptr<mdhandle_t, handle_deleter_t>;
 struct added_row_t final
 {
 private:
-    mdcursor_t new_row;
+    mdcursor_t new_row{};
 public:
     added_row_t() = default;
     explicit added_row_t(mdcursor_t row) : new_row{ row } {}
@@ -84,6 +84,12 @@ struct column final
 
 template<mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
 struct cursor_indirect;
+
+namespace detail
+{
+template<mdtable_id_t TableId, mdtable_id_t... TableIds>
+inline constexpr bool contains_table_id_v = ((TableId == TableIds) || ...);
+}
 
 template<mdtable_id_t TableId>
 struct cursor final
@@ -186,6 +192,90 @@ struct cursor final
         bool get_column_value(column<TableId, column_type_string> column, char const** str) const noexcept
         {
             return md_get_column_value_as_utf8(_cursor, column.column_index, str);
+        }
+
+        bool set_column_value(column<TableId, column_type_constant> column, uint32_t value) const noexcept
+        {
+            return ::md_set_column_value_as_constant(_cursor, column.column_index, value);
+        }
+
+        bool set_column_value(column<TableId, column_type_string> column, char const* value) const noexcept
+        {
+            return ::md_set_column_value_as_utf8(_cursor, column.column_index, value);
+        }
+
+        bool set_column_value(column<TableId, column_type_blob> column, uint8_t const* value, uint32_t length) const noexcept
+        {
+            return ::md_set_column_value_as_blob(_cursor, column.column_index, value, length);
+        }
+
+        bool set_column_value(column<TableId, column_type_guid> column, mdguid_t value) const noexcept
+        {
+            return ::md_set_column_value_as_guid(_cursor, column.column_index, value);
+        }
+
+        bool set_column_value(column<TableId, column_type_userstring> column, char16_t const* value) const noexcept
+        {
+            return ::md_set_column_value_as_userstring(_cursor, column.column_index, value);
+        }
+
+        template<mdtable_id_t... TargetTableIds>
+        bool set_column_value(column<TableId, cursor_raw<TargetTableIds...>> column, mdToken value) const noexcept
+        {
+            return ::md_set_column_value_as_token(_cursor, column.column_index, value);
+        }
+
+        template<mdtable_id_t... TargetTableIds, mdtable_id_t ValueTableId>
+        bool set_column_value(column<TableId, cursor_raw<TargetTableIds...>> column, cursor<ValueTableId> value) const noexcept
+        {
+            static_assert(detail::contains_table_id_v<ValueTableId, TargetTableIds...>,
+                "The value must belong to a table referenced by the column.");
+            return ::md_set_column_value_as_cursor(_cursor, column.column_index, value);
+        }
+
+        template<mdtable_id_t... TargetTableIds, mdtable_id_t... ValueTableIds>
+        bool set_column_value(column<TableId, cursor_raw<TargetTableIds...>> column, cursor_raw<ValueTableIds...> const& value) const noexcept
+        {
+            static_assert((detail::contains_table_id_v<ValueTableIds, TargetTableIds...> && ...),
+                "The value must only reference tables allowed by the column.");
+            return ::md_set_column_value_as_cursor(_cursor, column.column_index, value);
+        }
+
+        template<mdtable_id_t... TargetTableIds, mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
+        bool set_column_value(column<TableId, cursor_raw<TargetTableIds...>> column, cursor_indirect<DirectTableId, IndirectTableId> const& value) const noexcept
+        {
+            static_assert(detail::contains_table_id_v<DirectTableId, TargetTableIds...>,
+                "The target must belong to a table referenced by the column.");
+            mdToken token;
+            return value.get_target_token(token) && ::md_set_column_value_as_token(_cursor, column.column_index, token);
+        }
+
+        template<mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
+        bool set_column_value(column<TableId, cursor_indirect<DirectTableId, IndirectTableId>> column, mdToken value) const noexcept
+        {
+            return ::md_set_column_value_as_token(_cursor, column.column_index, value);
+        }
+
+        template<mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId, mdtable_id_t ValueTableId>
+        bool set_column_value(column<TableId, cursor_indirect<DirectTableId, IndirectTableId>> column, cursor<ValueTableId> value) const noexcept
+        {
+            static_assert(ValueTableId == DirectTableId || ValueTableId == IndirectTableId,
+                "The value must belong to the direct or indirection table.");
+            return ::md_set_column_value_as_cursor(_cursor, column.column_index, value);
+        }
+
+        template<mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId, mdtable_id_t... ValueTableIds>
+        bool set_column_value(column<TableId, cursor_indirect<DirectTableId, IndirectTableId>> column, cursor_raw<ValueTableIds...> const& value) const noexcept
+        {
+            static_assert((detail::contains_table_id_v<ValueTableIds, DirectTableId, IndirectTableId> && ...),
+                "The value must only reference the direct or indirection table.");
+            return ::md_set_column_value_as_cursor(_cursor, column.column_index, value);
+        }
+
+        template<mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
+        bool set_column_value(column<TableId, cursor_indirect<DirectTableId, IndirectTableId>> column, cursor_indirect<DirectTableId, IndirectTableId> const& value) const noexcept
+        {
+            return ::md_set_column_value_as_cursor(_cursor, column.column_index, value);
         }
 
         template<mdtable_id_t TargetTableId, mdtable_id_t IndirectTableId>

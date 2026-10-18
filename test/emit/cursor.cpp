@@ -1,6 +1,7 @@
 #include <dnmd.hpp>
 #include "emit.hpp"
 #include <algorithm>
+#include <vector>
 
 namespace
 {
@@ -81,6 +82,19 @@ namespace
             ASSERT_NO_FATAL_FAILURE(AddMethod(first_type, "SecondMethod"));
         }
     };
+
+    template<mdtable_id_t TableId>
+    void ReadSavedRowCount(IMetaDataEmit* emit, uint32_t& count)
+    {
+        ULONG size;
+        ASSERT_EQ(S_OK, emit->GetSaveSize(cssAccurate, &size));
+        std::vector<uint8_t> bytes(size);
+        ASSERT_EQ(S_OK, emit->SaveToMemory(bytes.data(), size));
+        mdhandle_t raw;
+        ASSERT_TRUE(md_create_handle(bytes.data(), bytes.size(), &raw));
+        dnmd::handle_ptr saved{raw};
+        ASSERT_TRUE(dnmd::md_create_cursor<TableId>(saved.get(), &count));
+    }
 }
 
 using namespace dnmd::columns;
@@ -229,6 +243,186 @@ TEST_F(CppCursor, TokenFactoriesAndValidation)
     EXPECT_FALSE(dnmd::md_is_valid_token(nullptr, token));
     EXPECT_FALSE((dnmd::md_token_to_cursor<mdtid_TypeDef, mdtid_TypeRef>(handle.get(), CreateTokenType(mdtid_Module) | 1)));
     EXPECT_TRUE(dnmd::md_is_valid_token(handle.get(), CreateTokenType(mdtid_Module) | 1));
+}
+
+TEST_F(CppCursor, WriteScalarColumns)
+{
+    auto const module = dnmd::md_create_cursor<mdtid_Module>(handle.get()).as();
+    ASSERT_TRUE(module.set_column_value(Module_Name, "Written.dll"));
+    char const* name;
+    ASSERT_TRUE(module.get_column_value(Module_Name, &name));
+    EXPECT_STREQ("Written.dll", name);
+
+    mdguid_t expected{0x12345678, 0x2345, 0x3456, {1, 2, 3, 4, 5, 6, 7, 8}};
+    ASSERT_TRUE(module.set_column_value(Module_Mvid, expected));
+    mdguid_t actual;
+    ASSERT_TRUE(module.get_column_value(Module_Mvid, &actual));
+    EXPECT_EQ(expected.data1, actual.data1);
+    EXPECT_EQ(expected.data2, actual.data2);
+    EXPECT_EQ(expected.data3, actual.data3);
+    EXPECT_TRUE(std::equal(expected.data4, expected.data4 + 8, actual.data4));
+
+    mdcursor_t type{};
+    ASSERT_NO_FATAL_FAILURE(AddType("WrittenType", type));
+    auto row = type_position{type}.as();
+    ASSERT_TRUE(row.set_column_value(TypeDef_Flags, tdPublic));
+    uint32_t flags;
+    ASSERT_TRUE(row.get_column_value(TypeDef_Flags, &flags));
+    EXPECT_EQ(static_cast<uint32_t>(tdPublic), flags);
+    static_assert(noexcept(row.set_column_value(TypeDef_Flags, 0)));
+    static_assert(noexcept(module.set_column_value(Module_Mvid, expected)));
+    static_assert(noexcept(module.set_column_value(Module_Name, "")));
+    static_assert(noexcept(module.set_column_value(
+        std::declval<dnmd::column<mdtid_Module, dnmd::column_type_userstring>>(), u"")));
+
+    mdcursor_t specification;
+    ASSERT_TRUE(md_append_row(handle.get(), mdtid_TypeSpec, &specification));
+    md_commit_row_add(specification);
+    auto spec = dnmd::cursor_raw<mdtid_TypeSpec>{specification}.as();
+    uint8_t signature[] = {ELEMENT_TYPE_SZARRAY, ELEMENT_TYPE_I4};
+    ASSERT_TRUE(spec.set_column_value(TypeSpec_Signature, signature, sizeof(signature)));
+    uint8_t const* blob;
+    uint32_t size;
+    ASSERT_TRUE(spec.get_column_value(TypeSpec_Signature, &blob, &size));
+    ASSERT_EQ(sizeof(signature), size);
+    EXPECT_TRUE(std::equal(signature, signature + size, blob));
+    ASSERT_TRUE(spec.set_column_value(TypeSpec_Signature, nullptr, 0));
+    ASSERT_TRUE(spec.get_column_value(TypeSpec_Signature, &blob, &size));
+    EXPECT_EQ(0u, size);
+}
+
+TEST_F(CppCursor, WriteReferenceColumns)
+{
+    mdcursor_t base{};
+    mdcursor_t derived{};
+    ASSERT_NO_FATAL_FAILURE(AddType("Base", base));
+    ASSERT_NO_FATAL_FAILURE(AddType("Derived", derived));
+    auto row = type_position{derived}.as();
+    auto base_position = type_position{base};
+    mdToken base_token;
+    ASSERT_TRUE(base_position.get_token(base_token));
+    ASSERT_TRUE(row.set_column_value(TypeDef_Extends, base_position.as()));
+    mdToken actual;
+    ASSERT_TRUE(row.get_column_value(TypeDef_Extends, actual));
+    EXPECT_EQ(base_token, actual);
+    ASSERT_TRUE(row.set_column_value(TypeDef_Extends, base_position));
+    dnmd::cursor_raw<mdtid_TypeDef, mdtid_TypeRef> base_reference{base};
+    ASSERT_TRUE(row.set_column_value(TypeDef_Extends, base_reference));
+    EXPECT_FALSE(row.set_column_value(TypeDef_Extends, CreateTokenType(mdtid_Field) | 1));
+    ASSERT_TRUE(row.get_column_value(TypeDef_Extends, actual));
+    EXPECT_EQ(base_token, actual);
+
+    ASSERT_TRUE(row.set_column_value(TypeDef_Extends, CreateTokenType(mdtid_TypeDef)));
+    type_reference nil;
+    ASSERT_TRUE(row.get_column_value(TypeDef_Extends, nil));
+    EXPECT_FALSE(nil);
+    ASSERT_TRUE(row.set_column_value(TypeDef_Extends, nil.get_as<mdtid_TypeDef>()));
+    ASSERT_TRUE(row.get_column_value(TypeDef_Extends, actual));
+    EXPECT_EQ(CreateTokenType(mdtid_TypeDef), actual);
+    EXPECT_FALSE(row.set_column_value(TypeDef_Extends, dnmd::cursor_raw<mdtid_TypeRef>{}));
+}
+
+TEST_F(CppCursor, WriteDirectListPositions)
+{
+    mdcursor_t owner{};
+    mdcursor_t empty{};
+    ASSERT_NO_FATAL_FAILURE(AddType("Owner", owner));
+    ASSERT_NO_FATAL_FAILURE(AddMethod(owner, "Method"));
+    ASSERT_NO_FATAL_FAILURE(AddType("Empty", empty));
+    auto row = type_position{owner}.as();
+    auto empty_row = type_position{empty}.as();
+    method_position first;
+    method_position end;
+    ASSERT_TRUE(row.get_column_value(TypeDef_MethodList, first));
+    ASSERT_TRUE(empty_row.get_column_value(TypeDef_MethodList, end));
+    ASSERT_TRUE(first);
+    EXPECT_FALSE(end);
+    ASSERT_TRUE(row.set_column_value(TypeDef_MethodList, first.as()));
+    ASSERT_TRUE(row.set_column_value(TypeDef_MethodList,
+        dnmd::cursor_raw<mdtid_MethodDef>{static_cast<mdcursor_t>(first)}));
+    ASSERT_TRUE(empty_row.set_column_value(TypeDef_MethodList, end));
+    ASSERT_TRUE(empty_row.set_column_value(TypeDef_MethodList,
+        dnmd::cursor_raw<mdtid_MethodDef>{static_cast<mdcursor_t>(end)}));
+
+    ASSERT_TRUE(empty_row.set_column_value(TypeDef_MethodList, CreateTokenType(mdtid_MethodDef)));
+    method_position nil;
+    ASSERT_TRUE(empty_row.get_column_value(TypeDef_MethodList, nil));
+    EXPECT_FALSE(nil);
+    ASSERT_TRUE(empty_row.set_column_value(TypeDef_MethodList, nil));
+    ASSERT_TRUE(empty_row.set_column_value(TypeDef_MethodList,
+        dnmd::cursor_raw<mdtid_MethodDef>{static_cast<mdcursor_t>(nil)}));
+    mdToken token;
+    ASSERT_TRUE(nil.get_token(token));
+    EXPECT_EQ(CreateTokenType(mdtid_MethodDef), token);
+    ASSERT_TRUE(empty_row.set_column_value(TypeDef_MethodList, end));
+    method_position read;
+    ASSERT_TRUE(empty_row.get_column_value(TypeDef_MethodList, read));
+    EXPECT_FALSE(read);
+    ASSERT_TRUE(read.get_target_token(token));
+    EXPECT_EQ(CreateTokenType(mdtid_MethodDef) | 2, token);
+}
+
+TEST_F(CppCursor, WriteIndirectSourcesAndTargets)
+{
+    mdcursor_t owner{};
+    ASSERT_NO_FATAL_FAILURE(AddIndirectMethods(owner));
+    auto row = type_position{owner}.as();
+    method_position methods;
+    ASSERT_TRUE(row.get_column_value(TypeDef_MethodList, methods));
+    ASSERT_TRUE(methods);
+    mdToken source;
+    mdToken target;
+    ASSERT_TRUE(methods.get_token(source));
+    ASSERT_TRUE(methods.get_target_token(target));
+    ASSERT_EQ(mdtid_MethodPtr, ExtractTokenType(source));
+    ASSERT_TRUE(row.set_column_value(TypeDef_MethodList, methods));
+    ASSERT_TRUE(row.set_column_value(TypeDef_MethodList,
+        dnmd::cursor_raw<mdtid_MethodDef, mdtid_MethodPtr>{static_cast<mdcursor_t>(methods)}));
+    ASSERT_TRUE(row.set_column_value(TypeDef_MethodList,
+        dnmd::cursor_raw<mdtid_MethodPtr>{static_cast<mdcursor_t>(methods)}.as()));
+    method_position read;
+    ASSERT_TRUE(row.get_column_value(TypeDef_MethodList, read));
+    mdToken token;
+    ASSERT_TRUE(read.get_token(token));
+    EXPECT_EQ(source, token);
+
+    mdcursor_t implementation;
+    ASSERT_TRUE(md_append_row(handle.get(), mdtid_MethodImpl, &implementation));
+    auto impl = dnmd::cursor_raw<mdtid_MethodImpl>{implementation}.as();
+    ASSERT_TRUE(impl.set_column_value(MethodImpl_Class, row));
+    ASSERT_TRUE(impl.set_column_value(MethodImpl_MethodBody, methods));
+    ASSERT_TRUE(impl.set_column_value(MethodImpl_MethodDeclaration, methods.as()));
+    md_commit_row_add(implementation);
+    ASSERT_TRUE(impl.get_column_value(MethodImpl_MethodBody, token));
+    EXPECT_EQ(target, token);
+    EXPECT_FALSE(impl.set_column_value(MethodImpl_MethodBody, method_position{}));
+    ASSERT_TRUE(impl.get_column_value(MethodImpl_MethodBody, token));
+    EXPECT_EQ(target, token);
+
+    auto end = methods;
+    ASSERT_TRUE(dnmd::md_cursor_move(end, 3));
+    EXPECT_FALSE(end);
+    ASSERT_TRUE(impl.set_column_value(MethodImpl_MethodBody, end));
+    ASSERT_TRUE(impl.get_column_value(MethodImpl_MethodBody, token));
+    EXPECT_EQ(CreateTokenType(mdtid_MethodDef) | 4, token);
+    ASSERT_TRUE(row.set_column_value(TypeDef_MethodList, CreateTokenType(mdtid_MethodPtr)));
+    method_position nil;
+    ASSERT_TRUE(row.get_column_value(TypeDef_MethodList, nil));
+    EXPECT_FALSE(nil);
+    ASSERT_TRUE(impl.set_column_value(MethodImpl_MethodBody, nil));
+    ASSERT_TRUE(impl.get_column_value(MethodImpl_MethodBody, token));
+    EXPECT_EQ(CreateTokenType(mdtid_MethodDef), token);
+    ASSERT_TRUE(row.set_column_value(TypeDef_MethodList, methods));
+    ASSERT_TRUE(impl.set_column_value(MethodImpl_MethodBody, methods));
+}
+
+TEST_F(CppCursor, WriteEmptyAddedRowGuard)
+{
+    {
+        dnmd::added_row_t empty;
+    }
+    auto position = dnmd::md_create_cursor<mdtid_TypeDef>(handle.get());
+    EXPECT_TRUE(position);
 }
 
 TEST_F(CppCursor, DirectListPositions)
@@ -657,4 +851,139 @@ TEST(CppCursorImport, NativeCallingConventionsFromTypedNames)
     };
     ASSERT_NO_FATAL_FAILURE(check_calling_convention(cdecl_type, pmCallConvCdecl));
     ASSERT_NO_FATAL_FAILURE(check_calling_convention(stdcall_type, pmCallConvStdcall));
+}
+
+TEST(CppCursorEmitWrites, ParentedRowsUpdateInPlace)
+{
+    dncp::com_ptr<IMetaDataEmit> emit;
+    ASSERT_NO_FATAL_FAILURE(CreateEmit(emit));
+    mdTypeDef type;
+    ASSERT_EQ(S_OK, emit->DefineTypeDef(W("Layout"), tdSequentialLayout, mdTypeDefNil, nullptr, &type));
+    uint8_t signature[] = {IMAGE_CEE_CS_CALLCONV_FIELD, ELEMENT_TYPE_I4};
+    mdFieldDef field;
+    ASSERT_EQ(S_OK, emit->DefineField(type, W("Field"), fdPublic, signature,
+        sizeof(signature), ELEMENT_TYPE_VOID, nullptr, 0, &field));
+    ASSERT_EQ(S_OK, emit->SetFieldRVA(field, 0x1000));
+    ASSERT_EQ(S_OK, emit->SetFieldRVA(field, 0x2000));
+    ASSERT_EQ(S_OK, emit->SetClassLayout(type, 8, nullptr, 32));
+    ASSERT_EQ(S_OK, emit->SetClassLayout(type, 4, nullptr, 64));
+
+    dncp::com_ptr<IMetaDataImport> import;
+    ASSERT_EQ(S_OK, emit->QueryInterface(IID_IMetaDataImport, (void**)&import));
+    ULONG rva;
+    ASSERT_EQ(S_OK, import->GetRVA(field, &rva, nullptr));
+    EXPECT_EQ(0x2000u, rva);
+    DWORD packing;
+    ULONG size;
+    ULONG fields;
+    ASSERT_EQ(S_OK, import->GetClassLayout(type, &packing, nullptr, 0, &fields, &size));
+    EXPECT_EQ(4u, packing);
+    EXPECT_EQ(64u, size);
+    uint32_t count = 0;
+    ASSERT_NO_FATAL_FAILURE(ReadSavedRowCount<mdtid_FieldRva>(emit, count));
+    EXPECT_EQ(1u, count);
+    ASSERT_NO_FATAL_FAILURE(ReadSavedRowCount<mdtid_ClassLayout>(emit, count));
+    EXPECT_EQ(1u, count);
+    ASSERT_EQ(S_OK, emit->DeleteClassLayout(type));
+    EXPECT_EQ(CLDB_E_RECORD_NOTFOUND, import->GetClassLayout(type, &packing, nullptr, 0, &fields, &size));
+}
+
+TEST(CppCursorEmitWrites, ParentedRowsCanBeUpdatedAndDeleted)
+{
+    dncp::com_ptr<IMetaDataEmit> emit;
+    ASSERT_NO_FATAL_FAILURE(CreateEmit(emit));
+    uint8_t signature[] = {IMAGE_CEE_CS_CALLCONV_FIELD, ELEMENT_TYPE_I4};
+    mdFieldDef field;
+    ASSERT_EQ(S_OK, emit->DefineField(TokenFromRid(1, mdtTypeDef), W("Field"), fdPublic, signature,
+        sizeof(signature), ELEMENT_TYPE_VOID, nullptr, 0, &field));
+    uint8_t first[] = {NATIVE_TYPE_I4};
+    uint8_t second[] = {NATIVE_TYPE_I8};
+    ASSERT_EQ(S_OK, emit->SetFieldMarshal(field, first, sizeof(first)));
+    ASSERT_EQ(S_OK, emit->SetFieldMarshal(field, second, sizeof(second)));
+    dncp::com_ptr<IMetaDataImport> import;
+    ASSERT_EQ(S_OK, emit->QueryInterface(IID_IMetaDataImport, (void**)&import));
+    PCCOR_SIGNATURE read;
+    ULONG size;
+    ASSERT_EQ(S_OK, import->GetFieldMarshal(field, &read, &size));
+    ASSERT_EQ(sizeof(second), size);
+    EXPECT_EQ(second[0], read[0]);
+    uint32_t count = 0;
+    ASSERT_NO_FATAL_FAILURE(ReadSavedRowCount<mdtid_FieldMarshal>(emit, count));
+    EXPECT_EQ(1u, count);
+    ASSERT_EQ(S_OK, emit->DeleteFieldMarshal(field));
+    EXPECT_EQ(CLDB_E_RECORD_NOTFOUND, import->GetFieldMarshal(field, &read, &size));
+
+    mdModuleRef module;
+    ASSERT_EQ(S_OK, emit->DefineModuleRef(W("Native"), &module));
+    ASSERT_EQ(S_OK, emit->DefinePinvokeMap(field, 0, W("Entry"), module));
+    ASSERT_EQ(S_OK, emit->DeletePinvokeMap(field));
+    DWORD flags;
+    WCHAR name[16];
+    ULONG length;
+    mdModuleRef imported_module;
+    EXPECT_EQ(CLDB_E_RECORD_NOTFOUND, import->GetPinvokeMap(field, &flags, name, 16, &length, &imported_module));
+}
+
+TEST(CppCursorEmitWrites, GenericConstraintsAreWrittenAndReplaced)
+{
+    dncp::com_ptr<IMetaDataEmit2> emit;
+    ASSERT_NO_FATAL_FAILURE(CreateEmit(emit));
+    mdTypeDef owner;
+    ASSERT_EQ(S_OK, emit->DefineTypeDef(W("Generic`1"), 0, mdTypeDefNil, nullptr, &owner));
+    mdTypeRef first;
+    mdTypeRef second;
+    ASSERT_EQ(S_OK, emit->DefineTypeRefByName(TokenFromRid(1, mdtModule), W("First"), &first));
+    ASSERT_EQ(S_OK, emit->DefineTypeRefByName(TokenFromRid(1, mdtModule), W("Second"), &second));
+    mdToken constraints[] = {first, mdTokenNil};
+    mdGenericParam parameter;
+    ASSERT_EQ(S_OK, emit->DefineGenericParam(owner, 0, 0, W("T"), 0, constraints, &parameter));
+    dncp::com_ptr<IMetaDataImport2> import;
+    ASSERT_EQ(S_OK, emit->QueryInterface(IID_IMetaDataImport2, (void**)&import));
+    auto check_constraint = [&](mdToken expected) {
+        HCORENUM enumeration = nullptr;
+        mdGenericParamConstraint values[2]{};
+        ULONG count;
+        HRESULT hr = import->EnumGenericParamConstraints(&enumeration, parameter, values, 2, &count);
+        import->CloseEnum(enumeration);
+        ASSERT_EQ(S_OK, hr);
+        ASSERT_EQ(1u, count);
+        mdGenericParam read_owner;
+        mdToken constraint;
+        ASSERT_EQ(S_OK, import->GetGenericParamConstraintProps(values[0], &read_owner, &constraint));
+        EXPECT_EQ(parameter, read_owner);
+        EXPECT_EQ(expected, constraint);
+    };
+    ASSERT_NO_FATAL_FAILURE(check_constraint(first));
+    constraints[0] = second;
+    ASSERT_EQ(S_OK, emit->SetGenericParamProps(parameter, 0, W("T"), 0, constraints));
+    ASSERT_NO_FATAL_FAILURE(check_constraint(second));
+    constraints[0] = mdTokenNil;
+    ASSERT_EQ(S_OK, emit->SetGenericParamProps(parameter, 0, W("T"), 0, constraints));
+    HCORENUM enumeration = nullptr;
+    mdGenericParamConstraint value;
+    ULONG count;
+    HRESULT hr = import->EnumGenericParamConstraints(&enumeration, parameter, &value, 1, &count);
+    import->CloseEnum(enumeration);
+    EXPECT_EQ(S_FALSE, hr);
+    EXPECT_EQ(0u, count);
+}
+
+TEST(CppCursorEmitWrites, ExportedTypeIdIsWrittenAsAConstant)
+{
+    dncp::com_ptr<IMetaDataAssemblyEmit> emit;
+    ASSERT_NO_FATAL_FAILURE(CreateEmit(emit));
+    mdFile file;
+    ASSERT_EQ(S_OK, emit->DefineFile(W("Other.netmodule"), nullptr, 0, 0, &file));
+    mdExportedType type;
+    ASSERT_EQ(S_OK, emit->DefineExportedType(W("Exported"), file, TokenFromRid(1, mdtTypeDef), tdPublic, &type));
+    mdTypeDef expected = TokenFromRid(2, mdtTypeDef);
+    ASSERT_EQ(S_OK, emit->SetExportedTypeProps(type, file, expected, tdPublic));
+    dncp::com_ptr<IMetaDataAssemblyImport> import;
+    ASSERT_EQ(S_OK, emit->QueryInterface(IID_IMetaDataAssemblyImport, (void**)&import));
+    mdToken implementation;
+    mdTypeDef actual;
+    DWORD flags;
+    ASSERT_EQ(S_OK, import->GetExportedTypeProps(type, nullptr, 0, nullptr, &implementation, &actual, &flags));
+    EXPECT_EQ(expected, actual);
+    EXPECT_EQ(file, implementation);
 }
