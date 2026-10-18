@@ -56,58 +56,11 @@ typedef struct mddata__
     size_t size;
 } mddata_t;
 
-// Const data
-typedef struct mdcdata__
-{
-    uint8_t const* ptr;
-    size_t size;
-} mdcdata_t;
-
 // II.24.2.6 - 64 is the maximum value
 #define MDTABLE_MAX_COUNT ((size_t)mdtid_End)
 static_assert(MDTABLE_MAX_COUNT <= 64, "Specification sets max table count to 64");
 
 #define MDTABLE_MAX_COLUMN_COUNT 9
-
-// Flags and masks used to embed column details for
-// interpreting table rows.
-typedef enum
-{
-    mdtc_none       = 0x00000000,
-
-    // If the value should be taken as-is or used to index more
-    mdtc_constant   = 0x00000001,
-    mdtc_idx_heap   = 0x00000002, // Index into a heap - see flags below.
-    mdtc_idx_table  = 0x00000004, // Index into a table - see mask below.
-    mdtc_idx_coded  = 0x00000008, // Coded index - see II.24.2.6.
-    // Value category mask
-    mdtc_categorymask = 0x0000000f,
-
-    // Size of the constant or index
-    mdtc_b2         = 0x00000010, // 2-bytes
-    mdtc_b4         = 0x00000020, // 4-bytes
-    // Width of column flags
-    mdtc_widthmask  = 0x00000030,
-
-    //mdtc_unused1  = 0x00000040,
-    //mdtc_unused2  = 0x00000080,
-
-    // Column byte offset into row
-    mdtc_comask     = 0x0000ff00, // Mask for storing column offset
-
-    // Table values
-    mdtc_timask     = 0x00ff0000, // Mask for storing table index
-
-    // Coded index
-    mdtc_cimask     = 0x0f000000, // Mask for storing coded index map index
-
-    // Heap flags
-    mdtc_hguid      = 0x10000000, // #GUID
-    mdtc_hstring    = 0x20000000, // #Strings
-    mdtc_hus        = 0x40000000, // #US
-    mdtc_hblob      = 0x80000000, // #Blob
-    mdtc_hmask      = 0xf0000000, // Mask for storing heap type
-} mdtcol_t;
 
 // Flags and masks for context details
 typedef enum
@@ -137,22 +90,6 @@ typedef enum
 // Macros used to insert/extract the heap type
 #define InsertHeapType(h) ((h) & mdtc_hmask)
 #define ExtractHeapType(h) ((h) & mdtc_hmask)
-
-// Forward declare.
-struct mdcxt__;
-
-typedef struct mdtable__
-{
-    mdcdata_t data;
-    uint32_t row_count;
-    uint8_t row_size_bytes;
-    uint8_t column_count;
-    bool is_sorted : 1;
-    bool is_adding_new_row : 1;
-    uint8_t table_id;
-    struct mdcxt__* cxt; // Non-null is indication of complete initialization
-    mdtcol_t* column_details;
-} mdtable_t;
 
 typedef mdcdata_t mdstream_t;
 
@@ -390,6 +327,7 @@ typedef struct access_cxt__
 bool create_access_context(mdcursor_t* cursor, col_index_t col_idx, bool make_writable, access_cxt_t* rcxt);
 bool write_column_data(access_cxt_t* acxt, uint32_t data);
 bool read_column_data(access_cxt_t* acxt, uint32_t* data);
+bool resolve_column_reference(mdtable_t const* source, mdtable_id_t table, uint32_t row, mdcursor_t* cursor);
 
 // Raw bulk table access
 typedef struct bulk_access_cxt__

@@ -41,8 +41,11 @@ auto types = dnmd::md_create_cursor<mdtid_TypeDef>(handle.get());
 if (types)
 {
     auto type = types.as();
+    dnmd::row_reader<mdtid_TypeDef> reader{type};
+    uint32_t flags;
     char const* name;
-    if (!type.get_column_value(dnmd::columns::TypeDef_TypeName, &name))
+    if (!reader.read(dnmd::columns::TypeDef_Flags, &flags)
+        || !reader.read(dnmd::columns::TypeDef_TypeName, &name))
         return false;
 }
 ```
@@ -60,6 +63,20 @@ Use `dnmd::md_is_valid_token` when only validation is needed. Rows provide
 Typed range searches use column descriptors and return a raw cursor in the
 searched table along with the range status and count.
 
+`dnmd::row_reader<TableId>` is a borrowed, read-only row access context
+constructed from a dereferenceable `cursor<TableId>`. Reuse it across columns of
+that row with `reader.read(column, output)`; overload resolution enforces the
+source table, column value kind, and output type without category assertions.
+It contains no writable data pointer. Cursor reads, including ranges and bulk
+token reads, use this context rather than the C API's `create_access_context`
+path. Heap offsets, encoded tags, and referenced row bounds are still validated.
+Recreate readers after metadata edits that can invalidate their borrowed storage.
+
+For reference columns, a single table ID denotes a direct row index. Multiple
+table IDs specify a coded index in encoded tag order, including `mdtid_Unused`
+placeholders for reserved tags. Reserved and out-of-range tags fail the read.
+List columns use their direct/indirection-table metadata rather than coded tags.
+
 Rows provide matching `set_column_value` overloads for constants, UTF-8 strings,
 blobs, GUIDs, user strings, and table references. Setters return `bool` without
 exception-based error handling and retain the C setters' input preconditions.
@@ -70,7 +87,10 @@ but its source position for a list column so pointer-table indices are preserved
 Raw and indirect cursors expose `get_token(mdToken&)`, including for sentinel
 positions. An indirect cursor additionally exposes `get_target_token(mdToken&)`
 for its resolved target. Indirect cursors cache their resolved targets and
-dereferenceability when constructed or advanced; reacquire them after metadata
+dereferenceability when constructed or advanced. Pointer-table rows are resolved
+through `row_reader` using the typed Ptr-table columns in `dnmd::detail`;
+nil/end positions map to the corresponding target-table sentinels without
+reading a pointer row. Reacquire indirect cursors after metadata
 edits that affect their source or target positions. Advance positions with
 `dnmd::md_cursor_next` or `dnmd::md_cursor_move`, not row cursors. Typed row searches return a
 raw cursor in the searched table, rather than the table referenced by the column.

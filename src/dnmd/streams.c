@@ -114,6 +114,8 @@ bool try_get_blob(mdcxt_t* cxt, size_t offset, uint8_t const** blob, uint32_t* b
     uint32_t byte_count;
     if (!decompress_u32(&ptr, &data_len, &byte_count))
         return false;
+    if (byte_count > data_len)
+        return false;
 
     *blob = ptr;
     *blob_len = byte_count;

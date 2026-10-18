@@ -139,6 +139,53 @@ typedef enum
 #endif // DNMD_PORTABLE_PDB
 } mdtable_id_t;
 
+// Read-only table storage and column metadata used by the typed C++ readers.
+typedef struct mdcdata__
+{
+    uint8_t const* ptr;
+    size_t size;
+} mdcdata_t;
+
+typedef enum
+{
+    // Category of the stored value.
+    mdtc_none         = 0x00000000,
+    mdtc_constant     = 0x00000001,
+    mdtc_idx_heap     = 0x00000002,
+    mdtc_idx_table    = 0x00000004,
+    mdtc_idx_coded    = 0x00000008,
+    mdtc_categorymask = 0x0000000f,
+    // Width of a stored constant or index.
+    mdtc_b2           = 0x00000010,
+    mdtc_b4           = 0x00000020,
+    mdtc_widthmask    = 0x00000030,
+    // Byte offset, target table, and coded-index map within a row.
+    mdtc_comask       = 0x0000ff00,
+    mdtc_timask       = 0x00ff0000,
+    mdtc_cimask       = 0x0f000000,
+    // Heap selected by an index.
+    mdtc_hguid        = 0x10000000,
+    mdtc_hstring      = 0x20000000,
+    mdtc_hus          = 0x40000000,
+    mdtc_hblob        = 0x80000000,
+    mdtc_hmask        = 0xf0000000,
+} mdtcol_t;
+
+struct mdcxt__;
+
+typedef struct mdtable__
+{
+    mdcdata_t data;
+    uint32_t row_count;
+    uint8_t row_size_bytes;
+    uint8_t column_count;
+    bool is_sorted : 1;
+    bool is_adding_new_row : 1;
+    uint8_t table_id;
+    struct mdcxt__* cxt; // Non-null indicates complete table initialization.
+    mdtcol_t* column_details;
+} mdtable_t;
+
 // Macros for computing token types.
 #define CreateTokenType(tk) (mdToken)(((uint32_t)tk << 24) & 0xff000000)
 #define ExtractTokenType(tk) ((tk >> 24) & 0xff)

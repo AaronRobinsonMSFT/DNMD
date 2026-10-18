@@ -2752,7 +2752,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetCustomAttributeByName(
             size_t len;
             char const* curr;
 
-            dnmd::cursor_raw<mdtid_MethodDef, mdtid_MemberRef> type;
+            decltype(CustomAttribute_Type)::value_type type;
             if (!custAttr.get_column_value(CustomAttribute_Type, type))
             {
                 hr = CLDB_E_FILE_CORRUPT;

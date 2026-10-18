@@ -3,6 +3,7 @@
 
 #include "dnmd.h"
 #include <cassert>
+#include <cstring>
 #include <memory>
 #include <type_traits>
 #include <utility>
@@ -74,6 +75,8 @@ struct cursor_raw;
 template<mdtable_id_t TableId, typename ColumnType>
 struct column final
 {
+    using value_type = ColumnType;
+
     col_index_t column_index;
     public:
         explicit constexpr column(col_index_t col)
@@ -87,9 +90,229 @@ struct cursor_indirect;
 
 namespace detail
 {
+template<mdtable_id_t TableId>
+constexpr auto pointer_column() noexcept
+{
+    if constexpr (TableId == mdtid_FieldPtr)
+        return column<mdtid_FieldPtr, cursor_raw<mdtid_Field>>{mdtFieldPtr_Field};
+    else if constexpr (TableId == mdtid_MethodPtr)
+        return column<mdtid_MethodPtr, cursor_raw<mdtid_MethodDef>>{mdtMethodPtr_Method};
+    else if constexpr (TableId == mdtid_ParamPtr)
+        return column<mdtid_ParamPtr, cursor_raw<mdtid_Param>>{mdtParamPtr_Param};
+    else if constexpr (TableId == mdtid_EventPtr)
+        return column<mdtid_EventPtr, cursor_raw<mdtid_Event>>{mdtEventPtr_Event};
+    else
+    {
+        static_assert(TableId == mdtid_PropertyPtr, "The table must be an indirection table.");
+        return column<mdtid_PropertyPtr, cursor_raw<mdtid_Property>>{mdtPropertyPtr_Property};
+    }
+}
+
+// Parentheses avoid expanding corhdr.h's function-like macro.
+inline uint32_t (RidFromToken)(uint64_t tk) noexcept
+{
+    return static_cast<uint32_t>(tk) & 0x00ffffff;
+}
+
+inline mdtable_t* CursorTable(mdcursor_t const& c) noexcept
+{
+    return reinterpret_cast<mdtable_t*>(c._reserved1);
+}
+
+inline uint32_t CursorRow(mdcursor_t const& c) noexcept
+{
+    return (RidFromToken)(c._reserved2);
+}
+
 template<mdtable_id_t TableId, mdtable_id_t... TableIds>
 inline constexpr bool contains_table_id_v = ((TableId == TableIds) || ...);
+
+template<mdtable_id_t... TableIds>
+struct column_reference_decoder
+{
+    static_assert(sizeof...(TableIds) > 1);
+    static_assert(((TableIds == mdtid_Unused || (TableIds >= mdtid_First && TableIds < mdtid_End)) && ...));
+
+    static bool decode(uint32_t raw, mdtable_id_t& table, uint32_t& row) noexcept
+    {
+        static constexpr mdtable_id_t tables[] = {TableIds...};
+        // TODO: Use std::countl_zero to compute the tag width once C++20 is required.
+        constexpr uint32_t tag_bits = [] {
+            uint32_t bits = 0;
+            for (size_t count = sizeof...(TableIds) - 1; count != 0; count >>= 1)
+                ++bits;
+            return bits;
+        }();
+        uint32_t tag = raw & ((uint32_t{1} << tag_bits) - 1);
+        if (tag >= sizeof...(TableIds) || tables[tag] == mdtid_Unused)
+            return false;
+        table = tables[tag];
+        row = raw >> tag_bits;
+        return true;
+    }
+};
+
+template<mdtable_id_t TableId>
+struct column_reference_decoder<TableId>
+{
+    static_assert(TableId >= mdtid_First && TableId < mdtid_End);
+
+    static bool decode(uint32_t raw, mdtable_id_t& table, uint32_t& row) noexcept
+    {
+        table = TableId;
+        row = (RidFromToken)(raw);
+        return true;
+    }
+};
+
+// Reuse the core's data decoders while its implementation remains C.
+extern "C"
+{
+bool resolve_column_reference(mdtable_t const* source, mdtable_id_t table, uint32_t row, mdcursor_t* cursor);
+bool try_get_string(::mdcxt__* context, size_t offset, char const** value);
+bool try_get_blob(::mdcxt__* context, size_t offset, uint8_t const** value, uint32_t* length);
+bool try_get_guid(::mdcxt__* context, size_t index, mdguid_t* value);
+bool try_get_user_string(::mdcxt__* context, size_t offset, mduserstring_t* value, size_t* next_offset);
 }
+
+template<mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
+inline bool resolve_indirect_cursor(mdcursor_t source, mdcursor_t& target) noexcept;
+}
+
+template<mdtable_id_t TableId>
+struct row_reader final
+{
+private:
+    friend struct cursor<TableId>;
+
+    mdtable_t const* _table;
+    uint8_t const* _data;
+
+    template<typename ColumnType>
+    mdtcol_t column_details(column<TableId, ColumnType> col) const noexcept
+    {
+        return _table->column_details[static_cast<uint8_t>(col.column_index)];
+    }
+
+    template<typename ColumnType>
+    uint32_t read_raw(column<TableId, ColumnType> col) const noexcept
+    {
+        auto details = column_details(col);
+        auto data = _data + ((static_cast<uint32_t>(details) & mdtc_comask) >> 8);
+#ifdef _MSC_VER
+        // Match the core's unaligned little-endian load fast path on MSVC.
+        if (details & mdtc_b4)
+        {
+            uint32_t value;
+            std::memcpy(&value, data, sizeof(value));
+            return value;
+        }
+        uint16_t value;
+        std::memcpy(&value, data, sizeof(value));
+        return value;
+#else
+        uint32_t value = uint32_t{data[0]} | (uint32_t{data[1]} << 8);
+        if (details & mdtc_b4)
+            value |= (uint32_t{data[2]} << 16) | (uint32_t{data[3]} << 24);
+        return value;
+#endif
+    }
+
+    template<mdtable_id_t... TargetTableIds>
+    bool read_position(column<TableId, cursor_raw<TargetTableIds...>> col, mdcursor_t& value) const noexcept
+    {
+        mdtable_id_t table;
+        uint32_t row;
+        return detail::column_reference_decoder<TargetTableIds...>::decode(read_raw(col), table, row)
+            && detail::resolve_column_reference(_table, table, row, &value);
+    }
+
+    template<mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
+    bool read_position(column<TableId, cursor_indirect<DirectTableId, IndirectTableId>> col, mdcursor_t& value) const noexcept
+    {
+        auto target = static_cast<mdtable_id_t>((static_cast<uint32_t>(column_details(col)) & mdtc_timask) >> 16);
+        return detail::resolve_column_reference(_table, target, (detail::RidFromToken)(read_raw(col)), &value);
+    }
+
+    void advance() noexcept
+    {
+        _data += _table->row_size_bytes;
+    }
+
+public:
+    explicit row_reader(cursor<TableId> const& row) noexcept
+        : _table{detail::CursorTable(row._cursor)}
+        , _data{_table->data.ptr
+            + size_t{detail::CursorRow(row._cursor) - 1} * _table->row_size_bytes}
+    {
+    }
+
+    bool read(column<TableId, column_type_constant> col, uint32_t* value) const noexcept
+    {
+        *value = read_raw(col);
+        return true;
+    }
+
+    template<mdtable_id_t... TargetTableIds>
+    bool read(column<TableId, cursor_raw<TargetTableIds...>> col, mdToken& value) const noexcept
+    {
+        mdtable_id_t table;
+        uint32_t row;
+        if (!detail::column_reference_decoder<TargetTableIds...>::decode(read_raw(col), table, row))
+            return false;
+        value = CreateTokenType(table) | row;
+        return true;
+    }
+
+    template<mdtable_id_t... TargetTableIds>
+    bool read(column<TableId, cursor_raw<TargetTableIds...>> col, cursor_raw<TargetTableIds...>& value) const noexcept
+    {
+        mdcursor_t position;
+        if (!read_position(col, position))
+            return false;
+        value = cursor_raw<TargetTableIds...>{position};
+        return true;
+    }
+
+    template<mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
+    bool read(column<TableId, cursor_indirect<DirectTableId, IndirectTableId>> col, mdToken& value) const noexcept
+    {
+        auto table = static_cast<mdtable_id_t>((static_cast<uint32_t>(column_details(col)) & mdtc_timask) >> 16);
+        value = CreateTokenType(table) | (detail::RidFromToken)(read_raw(col));
+        return true;
+    }
+
+    template<mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
+    bool read(column<TableId, cursor_indirect<DirectTableId, IndirectTableId>> col, cursor_indirect<DirectTableId, IndirectTableId>& value) const noexcept
+    {
+        mdcursor_t position;
+        if (!read_position(col, position))
+            return false;
+        value = cursor_indirect<DirectTableId, IndirectTableId>{position};
+        return true;
+    }
+
+    bool read(column<TableId, column_type_string> col, char const** value) const noexcept
+    {
+        return detail::try_get_string(_table->cxt, read_raw(col), value);
+    }
+
+    bool read(column<TableId, column_type_blob> col, uint8_t const** value, uint32_t* length) const noexcept
+    {
+        return detail::try_get_blob(_table->cxt, read_raw(col), value, length);
+    }
+
+    bool read(column<TableId, column_type_guid> col, mdguid_t* value) const noexcept
+    {
+        return detail::try_get_guid(_table->cxt, read_raw(col), value);
+    }
+
+    bool read(column<TableId, column_type_userstring> col, mduserstring_t* value) const noexcept
+    {
+        size_t next_offset;
+        return detail::try_get_user_string(_table->cxt, read_raw(col), value, &next_offset);
+    }
+};
 
 template<mdtable_id_t TableId>
 struct cursor final
@@ -99,6 +322,8 @@ struct cursor final
         friend struct cursor_raw;
         template<mdtable_id_t, mdtable_id_t>
         friend struct cursor_indirect;
+        template<mdtable_id_t>
+        friend struct row_reader;
 
         mdcursor_t _cursor;
 
@@ -140,58 +365,71 @@ struct cursor final
         template<mdtable_id_t... TargetTableIds>
         int32_t get_column_values(column<TableId, cursor_raw<TargetTableIds...>> column, uint32_t count, mdToken* tokens) const noexcept
         {
-            return ::md_get_many_rows_column_value_as_token(_cursor, column.column_index, count, tokens);
+            if (count == 0)
+                return 0;
+            assert(tokens != nullptr);
+            row_reader<TableId> reader{*this};
+            uint32_t row = detail::CursorRow(_cursor);
+            uint32_t available = reader._table->row_count - row + 1;
+            if (count > available)
+                count = available;
+            for (uint32_t i = 0; i < count; ++i)
+            {
+                if (!reader.read(column, tokens[i]))
+                    return -1;
+                if (i + 1 < count)
+                    reader.advance();
+            }
+            return static_cast<int32_t>(count);
         }
 
         template<mdtable_id_t... TargetTableIds>
         bool get_column_value(column<TableId, cursor_raw<TargetTableIds...>> column, cursor_raw<TargetTableIds...>& target_cursor) const noexcept
         {
-            mdcursor_t c;
-            if (!::md_get_column_value_as_cursor(_cursor, column.column_index, &c))
-                return false;
-            target_cursor = cursor_raw<TargetTableIds...>{c};
-            return true;
+            return row_reader<TableId>{*this}.read(column, target_cursor);
         }
 
         template<mdtable_id_t... TargetTableIds>
         bool get_column_value(column<TableId, cursor_raw<TargetTableIds...>> column, mdToken& tk) const noexcept
         {
-            return ::md_get_column_value_as_token(_cursor, column.column_index, &tk);
+            return row_reader<TableId>{*this}.read(column, tk);
         }
 
         template<mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
         bool get_column_value(column<TableId, cursor_indirect<DirectTableId, IndirectTableId>> column, cursor_indirect<DirectTableId, IndirectTableId>& target_cursor) const noexcept
         {
-            mdcursor_t c;
-            if (!::md_get_column_value_as_cursor(_cursor, column.column_index, &c))
-                return false;
-            target_cursor = cursor_indirect<DirectTableId, IndirectTableId>{c};
-            return true;
+            return row_reader<TableId>{*this}.read(column, target_cursor);
+        }
+
+        template<mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
+        bool get_column_value(column<TableId, cursor_indirect<DirectTableId, IndirectTableId>> column, mdToken& tk) const noexcept
+        {
+            return row_reader<TableId>{*this}.read(column, tk);
         }
 
         bool get_column_value(column<TableId, column_type_constant> column, uint32_t* value) const noexcept
         {
-            return ::md_get_column_value_as_constant(_cursor, column.column_index, value);
+            return row_reader<TableId>{*this}.read(column, value);
         }
 
         bool get_column_value(column<TableId, column_type_blob> column, uint8_t const** blob, uint32_t* blob_len) const noexcept
         {
-            return md_get_column_value_as_blob(_cursor, column.column_index, blob, blob_len);
+            return row_reader<TableId>{*this}.read(column, blob, blob_len);
         }
 
         bool get_column_value(column<TableId, column_type_guid> column, mdguid_t* guid) const noexcept
         {
-            return md_get_column_value_as_guid(_cursor, column.column_index, guid);
+            return row_reader<TableId>{*this}.read(column, guid);
         }
 
         bool get_column_value(column<TableId, column_type_userstring> column, mduserstring_t* userstring) const noexcept
         {
-            return md_get_column_value_as_userstring(_cursor, column.column_index, userstring);
+            return row_reader<TableId>{*this}.read(column, userstring);
         }
 
         bool get_column_value(column<TableId, column_type_string> column, char const** str) const noexcept
         {
-            return md_get_column_value_as_utf8(_cursor, column.column_index, str);
+            return row_reader<TableId>{*this}.read(column, str);
         }
 
         bool set_column_value(column<TableId, column_type_constant> column, uint32_t value) const noexcept
@@ -281,10 +519,36 @@ struct cursor final
         template<mdtable_id_t TargetTableId, mdtable_id_t IndirectTableId>
         bool get_column_value_as_range(column<TableId, cursor_indirect<TargetTableId, IndirectTableId>> column, cursor_indirect<TargetTableId, IndirectTableId>& range_cursor, uint32_t* count) const noexcept
         {
+            assert(count != nullptr);
+            row_reader<TableId> reader{*this};
             mdcursor_t c;
-            if (!::md_get_column_value_as_range(_cursor, column.column_index, &c, count))
+            if (!reader.read_position(column, c))
                 return false;
+            auto target = detail::CursorTable(c);
+            uint32_t first = detail::CursorRow(c);
+            uint32_t length = 0;
+            if (first != 0 && first != target->row_count + 1)
+            {
+                length = target->row_count - first + 1;
+                uint32_t row = detail::CursorRow(_cursor);
+                for (; row < reader._table->row_count; ++row)
+                {
+                    reader.advance();
+                    mdcursor_t next;
+                    if (!reader.read_position(column, next))
+                        return false;
+                    assert(detail::CursorTable(next) == target);
+                    uint32_t end = detail::CursorRow(next);
+                    if (end == 0)
+                        continue;
+                    if (end < first)
+                        return false;
+                    length = end - first;
+                    break;
+                }
+            }
             range_cursor = cursor_indirect<TargetTableId, IndirectTableId>{c};
+            *count = length;
             return true;
         }
 };
@@ -307,7 +571,7 @@ struct cursor_indirect final
             assert(::md_cursor_to_token(_cursor, &tk));
             assert(ExtractTokenType(tk) == DirectTableId || ExtractTokenType(tk) == IndirectTableId);
 #endif
-            target_resolved = ::md_resolve_indirect_cursor(_cursor, &target);
+            target_resolved = detail::resolve_indirect_cursor<DirectTableId, IndirectTableId>(_cursor, target);
             has_row = target_resolved && ::md_cursor_is_dereferenceable(target);
         }
 
@@ -383,6 +647,7 @@ struct cursor_raw final
         template<mdtable_id_t CodedTableId>
         cursor_raw<CodedTableId> get_as() const noexcept
         {
+            static_assert(CodedTableId != mdtid_Unused, "Reserved tags do not refer to a table.");
             static_assert(((CodedTableId == TableIds) || ...), "CodedTableId must be one of the tables in the coded index.");
             mdToken tk;
             if (!get_token(tk) || ExtractTokenType(tk) != CodedTableId)
@@ -403,12 +668,59 @@ struct cursor_raw final
         template<mdtable_id_t CodedTableId, typename TCallable>
         bool visit_impl(mdtable_id_t table_id, TCallable&& callable) const
         {
-            if (table_id != CodedTableId)
+            if constexpr (CodedTableId == mdtid_Unused)
+            {
                 return false;
-            std::forward<TCallable>(callable)(cursor<CodedTableId>{_cursor});
-            return true;
+            }
+            else
+            {
+                if (table_id != CodedTableId)
+                    return false;
+                std::forward<TCallable>(callable)(cursor<CodedTableId>{_cursor});
+                return true;
+            }
         }
 };
+
+namespace detail
+{
+template<mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
+inline bool resolve_indirect_cursor(mdcursor_t source, mdcursor_t& target) noexcept
+{
+    auto table = CursorTable(source);
+    if (table == nullptr)
+        return false;
+    if (table->table_id == DirectTableId)
+    {
+        target = source;
+        return true;
+    }
+    if (table->table_id != IndirectTableId)
+        return false;
+
+    uint32_t row = CursorRow(source);
+    // Sentinel positions have no pointer row to read.
+    if (row == 0 || row == table->row_count + 1)
+    {
+        mdcursor_t position;
+        if (!resolve_column_reference(table, DirectTableId, 0, &position))
+            return false;
+        if (row != 0)
+            position._reserved2 = CursorTable(position)->row_count + 1;
+        target = position;
+        return true;
+    }
+    if (row > table->row_count)
+        return false;
+
+    row_reader<IndirectTableId> reader{cursor_raw<IndirectTableId>{source}.as()};
+    cursor_raw<DirectTableId> position;
+    if (!reader.read(pointer_column<IndirectTableId>(), position))
+        return false;
+    target = position;
+    return true;
+}
+}
 
 template<typename T>
 struct cursor_tableid;
@@ -478,7 +790,7 @@ inline cursor_raw<TableId> md_find_row_from_cursor(cursor<TableId> begin, column
     if (!((ExtractTokenType(tk) == TargetTableIds) || ...))
         return {};
     if constexpr (sizeof...(TargetTableIds) == 1)
-        tk &= 0x00FFFFFF;
+        tk = (detail::RidFromToken)(tk);
     return detail::find_row(begin, column.column_index, tk);
 }
 
@@ -500,7 +812,7 @@ inline md_range_result_t md_find_range_from_cursor(cursor<TableId> begin,
     if (!((ExtractTokenType(tk) == TargetTableIds) || ...))
         return MD_RANGE_NOT_FOUND;
     if constexpr (sizeof...(TargetTableIds) == 1)
-        tk &= 0x00FFFFFF;
+        tk = (detail::RidFromToken)(tk);
     mdcursor_t c;
     auto result = ::md_find_range_from_cursor(begin, column.column_index, tk, &c, count);
     if (result == MD_RANGE_FOUND)
@@ -514,7 +826,7 @@ inline cursor_raw<TableId> md_find_row_from_cursor(cursor<TableId> begin, column
     mdToken tk;
     if (!value.get_token(tk) || (ExtractTokenType(tk) != DirectTableId && ExtractTokenType(tk) != IndirectTableId))
         return {};
-    return detail::find_row(begin, column.column_index, tk & 0x00FFFFFF);
+    return detail::find_row(begin, column.column_index, (detail::RidFromToken)(tk));
 }
 
 template<mdtable_id_t TableId>
@@ -594,7 +906,7 @@ inline constexpr column<mdtid_Constant, cursor_raw<mdtid_Field, mdtid_Param, mdt
 inline constexpr column<mdtid_Constant, column_type_blob> Constant_Value{ mdtConstant_Value };
 
 inline constexpr column<mdtid_CustomAttribute, cursor_raw<mdtid_MethodDef, mdtid_Field, mdtid_TypeRef, mdtid_TypeDef, mdtid_Param, mdtid_InterfaceImpl, mdtid_MemberRef, mdtid_Module, mdtid_DeclSecurity, mdtid_Property, mdtid_Event, mdtid_StandAloneSig, mdtid_ModuleRef, mdtid_TypeSpec, mdtid_Assembly, mdtid_AssemblyRef, mdtid_File, mdtid_ExportedType, mdtid_ManifestResource, mdtid_GenericParam, mdtid_GenericParamConstraint, mdtid_MethodSpec>> CustomAttribute_Parent{ mdtCustomAttribute_Parent };
-inline constexpr column<mdtid_CustomAttribute, cursor_raw<mdtid_MethodDef, mdtid_MemberRef>> CustomAttribute_Type{ mdtCustomAttribute_Type };
+inline constexpr column<mdtid_CustomAttribute, cursor_raw<mdtid_Unused, mdtid_Unused, mdtid_MethodDef, mdtid_MemberRef, mdtid_Unused>> CustomAttribute_Type{ mdtCustomAttribute_Type };
 inline constexpr column<mdtid_CustomAttribute, column_type_blob> CustomAttribute_Value{ mdtCustomAttribute_Value };
 
 inline constexpr column<mdtid_FieldMarshal, cursor_raw<mdtid_Field, mdtid_Param>> FieldMarshal_Parent{ mdtFieldMarshal_Parent };

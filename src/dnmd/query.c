@@ -131,74 +131,57 @@ bool md_walk_user_string_heap(mdhandle_t handle, mduserstringcursor_t* cursor, m
     return true;
 }
 
-static bool get_column_value_as_token_or_cursor(mdcursor_t* c, uint32_t col_idx, mdToken* tk, mdcursor_t* cursor)
+bool resolve_column_reference(mdtable_t const* source, mdtable_id_t table_id, uint32_t table_row, mdcursor_t* cursor)
 {
-    assert(c != NULL && (tk != NULL || cursor != NULL));
-
-    access_cxt_t acxt;
-    if (!create_access_context(c, col_idx, false, &acxt))
-        return false;
-
-    // If this isn't an index column, then fail.
-    if (!(acxt.col_details & (mdtc_idx_table | mdtc_idx_coded)))
-        return false;
-
-    uint32_t table_row;
-    mdtable_id_t table_id;
-
-    uint32_t raw;
-
-    if (!read_column_data(&acxt, &raw))
-        return false;
-
-    if (acxt.col_details & mdtc_idx_table)
-    {
-        // The raw value is the row index into the table that
-        // is embedded in the column details.
-        table_row = RidFromToken(raw);
-        table_id = ExtractTable(acxt.col_details);
-    }
-    else
-    {
-        assert(acxt.col_details & mdtc_idx_coded);
-        if (!decompose_coded_index(raw, acxt.col_details, &table_id, &table_row))
-            return false;
-    }
-
+    assert(source != NULL && cursor != NULL);
     if (0 > table_id || table_id >= MDTABLE_MAX_COUNT)
         return false;
 
-    mdtable_t* table;
-    if (tk != NULL)
+    mdtable_t* table = type_to_table(source->cxt, table_id);
+
+    // References can point to nil or one past the end, but not beyond.
+    if (table_row > table->row_count + 1)
+        return false;
+
+    // Empty tables still need an identity for nil/end tokens.
+    if (table->table_id == 0 && table_id != 0)
     {
-        *tk = CreateTokenType(table_id) | table_row;
-    }
-    else
-    {
-        // Returning a cursor means pointing directly into a table
-        // so we must validate the cursor is valid prior to creation.
-        table = type_to_table(acxt.table->cxt, table_id);
-
-        // Indices into tables begin at 1 - see II.22.
-        // However, tables can contain a row ID of 0 to
-        // indicate "none" or point 1 past the end.
-        if (table_row > table->row_count + 1)
-            return false;
-
-        // Sometimes we can get an index into a table of 0 or 1 past the end
-        // of a table that does not exist. In that case, our table object here
-        // will be completely uninitialized. Set the table id so we can do operations
-        // that need a table id, like creating the table or getting a token.
-        if (table->table_id == 0 && table_id != 0)
-        {
-            assert(table_row == 0 || table_row == 1);
-            table->table_id = table_id;
-        }
-
-        assert(cursor != NULL);
-        *cursor = create_cursor(table, table_row);
+        assert(table_row == 0 || table_row == 1);
+        table->table_id = table_id;
     }
 
+    *cursor = create_cursor(table, table_row);
+    return true;
+}
+
+static bool get_column_value_as_token_or_cursor(mdcursor_t* c, uint32_t col_idx, mdToken* tk, mdcursor_t* cursor)
+{
+    assert(c != NULL && (tk != NULL || cursor != NULL));
+    access_cxt_t acxt;
+    if (!create_access_context(c, col_idx, false, &acxt))
+        return false;
+    if (!(acxt.col_details & (mdtc_idx_table | mdtc_idx_coded)))
+        return false;
+    uint32_t raw;
+    if (!read_column_data(&acxt, &raw))
+        return false;
+
+    uint32_t row;
+    mdtable_id_t table;
+    if (acxt.col_details & mdtc_idx_table)
+    {
+        row = RidFromToken(raw);
+        table = ExtractTable(acxt.col_details);
+    }
+    else if (!decompose_coded_index(raw, acxt.col_details, &table, &row))
+    {
+        return false;
+    }
+    if (tk == NULL)
+        return resolve_column_reference(acxt.table, table, row, cursor);
+    if (table < 0 || table >= MDTABLE_MAX_COUNT)
+        return false;
+    *tk = CreateTokenType(table) | row;
     return true;
 }
 
