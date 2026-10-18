@@ -22,14 +22,14 @@ namespace
     static_assert(can_read_v<type_reader, decltype(dnmd::columns::TypeDef_Extends),
         decltype(dnmd::columns::TypeDef_Extends)::value_type&>);
     static_assert(can_read_v<type_reader, decltype(dnmd::columns::TypeDef_MethodList),
-        dnmd::cursor_indirect<mdtid_MethodDef, mdtid_MethodPtr>&>);
+        dnmd::indirect_cursor<mdtid_MethodDef, mdtid_MethodPtr>&>);
     static_assert(!can_read_v<type_reader, decltype(dnmd::columns::Module_Name), char const**>);
     static_assert(!can_read_v<type_reader, decltype(dnmd::columns::TypeDef_Flags), char const**>);
     static_assert(!can_read_v<type_reader, decltype(dnmd::columns::TypeDef_TypeName), uint32_t*>);
     static_assert(!can_read_v<type_reader, decltype(dnmd::columns::TypeDef_Extends), mdcursor_t&>);
-    static_assert(!can_read_v<type_reader, decltype(dnmd::columns::TypeDef_Extends), dnmd::cursor_raw<mdtid_TypeDef>&>);
+    static_assert(!can_read_v<type_reader, decltype(dnmd::columns::TypeDef_Extends), dnmd::raw_cursor<mdtid_TypeDef>&>);
     static_assert(!can_read_v<type_reader, decltype(dnmd::columns::TypeDef_MethodList),
-        dnmd::cursor_indirect<mdtid_Field, mdtid_FieldPtr>&>);
+        dnmd::indirect_cursor<mdtid_Field, mdtid_FieldPtr>&>);
     static_assert(!can_read_v<dnmd::row_reader<mdtid_Module>, decltype(dnmd::columns::Module_Mvid), uint32_t*>);
     static_assert(can_read_v<dnmd::row_reader<mdtid_Module>, decltype(dnmd::columns::Module_Mvid), mdguid_t*>);
     static_assert(can_read_v<dnmd::row_reader<mdtid_Module>,
@@ -68,7 +68,7 @@ namespace
                 EXPECT_TRUE(md_append_row(handle.get(), TableId, &raw));
             }
             md_commit_row_add(raw);
-            return dnmd::cursor_raw<TableId>{raw}.as();
+            return dnmd::raw_cursor<TableId>{raw}.as();
         }
 
         template<mdtable_id_t TableId>
@@ -92,7 +92,7 @@ namespace
         }
 
         template<mdtable_id_t TableId, mdtable_id_t... Targets, size_t Size>
-        void CheckFamily(dnmd::column<TableId, dnmd::cursor_raw<Targets...>> column,
+        void CheckFamily(dnmd::column<TableId, dnmd::raw_cursor<Targets...>> column,
             std::array<mdtable_id_t, Size> const& expected, uint32_t tag_bits)
         {
             auto row = GetRow<TableId>();
@@ -114,7 +114,7 @@ namespace
                     else
                         EXPECT_EQ(0x12345678u, value);
 
-                    dnmd::cursor_raw<Targets...> position;
+                    dnmd::raw_cursor<Targets...> position;
                     mdcursor_t c_position{};
                     bool c_success = md_get_column_value_as_cursor(row, column.column_index, &c_position);
                     ASSERT_EQ(c_success, reader.read(column, position));
@@ -153,7 +153,7 @@ namespace
             table.column_count = static_cast<uint8_t>(columns.size());
             table.table_id = static_cast<uint8_t>(TableId);
             table.column_details = columns.data();
-            auto row = dnmd::cursor_raw<TableId>{mdcursor_t{reinterpret_cast<intptr_t>(&table), 1}}.as();
+            auto row = dnmd::raw_cursor<TableId>{mdcursor_t{reinterpret_cast<intptr_t>(&table), 1}}.as();
             dnmd::row_reader<TableId> reader{row};
             mdToken actual = 0;
             ASSERT_TRUE(reader.read(column, actual));
@@ -161,9 +161,9 @@ namespace
         }
 
         template<mdtable_id_t OwnerTableId, mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
-        void CheckIndirection(dnmd::column<OwnerTableId, dnmd::cursor_indirect<DirectTableId, IndirectTableId>> list)
+        void CheckIndirection(dnmd::column<OwnerTableId, dnmd::indirect_cursor<DirectTableId, IndirectTableId>> list)
         {
-            using position_type = dnmd::cursor_indirect<DirectTableId, IndirectTableId>;
+            using position_type = dnmd::indirect_cursor<DirectTableId, IndirectTableId>;
             auto owner = GetRow<OwnerTableId>();
             mdcursor_t direct{};
             ASSERT_TRUE(md_add_new_row_to_list(owner, list.column_index, &direct));
@@ -176,7 +176,7 @@ namespace
             md_commit_row_add(other);
             auto pointer = GetRow<IndirectTableId>();
             constexpr auto target_column = dnmd::detail::pointer_column<IndirectTableId>();
-            ASSERT_TRUE(pointer.set_column_value(target_column, dnmd::cursor_raw<DirectTableId>{direct}));
+            ASSERT_TRUE(pointer.set_column_value(target_column, dnmd::raw_cursor<DirectTableId>{direct}));
 
             auto check = [&](mdcursor_t source, bool expected_row) {
                 position_type position{source};
@@ -259,7 +259,7 @@ namespace
             for (uint32_t row : {0u, 2u})
             {
                 mdcursor_t source{reinterpret_cast<intptr_t>(&pointer), static_cast<intptr_t>(row)};
-                dnmd::cursor_indirect<DirectTableId, IndirectTableId> position{source};
+                dnmd::indirect_cursor<DirectTableId, IndirectTableId> position{source};
                 EXPECT_FALSE(position);
                 mdToken token;
                 ASSERT_TRUE(position.get_token(token));

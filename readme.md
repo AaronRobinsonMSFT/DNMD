@@ -30,7 +30,7 @@ The primary goal of DNMD is to explore the benefits of a rewrite of the metadata
 The C API names and types in `dnmd.h` remain global.
 `dnmd::cursor<TableId>` represents an existing, dereferenceable row and cannot be
 default-constructed or constructed directly from a C cursor.
-`dnmd::cursor_raw<TableIds...>` and `dnmd::cursor_indirect<DirectTableId, IndirectTableId>`
+`dnmd::raw_cursor<TableIds...>` and `dnmd::indirect_cursor<DirectTableId, IndirectTableId>`
 represent positions, including nil and one-past-the-end positions. Test a position
 before calling `as()` to obtain a row; calling `as()` on a non-dereferenceable
 position violates its precondition.

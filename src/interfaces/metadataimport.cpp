@@ -86,7 +86,7 @@ namespace
     HRESULT CreateEnumTokenRange(
         mdhandle_t mdhandle,
         mdToken token,
-        dnmd::column<TableId, dnmd::cursor_indirect<TargetTableId, IndirectTableId>> column,
+        dnmd::column<TableId, dnmd::indirect_cursor<TargetTableId, IndirectTableId>> column,
         HCORENUMImpl** pEnumImpl,
         _In_opt_ TokenRangeFilter<TargetTableId> const* filter = nullptr)
     {
@@ -95,7 +95,7 @@ namespace
         if (!cursor)
             return CLDB_E_INDEX_NOTFOUND;
 
-        dnmd::cursor_indirect<TargetTableId, IndirectTableId> begin;
+        dnmd::indirect_cursor<TargetTableId, IndirectTableId> begin;
         uint32_t count;
         if (!cursor.as().get_column_value_as_range(column, begin, &count))
             return CLDB_E_FILE_CORRUPT;
@@ -146,7 +146,7 @@ namespace
     template<mdtable_id_t TableId, mdtable_id_t... TargetTableIds>
     HRESULT CreateEnumTokenRangeForSortedTableKey(
         mdhandle_t mdhandle,
-        dnmd::column<TableId, dnmd::cursor_raw<TargetTableIds...>> keyColumn,
+        dnmd::column<TableId, dnmd::raw_cursor<TargetTableIds...>> keyColumn,
         mdToken token,
         HCORENUMImpl** pEnumImpl)
     {
@@ -156,7 +156,7 @@ namespace
         if (!cursor)
             return CLDB_E_RECORD_NOTFOUND;
 
-        dnmd::cursor_raw<TableId> begin;
+        dnmd::raw_cursor<TableId> begin;
         uint32_t count;
         md_range_result_t result = dnmd::md_find_range_from_cursor(cursor.as(), keyColumn, token, begin, &count);
 
@@ -336,11 +336,11 @@ namespace
     HRESULT EnumTableRange(
         dnmd::cursor<TableId> begin,
         uint32_t count,
-        dnmd::column<TableId, dnmd::cursor_raw<TargetTableIds...>> lookupRange,
+        dnmd::column<TableId, dnmd::raw_cursor<TargetTableIds...>> lookupRange,
         mdToken lookupTk,
         T& op)
     {
-        dnmd::cursor_raw<TableId> curr;
+        dnmd::raw_cursor<TableId> curr;
         uint32_t currCount;
         md_range_result_t result = dnmd::md_find_range_from_cursor(begin, lookupRange, lookupTk, curr, &currCount);
         if (result == MD_RANGE_FOUND)
@@ -356,7 +356,7 @@ namespace
         else if (result == MD_RANGE_NOT_SUPPORTED)
         {
             // Cannot get a range on this table so we need to search across the entire table
-            curr = dnmd::cursor_raw<TableId>{begin};
+            curr = dnmd::raw_cursor<TableId>{begin};
             currCount = count;
 
             // Read in for matching in bulk
@@ -747,9 +747,9 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumMembers(
         if (!cursor)
             return CLDB_E_INDEX_NOTFOUND;
 
-        dnmd::cursor_indirect<mdtid_MethodDef, mdtid_MethodPtr> methodList;
+        dnmd::indirect_cursor<mdtid_MethodDef, mdtid_MethodPtr> methodList;
         uint32_t methodListCount;
-        dnmd::cursor_indirect<mdtid_Field, mdtid_FieldPtr> fieldList;
+        dnmd::indirect_cursor<mdtid_Field, mdtid_FieldPtr> fieldList;
         uint32_t fieldListCount;
         if (!cursor.as().get_column_value_as_range(TypeDef_FieldList, fieldList, &fieldListCount)
             || !cursor.as().get_column_value_as_range(TypeDef_MethodList, methodList, &methodListCount))
@@ -789,9 +789,9 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumMembersWithName(
             return CLDB_E_INDEX_NOTFOUND;
         auto cursor = position.as();
 
-        dnmd::cursor_indirect<mdtid_MethodDef, mdtid_MethodPtr> methodList;
+        dnmd::indirect_cursor<mdtid_MethodDef, mdtid_MethodPtr> methodList;
         uint32_t methodListCount;
-        dnmd::cursor_indirect<mdtid_Field, mdtid_FieldPtr> fieldList;
+        dnmd::indirect_cursor<mdtid_Field, mdtid_FieldPtr> fieldList;
         uint32_t fieldListCount;
 
         if (!cursor.get_column_value_as_range(TypeDef_FieldList, fieldList, &fieldListCount)
@@ -1141,7 +1141,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::FindMethod(
     if (!typedefCursor)
         return CLDB_E_INDEX_NOTFOUND;
 
-    dnmd::cursor_indirect<mdtid_MethodDef, mdtid_MethodPtr> methodCursor;
+    dnmd::indirect_cursor<mdtid_MethodDef, mdtid_MethodPtr> methodCursor;
     uint32_t count;
     if (!typedefCursor.as().get_column_value_as_range(TypeDef_MethodList, methodCursor, &count))
         return CLDB_E_FILE_CORRUPT;
@@ -1216,7 +1216,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::FindField(
     if (!typedefCursor)
         return CLDB_E_INDEX_NOTFOUND;
 
-    dnmd::cursor_indirect<mdtid_Field, mdtid_FieldPtr> fieldCursor;
+    dnmd::indirect_cursor<mdtid_Field, mdtid_FieldPtr> fieldCursor;
     uint32_t count;
     if (!typedefCursor.as().get_column_value_as_range(TypeDef_FieldList, fieldCursor, &count))
         return CLDB_E_FILE_CORRUPT;
@@ -1442,8 +1442,8 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumProperties(
 
         // Find the entry in the PropertyMap table and then
         // resolve the column to the range in the Property table.
-        dnmd::cursor_raw<mdtid_PropertyMap> typedefPropMap;
-        dnmd::cursor_indirect<mdtid_Property, mdtid_PropertyPtr> propertyList;
+        dnmd::raw_cursor<mdtid_PropertyMap> typedefPropMap;
+        dnmd::indirect_cursor<mdtid_Property, mdtid_PropertyPtr> propertyList;
         uint32_t propertyListCount;
         if (!(typedefPropMap = dnmd::md_find_row_from_cursor(propertyMap.as(), PropertyMap_Parent, td))
             || !typedefPropMap.as().get_column_value_as_range(PropertyMap_PropertyList, propertyList, &propertyListCount))
@@ -1479,8 +1479,8 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumEvents(
 
         // Find the entry in the EventMap table and then
         // resolve the column to the range in the Event table.
-        dnmd::cursor_raw<mdtid_EventMap> typedefEventMap;
-        dnmd::cursor_indirect<mdtid_Event, mdtid_EventPtr> eventList;
+        dnmd::raw_cursor<mdtid_EventMap> typedefEventMap;
+        dnmd::indirect_cursor<mdtid_Event, mdtid_EventPtr> eventList;
         uint32_t eventListCount;
         if (!(typedefEventMap = dnmd::md_find_row_from_cursor(eventMap.as(), EventMap_Parent, td))
             || !typedefEventMap.as().get_column_value_as_range(EventMap_EventList, eventList, &eventListCount))
@@ -1701,7 +1701,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetClassLayout(
     if (TypeFromToken(td) != mdtTypeDef)
         return E_INVALIDARG;
 
-    dnmd::cursor_raw<mdtid_ClassLayout> entry;
+    dnmd::raw_cursor<mdtid_ClassLayout> entry;
     bool foundLayout = false;
     auto begin = dnmd::md_create_cursor<mdtid_ClassLayout>(_md_ptr.get());
     if (!begin
@@ -1732,7 +1732,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetClassLayout(
         return CLDB_E_RECORD_NOTFOUND;
 
     // Get the list of field data
-    dnmd::cursor_indirect<mdtid_Field, mdtid_FieldPtr> fieldList;
+    dnmd::indirect_cursor<mdtid_Field, mdtid_FieldPtr> fieldList;
     uint32_t fieldListCount;
     if (!typeEntry.as().get_column_value_as_range(TypeDef_FieldList, fieldList, &fieldListCount))
         return CLDB_E_FILE_CORRUPT;
@@ -1753,7 +1753,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetClassLayout(
 
             // See above comment about empty FieldLayout table.
             offset.ulOffset = (ULONG)-1;
-            dnmd::cursor_raw<mdtid_FieldLayout> fieldLayoutRow;
+            dnmd::raw_cursor<mdtid_FieldLayout> fieldLayoutRow;
             if (fieldLayoutBegin
                 && (fieldLayoutRow = dnmd::md_find_row_from_cursor(fieldLayoutBegin.as(), FieldLayout_Field, offset.ridOfField)))
             {
@@ -1784,7 +1784,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetFieldMarshal(
     if (TypeFromToken(tk) != mdtParamDef && TypeFromToken(tk) != mdtFieldDef)
         return E_INVALIDARG;
 
-    dnmd::cursor_raw<mdtid_FieldMarshal> fieldMarshalRow;
+    dnmd::raw_cursor<mdtid_FieldMarshal> fieldMarshalRow;
     auto cursor = dnmd::md_create_cursor<mdtid_FieldMarshal>(_md_ptr.get());
     if (!cursor
         || !(fieldMarshalRow = dnmd::md_find_row_from_cursor(cursor.as(), FieldMarshal_Parent, tk)))
@@ -2052,7 +2052,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetPinvokeMap(
     if (TypeFromToken(tk) != mdtMethodDef && TypeFromToken(tk) != mdtFieldDef)
         return E_INVALIDARG;
 
-    dnmd::cursor_raw<mdtid_ImplMap> implRow;
+    dnmd::raw_cursor<mdtid_ImplMap> implRow;
     auto cursor = dnmd::md_create_cursor<mdtid_ImplMap>(_md_ptr.get());
     if (!cursor
         || !(implRow = dnmd::md_find_row_from_cursor(cursor.as(), ImplMap_MemberForwarded, tk)))
@@ -2154,7 +2154,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetParamForMethodIndex(
     if (!cursor)
         return CLDB_E_RECORD_NOTFOUND;
 
-    dnmd::cursor_indirect<mdtid_Param, mdtid_ParamPtr> curr;
+    dnmd::indirect_cursor<mdtid_Param, mdtid_ParamPtr> curr;
     uint32_t count;
     if (!cursor.as().get_column_value_as_range(MethodDef_ParamList, curr, &count))
         return CLDB_E_FILE_CORRUPT;
@@ -2202,7 +2202,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumCustomAttributes(
         if (!cursor)
             return CLDB_E_RECORD_NOTFOUND;
 
-        dnmd::cursor_raw<mdtid_CustomAttribute> curr;
+        dnmd::raw_cursor<mdtid_CustomAttribute> curr;
         uint32_t currCount;
         if (IsNilToken(tk))
         {
@@ -2417,7 +2417,7 @@ namespace
     {
         assert(ptr != nullptr);
 
-        dnmd::cursor_raw<mdtid_Constant> constantPropCursor;
+        dnmd::raw_cursor<mdtid_Constant> constantPropCursor;
         uint32_t corType;
         uint8_t const* defaultValue;
         uint32_t defaultValueLen;
@@ -2863,7 +2863,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetNestedClassProps(
         return CLDB_E_RECORD_NOTFOUND;
     }
 
-    dnmd::cursor_raw<mdtid_TypeDef> enclosingClass;
+    dnmd::raw_cursor<mdtid_TypeDef> enclosingClass;
     if (!nestedClassRow.as().get_column_value(NestedClass_EnclosingClass, enclosingClass))
         return CLDB_E_FILE_CORRUPT;
 
