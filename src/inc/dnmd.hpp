@@ -128,21 +128,22 @@ template<mdtable_id_t TableId, mdtable_id_t... TableIds>
 inline constexpr bool contains_table_id_v = ((TableId == TableIds) || ...);
 
 template<mdtable_id_t... TableIds>
-struct column_reference_decoder
+struct column_reference_codec
 {
     static_assert(sizeof...(TableIds) > 1);
     static_assert(((TableIds == mdtid_Unused || (TableIds >= mdtid_First && TableIds < mdtid_End)) && ...));
 
+    static constexpr mdtable_id_t tables[] = {TableIds...};
+    // TODO: Use std::countl_zero to compute the tag width once C++20 is required.
+    static constexpr uint32_t tag_bits = [] {
+        uint32_t bits = 0;
+        for (size_t count = sizeof...(TableIds) - 1; count != 0; count >>= 1)
+            ++bits;
+        return bits;
+    }();
+
     static bool decode(uint32_t raw, mdtable_id_t& table, uint32_t& row) noexcept
     {
-        static constexpr mdtable_id_t tables[] = {TableIds...};
-        // TODO: Use std::countl_zero to compute the tag width once C++20 is required.
-        constexpr uint32_t tag_bits = [] {
-            uint32_t bits = 0;
-            for (size_t count = sizeof...(TableIds) - 1; count != 0; count >>= 1)
-                ++bits;
-            return bits;
-        }();
         uint32_t tag = raw & ((uint32_t{1} << tag_bits) - 1);
         if (tag >= sizeof...(TableIds) || tables[tag] == mdtid_Unused)
             return false;
@@ -150,10 +151,24 @@ struct column_reference_decoder
         row = raw >> tag_bits;
         return true;
     }
+
+    static bool encode(mdToken value, uint32_t& raw) noexcept
+    {
+        auto table = static_cast<mdtable_id_t>(ExtractTokenType(value));
+        for (uint32_t tag = 0; tag < sizeof...(TableIds); ++tag)
+        {
+            if (tables[tag] == table)
+            {
+                raw = ((RidFromToken)(value) << tag_bits) | tag;
+                return true;
+            }
+        }
+        return false;
+    }
 };
 
 template<mdtable_id_t TableId>
-struct column_reference_decoder<TableId>
+struct column_reference_codec<TableId>
 {
     static_assert(TableId >= mdtid_First && TableId < mdtid_End);
 
@@ -163,9 +178,17 @@ struct column_reference_decoder<TableId>
         row = (RidFromToken)(raw);
         return true;
     }
+
+    static bool encode(mdToken value, uint32_t& raw) noexcept
+    {
+        if (ExtractTokenType(value) != TableId)
+            return false;
+        raw = (RidFromToken)(value);
+        return true;
+    }
 };
 
-// Reuse the core's data decoders while its implementation remains C.
+// Shared core helpers while its implementation remains C.
 extern "C"
 {
 bool resolve_column_reference(mdtable_t const* source, mdtable_id_t table, uint32_t row, mdcursor_t* cursor);
@@ -173,6 +196,17 @@ bool try_get_string(::mdcxt__* context, size_t offset, char const** value);
 bool try_get_blob(::mdcxt__* context, size_t offset, uint8_t const** value, uint32_t* length);
 bool try_get_guid(::mdcxt__* context, size_t index, mdguid_t* value);
 bool try_get_user_string(::mdcxt__* context, size_t offset, mduserstring_t* value, size_t* next_offset);
+uint8_t* get_writable_table_data(mdtable_t* table, bool make_writable);
+void update_column_sort_order(mdcursor_t row, col_index_t column);
+uint32_t add_to_string_heap(::mdcxt__* context, char const* value);
+uint32_t add_to_blob_heap(::mdcxt__* context, uint8_t const* value, uint32_t length);
+uint32_t add_to_guid_heap(::mdcxt__* context, mdguid_t value);
+uint32_t add_to_user_string_heap(::mdcxt__* context, char16_t const* value);
+extern mdguid_t const empty_guid;
+#ifdef DNMD_PORTABLE_PDB
+bool has_pdb(::mdcxt__* context);
+bool update_referenced_type_system_table_row_count(::mdcxt__* context, mdtable_id_t table, uint32_t row);
+#endif
 }
 
 template<mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
@@ -223,7 +257,7 @@ private:
     {
         mdtable_id_t table;
         uint32_t row;
-        return detail::column_reference_decoder<TargetTableIds...>::decode(read_raw(col), table, row)
+        return detail::column_reference_codec<TargetTableIds...>::decode(read_raw(col), table, row)
             && detail::resolve_column_reference(_table, table, row, &value);
     }
 
@@ -258,7 +292,7 @@ public:
     {
         mdtable_id_t table;
         uint32_t row;
-        if (!detail::column_reference_decoder<TargetTableIds...>::decode(read_raw(col), table, row))
+        if (!detail::column_reference_codec<TargetTableIds...>::decode(read_raw(col), table, row))
             return false;
         value = CreateTokenType(table) | row;
         return true;
@@ -315,6 +349,161 @@ public:
 };
 
 template<mdtable_id_t TableId>
+struct row_writer final
+{
+private:
+    mdcursor_t _cursor;
+
+    template<bool TrackOrder, typename ColumnType>
+    bool write_raw(column<TableId, ColumnType> col, uint32_t value) const noexcept
+    {
+        auto table = detail::CursorTable(_cursor);
+        auto data = detail::get_writable_table_data(table, true);
+        if (data == nullptr)
+            return false;
+
+        // Heap growth can change both the row layout and its storage.
+        auto details = table->column_details[static_cast<uint8_t>(col.column_index)];
+        data += size_t{detail::CursorRow(_cursor) - 1} * table->row_size_bytes
+            + ((static_cast<uint32_t>(details) & mdtc_comask) >> 8);
+#ifdef _MSC_VER
+        if (details & mdtc_b4)
+            std::memcpy(data, &value, sizeof(value));
+        else
+        {
+            auto short_value = static_cast<uint16_t>(value);
+            std::memcpy(data, &short_value, sizeof(short_value));
+        }
+#else
+        data[0] = static_cast<uint8_t>(value);
+        data[1] = static_cast<uint8_t>(value >> 8);
+        if (details & mdtc_b4)
+        {
+            data[2] = static_cast<uint8_t>(value >> 16);
+            data[3] = static_cast<uint8_t>(value >> 24);
+        }
+#endif
+        if constexpr (TrackOrder)
+            detail::update_column_sort_order(_cursor, col.column_index);
+        return true;
+    }
+
+    template<typename ColumnType>
+    bool write_reference(column<TableId, ColumnType> col, mdToken token, uint32_t encoded) const noexcept
+    {
+#ifdef DNMD_PORTABLE_PDB
+        auto context = detail::CursorTable(_cursor)->cxt;
+        auto table = static_cast<mdtable_id_t>(ExtractTokenType(token));
+        if (table < mdtid_FirstPdb && detail::has_pdb(context)
+            && !detail::update_referenced_type_system_table_row_count(context, table, (detail::RidFromToken)(token)))
+            return false;
+#else
+        (void)token;
+#endif
+        return write_raw<true>(col, encoded);
+    }
+
+public:
+    explicit row_writer(cursor<TableId> const& row) noexcept : _cursor{row._cursor} {}
+
+    bool write(column<TableId, column_type_constant> col, uint32_t value) const noexcept
+    {
+        return write_raw<true>(col, value);
+    }
+
+    bool write(column<TableId, column_type_string> col, char const* value) const noexcept
+    {
+        uint32_t offset = detail::add_to_string_heap(detail::CursorTable(_cursor)->cxt, value);
+        return (offset != 0 || value[0] == '\0') && write_raw<false>(col, offset);
+    }
+
+    bool write(column<TableId, column_type_blob> col, uint8_t const* value, uint32_t length) const noexcept
+    {
+        uint32_t offset = detail::add_to_blob_heap(detail::CursorTable(_cursor)->cxt, value, length);
+        return (offset != 0 || length == 0) && write_raw<false>(col, offset);
+    }
+
+    bool write(column<TableId, column_type_guid> col, mdguid_t value) const noexcept
+    {
+        uint32_t index = detail::add_to_guid_heap(detail::CursorTable(_cursor)->cxt, value);
+        return (index != 0 || std::memcmp(&value, &detail::empty_guid, sizeof(value)) == 0)
+            && write_raw<false>(col, index);
+    }
+
+    bool write(column<TableId, column_type_userstring> col, char16_t const* value) const noexcept
+    {
+        uint32_t offset = detail::add_to_user_string_heap(detail::CursorTable(_cursor)->cxt, value);
+        return (offset != 0 || value[0] == 0) && write_raw<false>(col, offset);
+    }
+
+    template<mdtable_id_t... TargetTableIds>
+    bool write(column<TableId, raw_cursor<TargetTableIds...>> col, mdToken value) const noexcept
+    {
+        uint32_t encoded;
+        return detail::column_reference_codec<TargetTableIds...>::encode(value, encoded)
+            && write_reference(col, value, encoded);
+    }
+
+    template<mdtable_id_t... TargetTableIds, mdtable_id_t ValueTableId,
+        std::enable_if_t<detail::contains_table_id_v<ValueTableId, TargetTableIds...>, int> = 0>
+    bool write(column<TableId, raw_cursor<TargetTableIds...>> col, cursor<ValueTableId> value) const noexcept
+    {
+        return write(col, CreateTokenType(ValueTableId) | detail::CursorRow(value));
+    }
+
+    template<mdtable_id_t... TargetTableIds, mdtable_id_t... ValueTableIds,
+        std::enable_if_t<std::conjunction_v<
+            std::bool_constant<detail::contains_table_id_v<ValueTableIds, TargetTableIds...>>...>, int> = 0>
+    bool write(column<TableId, raw_cursor<TargetTableIds...>> col, raw_cursor<ValueTableIds...> const& value) const noexcept
+    {
+        mdToken token;
+        return value.get_token(token) && write(col, token);
+    }
+
+    template<mdtable_id_t... TargetTableIds, mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId,
+        std::enable_if_t<detail::contains_table_id_v<DirectTableId, TargetTableIds...>, int> = 0>
+    bool write(column<TableId, raw_cursor<TargetTableIds...>> col, indirect_cursor<DirectTableId, IndirectTableId> const& value) const noexcept
+    {
+        mdToken token;
+        return value.get_target_token(token) && write(col, token);
+    }
+
+    template<mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
+    bool write(column<TableId, indirect_cursor<DirectTableId, IndirectTableId>> col, mdToken value) const noexcept
+    {
+        auto table = detail::CursorTable(_cursor);
+        auto details = table->column_details[static_cast<uint8_t>(col.column_index)];
+        auto target = static_cast<mdtable_id_t>((static_cast<uint32_t>(details) & mdtc_timask) >> 16);
+        if (static_cast<mdtable_id_t>(ExtractTokenType(value)) != target)
+            return false;
+        return write_reference(col, value, (detail::RidFromToken)(value));
+    }
+
+    template<mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId, mdtable_id_t ValueTableId,
+        std::enable_if_t<ValueTableId == DirectTableId || ValueTableId == IndirectTableId, int> = 0>
+    bool write(column<TableId, indirect_cursor<DirectTableId, IndirectTableId>> col, cursor<ValueTableId> value) const noexcept
+    {
+        return write(col, CreateTokenType(ValueTableId) | detail::CursorRow(value));
+    }
+
+    template<mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId, mdtable_id_t... ValueTableIds,
+        std::enable_if_t<std::conjunction_v<
+            std::bool_constant<detail::contains_table_id_v<ValueTableIds, DirectTableId, IndirectTableId>>...>, int> = 0>
+    bool write(column<TableId, indirect_cursor<DirectTableId, IndirectTableId>> col, raw_cursor<ValueTableIds...> const& value) const noexcept
+    {
+        mdToken token;
+        return value.get_token(token) && write(col, token);
+    }
+
+    template<mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
+    bool write(column<TableId, indirect_cursor<DirectTableId, IndirectTableId>> col, indirect_cursor<DirectTableId, IndirectTableId> const& value) const noexcept
+    {
+        mdToken token;
+        return value.get_token(token) && write(col, token);
+    }
+};
+
+template<mdtable_id_t TableId>
 struct cursor final
 {
     private:
@@ -324,6 +513,8 @@ struct cursor final
         friend struct indirect_cursor;
         template<mdtable_id_t>
         friend struct row_reader;
+        template<mdtable_id_t>
+        friend struct row_writer;
 
         mdcursor_t _cursor;
 
@@ -434,86 +625,75 @@ struct cursor final
 
         bool set_column_value(column<TableId, column_type_constant> column, uint32_t value) const noexcept
         {
-            return ::md_set_column_value_as_constant(_cursor, column.column_index, value);
+            return row_writer<TableId>{*this}.write(column, value);
         }
 
         bool set_column_value(column<TableId, column_type_string> column, char const* value) const noexcept
         {
-            return ::md_set_column_value_as_utf8(_cursor, column.column_index, value);
+            return row_writer<TableId>{*this}.write(column, value);
         }
 
         bool set_column_value(column<TableId, column_type_blob> column, uint8_t const* value, uint32_t length) const noexcept
         {
-            return ::md_set_column_value_as_blob(_cursor, column.column_index, value, length);
+            return row_writer<TableId>{*this}.write(column, value, length);
         }
 
         bool set_column_value(column<TableId, column_type_guid> column, mdguid_t value) const noexcept
         {
-            return ::md_set_column_value_as_guid(_cursor, column.column_index, value);
+            return row_writer<TableId>{*this}.write(column, value);
         }
 
         bool set_column_value(column<TableId, column_type_userstring> column, char16_t const* value) const noexcept
         {
-            return ::md_set_column_value_as_userstring(_cursor, column.column_index, value);
+            return row_writer<TableId>{*this}.write(column, value);
         }
 
         template<mdtable_id_t... TargetTableIds>
         bool set_column_value(column<TableId, raw_cursor<TargetTableIds...>> column, mdToken value) const noexcept
         {
-            return ::md_set_column_value_as_token(_cursor, column.column_index, value);
+            return row_writer<TableId>{*this}.write(column, value);
         }
 
         template<mdtable_id_t... TargetTableIds, mdtable_id_t ValueTableId>
         bool set_column_value(column<TableId, raw_cursor<TargetTableIds...>> column, cursor<ValueTableId> value) const noexcept
         {
-            static_assert(detail::contains_table_id_v<ValueTableId, TargetTableIds...>,
-                "The value must belong to a table referenced by the column.");
-            return ::md_set_column_value_as_cursor(_cursor, column.column_index, value);
+            return row_writer<TableId>{*this}.write(column, value);
         }
 
         template<mdtable_id_t... TargetTableIds, mdtable_id_t... ValueTableIds>
         bool set_column_value(column<TableId, raw_cursor<TargetTableIds...>> column, raw_cursor<ValueTableIds...> const& value) const noexcept
         {
-            static_assert((detail::contains_table_id_v<ValueTableIds, TargetTableIds...> && ...),
-                "The value must only reference tables allowed by the column.");
-            return ::md_set_column_value_as_cursor(_cursor, column.column_index, value);
+            return row_writer<TableId>{*this}.write(column, value);
         }
 
         template<mdtable_id_t... TargetTableIds, mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
         bool set_column_value(column<TableId, raw_cursor<TargetTableIds...>> column, indirect_cursor<DirectTableId, IndirectTableId> const& value) const noexcept
         {
-            static_assert(detail::contains_table_id_v<DirectTableId, TargetTableIds...>,
-                "The target must belong to a table referenced by the column.");
-            mdToken token;
-            return value.get_target_token(token) && ::md_set_column_value_as_token(_cursor, column.column_index, token);
+            return row_writer<TableId>{*this}.write(column, value);
         }
 
         template<mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
         bool set_column_value(column<TableId, indirect_cursor<DirectTableId, IndirectTableId>> column, mdToken value) const noexcept
         {
-            return ::md_set_column_value_as_token(_cursor, column.column_index, value);
+            return row_writer<TableId>{*this}.write(column, value);
         }
 
         template<mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId, mdtable_id_t ValueTableId>
         bool set_column_value(column<TableId, indirect_cursor<DirectTableId, IndirectTableId>> column, cursor<ValueTableId> value) const noexcept
         {
-            static_assert(ValueTableId == DirectTableId || ValueTableId == IndirectTableId,
-                "The value must belong to the direct or indirection table.");
-            return ::md_set_column_value_as_cursor(_cursor, column.column_index, value);
+            return row_writer<TableId>{*this}.write(column, value);
         }
 
         template<mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId, mdtable_id_t... ValueTableIds>
         bool set_column_value(column<TableId, indirect_cursor<DirectTableId, IndirectTableId>> column, raw_cursor<ValueTableIds...> const& value) const noexcept
         {
-            static_assert((detail::contains_table_id_v<ValueTableIds, DirectTableId, IndirectTableId> && ...),
-                "The value must only reference the direct or indirection table.");
-            return ::md_set_column_value_as_cursor(_cursor, column.column_index, value);
+            return row_writer<TableId>{*this}.write(column, value);
         }
 
         template<mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
         bool set_column_value(column<TableId, indirect_cursor<DirectTableId, IndirectTableId>> column, indirect_cursor<DirectTableId, IndirectTableId> const& value) const noexcept
         {
-            return ::md_set_column_value_as_cursor(_cursor, column.column_index, value);
+            return row_writer<TableId>{*this}.write(column, value);
         }
 
         template<mdtable_id_t TargetTableId, mdtable_id_t IndirectTableId>

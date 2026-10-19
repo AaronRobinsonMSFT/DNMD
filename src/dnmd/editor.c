@@ -512,7 +512,7 @@ bool update_referenced_type_system_table_row_count(mdcxt_t* cxt, mdtable_id_t up
         pdb.referenced_type_system_tables |= (1ULL << updated_table);
     }
 
-    if (editor->pdb_heap.heap.ptr == NULL || pdb_heap_size < editor->pdb_heap.heap.size)
+    if (editor->pdb_heap.heap.ptr == NULL || pdb_heap_size > editor->pdb_heap.heap.size)
     {
         // If we don't have space for the new row count or we haven't edited the PDB heap yet, then we need to allocate more space.
         if (!allocate_more_editable_space(editor->cxt, &editor->pdb_heap.heap, editor->pdb_heap.stream, pdb_heap_size))
@@ -547,6 +547,7 @@ bool update_referenced_type_system_table_row_count(mdcxt_t* cxt, mdtable_id_t up
     // Validate we wrote the row counts properly
     if (pdb_heap_data != pdb_end)
         return false;
+    editor->pdb_heap.stream->size = pdb_heap_size;
     return true;
 }
 #endif // DNMD_PORTABLE_PDB

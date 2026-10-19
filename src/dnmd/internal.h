@@ -326,6 +326,7 @@ typedef struct access_cxt__
 
 bool create_access_context(mdcursor_t* cursor, col_index_t col_idx, bool make_writable, access_cxt_t* rcxt);
 bool write_column_data(access_cxt_t* acxt, uint32_t data);
+void update_column_sort_order(mdcursor_t row, col_index_t column);
 bool read_column_data(access_cxt_t* acxt, uint32_t* data);
 bool resolve_column_reference(mdtable_t const* source, mdtable_id_t table, uint32_t row, mdcursor_t* cursor);
 

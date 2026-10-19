@@ -78,11 +78,23 @@ placeholders for reserved tags. Reserved and out-of-range tags fail the read.
 List columns use their direct/indirection-table metadata rather than coded tags.
 
 Rows provide matching `set_column_value` overloads for constants, UTF-8 strings,
-blobs, GUIDs, user strings, and table references. Setters return `bool` without
-exception-based error handling and retain the C setters' input preconditions.
+blobs, GUIDs, user strings, and table references. They delegate to the corresponding
+`dnmd::row_writer<TableId>::write(column, value)` overloads. Construct a writer from
+a dereferenceable `cursor<TableId>` and reuse it for multiple columns of the row.
+Writes return `bool` without exception-based error handling and retain the C
+setters' input preconditions.
 References accept tokens, typed rows, and raw positions, including nil and end
 positions. An indirect value supplies its resolved target for a reference column,
 but its source position for a list column so pointer-table indices are preserved.
+
+Writers keep a row position rather than a cached writable pointer, so their own
+heap writes can grow heaps and widen columns safely. They reacquire the current
+layout and writable storage for each write, preserving copy-on-write behavior,
+sorted-table bookkeeping, and Portable PDB reference tracking. Reacquire writers
+after edits that change the row's identity, such as inserting rows before it.
+Column encoding and storage writes use the typed C++ path rather than the C
+setters' access-context checks; allocation and metadata bookkeeping remain shared
+with the core.
 
 Raw and indirect cursors expose `get_token(mdToken&)`, including for sentinel
 positions. An indirect cursor additionally exposes `get_target_token(mdToken&)`
@@ -94,7 +106,7 @@ reading a pointer row. Reacquire indirect cursors after metadata
 edits that affect their source or target positions. Advance positions with
 `dnmd::md_cursor_next` or `dnmd::md_cursor_move`, not row cursors. Typed row searches return a
 raw cursor in the searched table, rather than the table referenced by the column.
-The metadata handle must outlive its cursors.
+The metadata handle must outlive its cursors, readers, and writers.
 
 ## Build
 
