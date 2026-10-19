@@ -222,18 +222,18 @@ namespace
     }
 
     template<mdtable_id_t TableId>
-    bool ReadTypeName(dnmd::cursor<TableId> cursor, char const** nspace, char const** name)
+    bool ReadTypeName(dnmd::row_reader<TableId> const& reader, char const** nspace, char const** name)
     {
         static_assert(TableId == mdtid_TypeDef || TableId == mdtid_TypeRef);
         if constexpr (TableId == mdtid_TypeDef)
         {
-            return (nspace == nullptr || cursor.get_column_value(TypeDef_TypeNamespace, nspace))
-                && (name == nullptr || cursor.get_column_value(TypeDef_TypeName, name));
+            return (nspace == nullptr || reader.read(TypeDef_TypeNamespace, nspace))
+                && (name == nullptr || reader.read(TypeDef_TypeName, name));
         }
         else
         {
-            return (nspace == nullptr || cursor.get_column_value(TypeRef_TypeNamespace, nspace))
-                && (name == nullptr || cursor.get_column_value(TypeRef_TypeName, name));
+            return (nspace == nullptr || reader.read(TypeRef_TypeNamespace, nspace))
+                && (name == nullptr || reader.read(TypeRef_TypeName, name));
         }
     }
 
@@ -473,9 +473,10 @@ namespace
             uint32_t typeRefScope;
             char const* typeRefNspace;
             char const* typeRefName;
-            if (!typeRefCursor.as().get_column_value(TypeRef_ResolutionScope, typeRefScope)
-                || !typeRefCursor.as().get_column_value(TypeRef_TypeNamespace, &typeRefNspace)
-                || !typeRefCursor.as().get_column_value(TypeRef_TypeName, &typeRefName))
+            dnmd::row_reader typeRefCursor_reader{typeRefCursor.as()};
+            if (!typeRefCursor_reader.read(TypeRef_ResolutionScope, typeRefScope)
+                || !typeRefCursor_reader.read(TypeRef_TypeNamespace, &typeRefNspace)
+                || !typeRefCursor_reader.read(TypeRef_TypeName, &typeRefName))
             {
                 return CLDB_E_FILE_CORRUPT;
             }
@@ -511,7 +512,8 @@ namespace
         mdToken tmpTk;
         for (uint32_t i = 0; i < count; (void)dnmd::md_cursor_next(cursor), ++i)
         {
-            if (!cursor.as().get_column_value(TypeDef_Flags, &flags))
+            dnmd::row_reader reader{cursor.as()};
+            if (!reader.read(TypeDef_Flags, &flags))
                 return CLDB_E_FILE_CORRUPT;
 
             // Use XOR to handle the following in a single expression:
@@ -534,13 +536,13 @@ namespace
                     continue;
             }
 
-            if (!cursor.as().get_column_value(TypeDef_TypeNamespace, &str))
+            if (!reader.read(TypeDef_TypeNamespace, &str))
                 return CLDB_E_FILE_CORRUPT;
 
             if (0 != ::strcmp(nspace, str))
                 continue;
 
-            if (!cursor.as().get_column_value(TypeDef_TypeName, &str))
+            if (!reader.read(TypeDef_TypeName, &str))
                 return CLDB_E_FILE_CORRUPT;
 
             if (0 == ::strcmp(name, str))
@@ -597,12 +599,13 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetScopeProps(
         return CLDB_E_INDEX_NOTFOUND;
 
     GUID mvid;
-    if (!cursor.as().get_column_value(Module_Mvid, reinterpret_cast<mdguid_t*>(&mvid)))
+    dnmd::row_reader reader{cursor.as()};
+    if (!reader.read(Module_Mvid, reinterpret_cast<mdguid_t*>(&mvid)))
         return CLDB_E_FILE_CORRUPT;
     *pmvid = mvid;
 
     char const* name;
-    if (!cursor.as().get_column_value(Module_Name, &name))
+    if (!reader.read(Module_Name, &name))
         return CLDB_E_FILE_CORRUPT;
     return ConvertAndReturnStringOutput(name, szName, cchName, pchName);
 }
@@ -634,12 +637,13 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetTypeDefProps(
         return CLDB_E_RECORD_NOTFOUND;
 
     uint32_t flags;
-    if (!cursor.as().get_column_value(TypeDef_Flags, &flags))
+    dnmd::row_reader reader{cursor.as()};
+    if (!reader.read(TypeDef_Flags, &flags))
         return CLDB_E_FILE_CORRUPT;
     *pdwTypeDefFlags = flags;
 
     mdToken extends;
-    if (!cursor.as().get_column_value(TypeDef_Extends, extends))
+    if (!reader.read(TypeDef_Extends, extends))
         return CLDB_E_FILE_CORRUPT;
     *ptkExtends = extends == mdTypeDefNil
         ? mdTypeRefNil
@@ -647,8 +651,8 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetTypeDefProps(
 
     char const* name;
     char const* nspace;
-    if (!cursor.as().get_column_value(TypeDef_TypeName, &name)
-        || !cursor.as().get_column_value(TypeDef_TypeNamespace, &nspace))
+    if (!reader.read(TypeDef_TypeName, &name)
+        || !reader.read(TypeDef_TypeNamespace, &nspace))
     {
         return CLDB_E_FILE_CORRUPT;
     }
@@ -672,12 +676,13 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetInterfaceImplProps(
         return CLDB_E_INDEX_NOTFOUND;
 
     mdTypeDef type;
-    if (!cursor.as().get_column_value(InterfaceImpl_Class, type))
+    dnmd::row_reader reader{cursor.as()};
+    if (!reader.read(InterfaceImpl_Class, type))
         return CLDB_E_FILE_CORRUPT;
     *pClass = type;
 
     mdToken iface;
-    if (!cursor.as().get_column_value(InterfaceImpl_Interface, iface))
+    if (!reader.read(InterfaceImpl_Interface, iface))
         return CLDB_E_FILE_CORRUPT;
     *ptkIface = iface;
 
@@ -700,14 +705,15 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetTypeRefProps(
         return CLDB_E_RECORD_NOTFOUND;
 
     mdToken resScope;
-    if (!cursor.as().get_column_value(TypeRef_ResolutionScope, resScope))
+    dnmd::row_reader reader{cursor.as()};
+    if (!reader.read(TypeRef_ResolutionScope, resScope))
         return CLDB_E_FILE_CORRUPT;
     *ptkResolutionScope = resScope;
 
     char const* name;
     char const* nspace;
-    if (!cursor.as().get_column_value(TypeRef_TypeName, &name)
-        || !cursor.as().get_column_value(TypeRef_TypeNamespace, &nspace))
+    if (!reader.read(TypeRef_TypeName, &name)
+        || !reader.read(TypeRef_TypeNamespace, &nspace))
     {
         return CLDB_E_FILE_CORRUPT;
     }
@@ -751,8 +757,9 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumMembers(
         uint32_t methodListCount;
         dnmd::indirect_cursor<mdtid_Field, mdtid_FieldPtr> fieldList;
         uint32_t fieldListCount;
-        if (!cursor.as().get_column_value_as_range(TypeDef_FieldList, fieldList, &fieldListCount)
-            || !cursor.as().get_column_value_as_range(TypeDef_MethodList, methodList, &methodListCount))
+        dnmd::row_reader reader{cursor.as()};
+        if (!reader.read(TypeDef_FieldList, fieldList, &fieldListCount)
+            || !reader.read(TypeDef_MethodList, methodList, &methodListCount))
         {
             return CLDB_E_FILE_CORRUPT;
         }
@@ -794,8 +801,9 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumMembersWithName(
         dnmd::indirect_cursor<mdtid_Field, mdtid_FieldPtr> fieldList;
         uint32_t fieldListCount;
 
-        if (!cursor.get_column_value_as_range(TypeDef_FieldList, fieldList, &fieldListCount)
-             || !cursor.get_column_value_as_range(TypeDef_MethodList, methodList, &methodListCount))
+        dnmd::row_reader reader{cursor};
+        if (!reader.read(TypeDef_FieldList, fieldList, &fieldListCount)
+             || !reader.read(TypeDef_MethodList, methodList, &methodListCount))
         {
             return CLDB_E_FILE_CORRUPT;
         }
@@ -1017,8 +1025,9 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumMethodImpls(
 
             bool operator()(dnmd::cursor<mdtid_MethodImpl> c)
             {
-                if (!c.get_column_value(MethodImpl_MethodBody, Body)
-                    || !c.get_column_value(MethodImpl_MethodDeclaration, Decl))
+                dnmd::row_reader reader{c};
+                if (!reader.read(MethodImpl_MethodBody, Body)
+                    || !reader.read(MethodImpl_MethodDeclaration, Decl))
                 {
                     Result = CLDB_E_FILE_CORRUPT;
                     return true;
@@ -1090,11 +1099,12 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumPermissionSets(
             HCORENUMImpl_ptr cleanup{ enumImpl };
             for (uint32_t i = 0; i < count; ++i)
             {
+                dnmd::row_reader reader{cursor.as()};
                 if ((IsDclActionNil(dwActions)
-                        || (cursor.as().get_column_value(DeclSecurity_Action, &action)
+                        || (reader.read(DeclSecurity_Action, &action)
                             && action == dwActions))
                     && (IsNilToken(tk)
-                        || (cursor.as().get_column_value(DeclSecurity_Parent, parent)
+                        || (reader.read(DeclSecurity_Parent, parent)
                             && parent == tk)))
                 {
                     (void)cursor.get_token(toAdd);
@@ -1166,7 +1176,8 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::FindMethod(
             return CLDB_E_FILE_CORRUPT;
         auto target = methodCursor.as();
         uint32_t flags;
-        if (!target.get_column_value(MethodDef_Flags, &flags))
+        dnmd::row_reader target_reader{target};
+        if (!target_reader.read(MethodDef_Flags, &flags))
             return CLDB_E_FILE_CORRUPT;
 
         // Ignore PrivateScope methods. By the spec, they can only be referred to by a MethodDef token
@@ -1175,7 +1186,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::FindMethod(
             continue;
 
         char const* methodName;
-        if (!target.get_column_value(MethodDef_Name, &methodName))
+        if (!target_reader.read(MethodDef_Name, &methodName))
             return CLDB_E_FILE_CORRUPT;
         if (::strncmp(methodName, cvt, cvt.Length()) != 0)
             continue;
@@ -1184,7 +1195,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::FindMethod(
         {
             uint8_t const* sig;
             uint32_t sigLen;
-            if (!target.get_column_value(MethodDef_Signature, &sig, &sigLen))
+            if (!target_reader.read(MethodDef_Signature, &sig, &sigLen))
                 return CLDB_E_FILE_CORRUPT;
             if (sigLen != methodDefSig.size()
                 || ::memcmp((uint8_t*)methodDefSig, sig, sigLen) != 0)
@@ -1231,7 +1242,8 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::FindField(
             return CLDB_E_FILE_CORRUPT;
         auto target = fieldCursor.as();
         uint32_t flags;
-        if (!target.get_column_value(Field_Flags, &flags))
+        dnmd::row_reader target_reader{target};
+        if (!target_reader.read(Field_Flags, &flags))
             return CLDB_E_FILE_CORRUPT;
 
         // Ignore PrivateScope fields. By the spec, they can only be referred to by a FieldDef token
@@ -1240,7 +1252,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::FindField(
             continue;
 
         char const* name;
-        if (!target.get_column_value(Field_Name, &name))
+        if (!target_reader.read(Field_Name, &name))
             return CLDB_E_FILE_CORRUPT;
         if (::strncmp(name, cvt, cvt.Length()) != 0)
             continue;
@@ -1249,7 +1261,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::FindField(
         {
             uint8_t const* sig;
             uint32_t sigLen;
-            if (!target.get_column_value(Field_Signature, &sig, &sigLen))
+            if (!target_reader.read(Field_Signature, &sig, &sigLen))
                 return CLDB_E_FILE_CORRUPT;
             if (cbSigBlob != sigLen
                 || ::memcmp(pvSigBlob, sig, sigLen) != 0)
@@ -1294,7 +1306,8 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::FindMemberRef(
     for (uint32_t i = 0; i < count; (void)dnmd::md_cursor_next(cursor), ++i)
     {
         mdToken refParent;
-        if (!cursor.as().get_column_value(MemberRef_Class, refParent))
+        dnmd::row_reader reader{cursor.as()};
+        if (!reader.read(MemberRef_Class, refParent))
             return CLDB_E_FILE_CORRUPT;
 
         if (refParent != td)
@@ -1303,7 +1316,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::FindMemberRef(
         if (szName != nullptr)
         {
             char const* name;
-            if (!cursor.as().get_column_value(MemberRef_Name, &name))
+            if (!reader.read(MemberRef_Name, &name))
                 return CLDB_E_FILE_CORRUPT;
             pal::StringConvert<WCHAR, char> cvt{ szName };
             if (!cvt.Success())
@@ -1316,7 +1329,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::FindMemberRef(
         {
             uint8_t const* sig;
             uint32_t sigLen;
-            if (!cursor.as().get_column_value(MemberRef_Signature, &sig, &sigLen))
+            if (!reader.read(MemberRef_Signature, &sig, &sigLen))
                 return CLDB_E_FILE_CORRUPT;
             if (cbSigBlob != sigLen
                 || ::memcmp(pvSigBlob, sig, sigLen) != 0)
@@ -1357,29 +1370,30 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetMethodProps(
     *pClass = classDef;
 
     uint32_t attrs;
-    if (!cursor.as().get_column_value(MethodDef_Flags, &attrs))
+    dnmd::row_reader reader{cursor.as()};
+    if (!reader.read(MethodDef_Flags, &attrs))
         return CLDB_E_FILE_CORRUPT;
     *pdwAttr = attrs;
 
     uint32_t rva;
-    if (!cursor.as().get_column_value(MethodDef_Rva, &rva))
+    if (!reader.read(MethodDef_Rva, &rva))
         return CLDB_E_FILE_CORRUPT;
     *pulCodeRVA = rva;
 
     uint32_t implFlags;
-    if (!cursor.as().get_column_value(MethodDef_ImplFlags, &implFlags))
+    if (!reader.read(MethodDef_ImplFlags, &implFlags))
         return CLDB_E_FILE_CORRUPT;
     *pdwImplFlags = implFlags;
 
     uint8_t const* sig;
     uint32_t sigLen;
-    if (!cursor.as().get_column_value(MethodDef_Signature, &sig, &sigLen))
+    if (!reader.read(MethodDef_Signature, &sig, &sigLen))
         return CLDB_E_FILE_CORRUPT;
     *ppvSigBlob = sig;
     *pcbSigBlob = sigLen;
 
     char const* name;
-    if (!cursor.as().get_column_value(MethodDef_Name, &name))
+    if (!reader.read(MethodDef_Name, &name))
         return CLDB_E_FILE_CORRUPT;
     return ConvertAndReturnStringOutput(name, szMethod, cchMethod, pchMethod);
 }
@@ -1402,21 +1416,22 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetMemberRefProps(
         return CLDB_E_INDEX_NOTFOUND;
 
     mdToken type;
-    if (!cursor.as().get_column_value(MemberRef_Class, type))
+    dnmd::row_reader reader{cursor.as()};
+    if (!reader.read(MemberRef_Class, type))
         return CLDB_E_FILE_CORRUPT;
 
     *ptk = type;
 
     uint8_t const* sig;
     uint32_t sigLen;
-    if (!cursor.as().get_column_value(MemberRef_Signature, &sig, &sigLen))
+    if (!reader.read(MemberRef_Signature, &sig, &sigLen))
         return CLDB_E_FILE_CORRUPT;
 
     *ppvSigBlob = sig;
     *pbSig = sigLen;
 
     char const* name;
-    if (!cursor.as().get_column_value(MemberRef_Name, &name))
+    if (!reader.read(MemberRef_Name, &name))
         return CLDB_E_FILE_CORRUPT;
     return ConvertAndReturnStringOutput(name, szMember, cchMember, pchMember);
 }
@@ -1524,12 +1539,13 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetEventProps(
     *pClass = classDef;
 
     uint32_t flags;
-    if (!cursor.as().get_column_value(Event_EventFlags, &flags))
+    dnmd::row_reader reader{cursor.as()};
+    if (!reader.read(Event_EventFlags, &flags))
         return CLDB_E_FILE_CORRUPT;
     *pdwEventFlags = flags;
 
     mdToken type;
-    if (!cursor.as().get_column_value(Event_EventType, type))
+    if (!reader.read(Event_EventType, type))
         return CLDB_E_FILE_CORRUPT;
     *ptkEventType = type;
 
@@ -1552,8 +1568,9 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetEventProps(
         {
             mdMethodDef tk;
             uint32_t semantics;
-            if (!c.get_column_value(MethodSemantics_Method, tk)
-                || !c.get_column_value(MethodSemantics_Semantics, &semantics))
+            dnmd::row_reader reader{c};
+            if (!reader.read(MethodSemantics_Method, tk)
+                || !reader.read(MethodSemantics_Semantics, &semantics))
             {
                 Result = CLDB_E_FILE_CORRUPT;
                 return true; // Failure detected, so stop.
@@ -1588,7 +1605,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetEventProps(
     *pcOtherMethod = finder.OtherCount;
 
     char const* name;
-    if (!cursor.as().get_column_value(Event_Name, &name))
+    if (!reader.read(Event_Name, &name))
         return CLDB_E_FILE_CORRUPT;
     // The const_cast<> is needed because the signature incorrectly expresses the
     // desired semantics. This has been wrong since .NET Framework 1.0.
@@ -1669,11 +1686,12 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetMethodSemantics(
         bool operator()(dnmd::cursor<mdtid_MethodSemantics> c)
         {
             mdToken matchedTk;
-            if (c.get_column_value(MethodSemantics_Method, matchedTk)
+            dnmd::row_reader reader{c};
+            if (reader.read(MethodSemantics_Method, matchedTk)
                 && MethodDef == matchedTk)
             {
                 // Found result, stop iterating
-                Result = (c.get_column_value(MethodSemantics_Semantics, &Value))
+                Result = (reader.read(MethodSemantics_Semantics, &Value))
                     ? S_OK
                     : CLDB_E_FILE_CORRUPT;
                 return true;
@@ -1717,8 +1735,9 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetClassLayout(
         uint32_t packSize;
         uint32_t classSize;
         // Acquire the packing and class sizes for the type and cursor to the typedef entry.
-        if (!entry.as().get_column_value(ClassLayout_PackingSize, &packSize)
-            || !entry.as().get_column_value(ClassLayout_ClassSize, &classSize))
+        dnmd::row_reader entry_reader{entry.as()};
+        if (!entry_reader.read(ClassLayout_PackingSize, &packSize)
+            || !entry_reader.read(ClassLayout_ClassSize, &classSize))
         {
             return CLDB_E_FILE_CORRUPT;
         }
@@ -1816,8 +1835,9 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetRVA(
         if (!cursor)
             return CLDB_E_RECORD_NOTFOUND;
 
-        if (!cursor.as().get_column_value(MethodDef_Rva, &codeRVA)
-            || !cursor.as().get_column_value(MethodDef_ImplFlags, &implFlags))
+        dnmd::row_reader reader{cursor.as()};
+        if (!reader.read(MethodDef_Rva, &codeRVA)
+            || !reader.read(MethodDef_ImplFlags, &implFlags))
         {
             return CLDB_E_FILE_CORRUPT;
         }
@@ -1862,14 +1882,15 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetPermissionSetProps(
     if (!cursor)
         return CLDB_E_RECORD_NOTFOUND;
 
+    dnmd::row_reader reader{cursor.as()};
     if (pdwAction != nullptr
-        && !cursor.as().get_column_value(DeclSecurity_Action, (uint32_t*)pdwAction))
+        && !reader.read(DeclSecurity_Action, (uint32_t*)pdwAction))
     {
         return CLDB_E_FILE_CORRUPT;
     }
 
     if (ppvPermission != nullptr
-        && !cursor.as().get_column_value(DeclSecurity_PermissionSet, (uint8_t const**)ppvPermission, (uint32_t*)pcbPermission))
+        && !reader.read(DeclSecurity_PermissionSet, (uint8_t const**)ppvPermission, (uint32_t*)pcbPermission))
     {
         return CLDB_E_FILE_CORRUPT;
     }
@@ -2061,17 +2082,18 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetPinvokeMap(
     }
 
     uint32_t flags;
-    if (!implRow.as().get_column_value(ImplMap_MappingFlags, &flags))
+    dnmd::row_reader implRow_reader{implRow.as()};
+    if (!implRow_reader.read(ImplMap_MappingFlags, &flags))
         return CLDB_E_FILE_CORRUPT;
     *pdwMappingFlags = flags;
 
     mdModuleRef token;
-    if (!implRow.as().get_column_value(ImplMap_ImportScope, token))
+    if (!implRow_reader.read(ImplMap_ImportScope, token))
         return CLDB_E_FILE_CORRUPT;
     *pmrImportDLL = token;
 
     char const* importName;
-    if (!implRow.as().get_column_value(ImplMap_ImportName, &importName))
+    if (!implRow_reader.read(ImplMap_ImportName, &importName))
         return CLDB_E_FILE_CORRUPT;
     return ConvertAndReturnStringOutput(importName, szImportName, cchImportName, pchImportName);
 }
@@ -2284,18 +2306,19 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetCustomAttributeProps(
         return CLDB_E_RECORD_NOTFOUND;
 
     mdToken obj;
-    if (!cursor.as().get_column_value(CustomAttribute_Parent, obj))
+    dnmd::row_reader reader{cursor.as()};
+    if (!reader.read(CustomAttribute_Parent, obj))
         return CLDB_E_FILE_CORRUPT;
     *ptkObj = obj;
 
     mdToken type;
-    if (!cursor.as().get_column_value(CustomAttribute_Type, type))
+    if (!reader.read(CustomAttribute_Type, type))
         return CLDB_E_FILE_CORRUPT;
     *ptkType = type;
 
     uint8_t const* blob;
     uint32_t blobLen;
-    if (!cursor.as().get_column_value(CustomAttribute_Value, &blob, &blobLen))
+    if (!reader.read(CustomAttribute_Value, &blob, &blobLen))
         return CLDB_E_FILE_CORRUPT;
     *ppBlob = blob;
     *pcbSize = blobLen;
@@ -2326,7 +2349,8 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::FindTypeRef(
     char const* str;
     for (uint32_t i = 0; i < count; (void)dnmd::md_cursor_next(cursor), ++i)
     {
-        if (!cursor.as().get_column_value(TypeRef_ResolutionScope, resMaybe))
+        dnmd::row_reader reader{cursor.as()};
+        if (!reader.read(TypeRef_ResolutionScope, resMaybe))
             return CLDB_E_FILE_CORRUPT;
 
         // See if the Resolution scopes match.
@@ -2336,13 +2360,13 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::FindTypeRef(
             continue;
         }
 
-        if (!cursor.as().get_column_value(TypeRef_TypeNamespace, &str))
+        if (!reader.read(TypeRef_TypeNamespace, &str))
             return CLDB_E_FILE_CORRUPT;
 
         if (0 != ::strcmp(nspace, str))
             continue;
 
-        if (!cursor.as().get_column_value(TypeRef_TypeName, &str))
+        if (!reader.read(TypeRef_TypeName, &str))
             return CLDB_E_FILE_CORRUPT;
 
         if (0 == ::strcmp(name, str))
@@ -2431,9 +2455,10 @@ namespace
         }
         else
         {
-            if (!constantPropCursor.as().get_column_value(Constant_Type, &corType))
+            dnmd::row_reader constantPropCursor_reader{constantPropCursor.as()};
+            if (!constantPropCursor_reader.read(Constant_Type, &corType))
                 return CLDB_E_FILE_CORRUPT;
-            if (!constantPropCursor.as().get_column_value(Constant_Value, &defaultValue, &defaultValueLen))
+            if (!constantPropCursor_reader.read(Constant_Value, &defaultValue, &defaultValueLen))
                 return CLDB_E_FILE_CORRUPT;
         }
 
@@ -2473,13 +2498,14 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetFieldProps(
     *pClass = classDef;
 
     uint32_t flags;
-    if (!cursor.as().get_column_value(Field_Flags, &flags))
+    dnmd::row_reader reader{cursor.as()};
+    if (!reader.read(Field_Flags, &flags))
         return CLDB_E_FILE_CORRUPT;
     *pdwAttr = flags;
 
     uint8_t const* sig;
     uint32_t sigLen;
-    if (!cursor.as().get_column_value(Field_Signature, &sig, &sigLen))
+    if (!reader.read(Field_Signature, &sig, &sigLen))
         return CLDB_E_FILE_CORRUPT;
     *ppvSigBlob = (PCCOR_SIGNATURE)sig;
     *pcbSigBlob = sigLen;
@@ -2488,7 +2514,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetFieldProps(
     RETURN_IF_FAILED(FindConstant(_md_ptr, mb, *pdwCPlusTypeFlag, *ppValue, *pcchValue));
 
     char const* name;
-    if (!cursor.as().get_column_value(Field_Name, &name))
+    if (!reader.read(Field_Name, &name))
         return CLDB_E_FILE_CORRUPT;
     return ConvertAndReturnStringOutput(name, szField, cchField, pchField);
 }
@@ -2525,13 +2551,14 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetPropertyProps(
     *pClass = classDef;
 
     uint32_t flags;
-    if (!cursor.as().get_column_value(Property_Flags, &flags))
+    dnmd::row_reader reader{cursor.as()};
+    if (!reader.read(Property_Flags, &flags))
         return CLDB_E_FILE_CORRUPT;
     *pdwPropFlags = flags;
 
     uint8_t const* sig;
     uint32_t sigLen;
-    if (!cursor.as().get_column_value(Property_Type, &sig, &sigLen))
+    if (!reader.read(Property_Type, &sig, &sigLen))
         return CLDB_E_FILE_CORRUPT;
     *ppvSig = sig;
     *pbSig = sigLen;
@@ -2557,8 +2584,9 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetPropertyProps(
         {
             mdMethodDef tk;
             uint32_t semantics;
-            if (!c.get_column_value(MethodSemantics_Method, tk)
-                || !c.get_column_value(MethodSemantics_Semantics, &semantics))
+            dnmd::row_reader reader{c};
+            if (!reader.read(MethodSemantics_Method, tk)
+                || !reader.read(MethodSemantics_Semantics, &semantics))
             {
                 Result = CLDB_E_FILE_CORRUPT;
                 return true; // Failure detected, so stop.
@@ -2590,7 +2618,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetPropertyProps(
     *pcOtherMethod = finder.OtherCount;
 
     char const* name;
-    if (!cursor.as().get_column_value(Property_Name, &name))
+    if (!reader.read(Property_Name, &name))
         return CLDB_E_FILE_CORRUPT;
 
     // The const_cast<> is needed because the signature incorrectly expresses the
@@ -2624,12 +2652,13 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetParamProps(
     *pmd = methodDef;
 
     uint32_t seq;
-    if (!cursor.as().get_column_value(Param_Sequence, &seq))
+    dnmd::row_reader reader{cursor.as()};
+    if (!reader.read(Param_Sequence, &seq))
         return CLDB_E_FILE_CORRUPT;
     *pulSequence = seq;
 
     uint32_t flags;
-    if (!cursor.as().get_column_value(Param_Flags, &flags))
+    if (!reader.read(Param_Flags, &flags))
         return CLDB_E_FILE_CORRUPT;
     *pdwAttr = flags;
 
@@ -2637,7 +2666,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetParamProps(
     RETURN_IF_FAILED(FindConstant(_md_ptr, tk, *pdwCPlusTypeFlag, *ppValue, *pcchValue));
 
     char const* name;
-    if (!cursor.as().get_column_value(Param_Name, &name))
+    if (!reader.read(Param_Name, &name))
         return CLDB_E_FILE_CORRUPT;
     return ConvertAndReturnStringOutput(name, szName, cchName, pchName);
 }
@@ -2706,7 +2735,8 @@ namespace
                 }
                 else
                 {
-                    hr = ReadTypeName(row, nspace, name) ? S_OK : CLDB_E_FILE_CORRUPT;
+                    dnmd::row_reader reader{row};
+                    hr = ReadTypeName(reader, nspace, name) ? S_OK : CLDB_E_FILE_CORRUPT;
                 }
             }))
                 return CLDB_E_FILE_CORRUPT;
@@ -2753,7 +2783,8 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetCustomAttributeByName(
             char const* curr;
 
             decltype(CustomAttribute_Type)::value_type type;
-            if (!custAttr.get_column_value(CustomAttribute_Type, type))
+            dnmd::row_reader custAttr_reader{custAttr};
+            if (!custAttr_reader.read(CustomAttribute_Type, type))
             {
                 hr = CLDB_E_FILE_CORRUPT;
                 return true;
@@ -2810,7 +2841,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetCustomAttributeByName(
                 {
                     uint8_t const* data;
                     uint32_t dataLen;
-                    if (!custAttr.get_column_value(CustomAttribute_Value, &data, &dataLen))
+                    if (!custAttr_reader.read(CustomAttribute_Value, &data, &dataLen))
                     {
                         hr = CLDB_E_FILE_CORRUPT;
                         return true;
@@ -2899,8 +2930,9 @@ namespace
         auto cursor = dnmd::md_token_to_cursor<mdtid_TypeRef, mdtid_TypeDef>(cxt.Handle, tk);
         uint32_t result = readIn;
         if (!cursor.visit([&](auto row) {
+            dnmd::row_reader reader{row};
             char const* nspace;
-            if (!ReadTypeName(row, &nspace, nullptr))
+            if (!ReadTypeName(reader, &nspace, nullptr))
             {
                 result = InvalidReadCount;
                 return;
@@ -2908,7 +2940,7 @@ namespace
             if (0 == ::strcmp(nspace, CMOD_CALLCONV_NAMESPACE) || 0 == ::strcmp(nspace, CMOD_CALLCONV_NAMESPACE_OLD))
             {
                 char const* name;
-                if (!ReadTypeName(row, nullptr, &name))
+                if (!ReadTypeName(reader, nullptr, &name))
                 {
                     result = InvalidReadCount;
                     return;
@@ -3222,21 +3254,22 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetGenericParamProps(
     if (!cursor)
         return CLDB_E_RECORD_NOTFOUND;
 
-    if (!cursor.as().get_column_value(GenericParam_Owner, *ptOwner))
+    dnmd::row_reader reader{cursor.as()};
+    if (!reader.read(GenericParam_Owner, *ptOwner))
         return CLDB_E_FILE_CORRUPT;
 
     uint32_t sequenceNumber;
-    if (!cursor.as().get_column_value(GenericParam_Number, &sequenceNumber))
+    if (!reader.read(GenericParam_Number, &sequenceNumber))
         return CLDB_E_FILE_CORRUPT;
     *pulParamSeq = sequenceNumber;
 
     uint32_t paramFlags;
-    if (!cursor.as().get_column_value(GenericParam_Flags, &paramFlags))
+    if (!reader.read(GenericParam_Flags, &paramFlags))
         return CLDB_E_FILE_CORRUPT;
     *pdwParamFlags = paramFlags;
 
     char const* name;
-    if (!cursor.as().get_column_value(GenericParam_Name, &name))
+    if (!reader.read(GenericParam_Name, &name))
         return CLDB_E_FILE_CORRUPT;
 
     return ConvertAndReturnStringOutput(name, wzname, cchName, pchName);
@@ -3252,12 +3285,13 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetMethodSpecProps(
     if (!cursor)
         return CLDB_E_RECORD_NOTFOUND;
 
-    if (!cursor.as().get_column_value(MethodSpec_Method, *tkParent))
+    dnmd::row_reader reader{cursor.as()};
+    if (!reader.read(MethodSpec_Method, *tkParent))
         return CLDB_E_FILE_CORRUPT;
 
     uint8_t const* sig;
     uint32_t sigLen;
-    if (!cursor.as().get_column_value(MethodSpec_Instantiation, &sig, &sigLen))
+    if (!reader.read(MethodSpec_Instantiation, &sig, &sigLen))
         return CLDB_E_FILE_CORRUPT;
 
     *ppvSigBlob = (PCCOR_SIGNATURE)sig;
@@ -3321,10 +3355,11 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetGenericParamConstraintProps(
     if (!cursor)
         return CLDB_E_RECORD_NOTFOUND;
 
-    if (!cursor.as().get_column_value(GenericParamConstraint_Owner, *ptGenericParam))
+    dnmd::row_reader reader{cursor.as()};
+    if (!reader.read(GenericParamConstraint_Owner, *ptGenericParam))
         return CLDB_E_FILE_CORRUPT;
 
-    if (!cursor.as().get_column_value(GenericParamConstraint_Constraint, *ptkConstraintType))
+    if (!reader.read(GenericParamConstraint_Constraint, *ptkConstraintType))
         return CLDB_E_FILE_CORRUPT;
 
     return S_OK;
@@ -3419,11 +3454,12 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetAssemblyProps(
     if (!cursor)
         return CLDB_E_RECORD_NOTFOUND;
 
+    dnmd::row_reader reader{cursor.as()};
     if (ppbPublicKey != nullptr)
     {
         uint8_t const* publicKey;
         uint32_t publicKeySize;
-        if (!cursor.as().get_column_value(Assembly_PublicKey, &publicKey, &publicKeySize))
+        if (!reader.read(Assembly_PublicKey, &publicKey, &publicKeySize))
             return CLDB_E_FILE_CORRUPT;
 
         *ppbPublicKey = publicKey;
@@ -3433,7 +3469,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetAssemblyProps(
     if (pulHashAlgId != nullptr)
     {
         uint32_t hashAlgId;
-        if (!cursor.as().get_column_value(Assembly_HashAlgId, &hashAlgId))
+        if (!reader.read(Assembly_HashAlgId, &hashAlgId))
             return CLDB_E_FILE_CORRUPT;
         *pulHashAlgId = hashAlgId;
     }
@@ -3444,16 +3480,16 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetAssemblyProps(
         uint32_t minorVersion;
         uint32_t buildNumber;
         uint32_t patchNumber;
-        if (!cursor.as().get_column_value(Assembly_MajorVersion, &majorVersion))
+        if (!reader.read(Assembly_MajorVersion, &majorVersion))
             return CLDB_E_FILE_CORRUPT;
 
-        if (!cursor.as().get_column_value(Assembly_MinorVersion, &minorVersion))
+        if (!reader.read(Assembly_MinorVersion, &minorVersion))
             return CLDB_E_FILE_CORRUPT;
 
-        if (!cursor.as().get_column_value(Assembly_BuildNumber, &buildNumber))
+        if (!reader.read(Assembly_BuildNumber, &buildNumber))
             return CLDB_E_FILE_CORRUPT;
 
-        if (!cursor.as().get_column_value(Assembly_RevisionNumber, &patchNumber))
+        if (!reader.read(Assembly_RevisionNumber, &patchNumber))
             return CLDB_E_FILE_CORRUPT;
 
         pMetaData->usMajorVersion = static_cast<uint16_t>(majorVersion);
@@ -3462,7 +3498,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetAssemblyProps(
         pMetaData->usRevisionNumber = static_cast<uint16_t>(patchNumber);
 
         char const* culture;
-        if (!cursor.as().get_column_value(Assembly_Culture, &culture))
+        if (!reader.read(Assembly_Culture, &culture))
             return CLDB_E_FILE_CORRUPT;
 
         HRESULT hr;
@@ -3476,12 +3512,12 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetAssemblyProps(
     if (pdwAssemblyFlags != nullptr)
     {
         uint32_t assemblyFlags;
-        if (!cursor.as().get_column_value(Assembly_Flags, &assemblyFlags))
+        if (!reader.read(Assembly_Flags, &assemblyFlags))
             return CLDB_E_FILE_CORRUPT;
 
         uint8_t const* publicKey;
         uint32_t publicKeySize;
-        if (!cursor.as().get_column_value(Assembly_PublicKey, &publicKey, &publicKeySize))
+        if (!reader.read(Assembly_PublicKey, &publicKey, &publicKeySize))
             return CLDB_E_FILE_CORRUPT;
         if (publicKeySize != 0)
             assemblyFlags |= afPublicKey;
@@ -3492,7 +3528,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetAssemblyProps(
     if (szName != nullptr || pchName != nullptr)
     {
         char const* name;
-        if (!cursor.as().get_column_value(Assembly_Name, &name))
+        if (!reader.read(Assembly_Name, &name))
             return CLDB_E_FILE_CORRUPT;
 
         return ConvertAndReturnStringOutput(name, szName, cchName, pchName);
@@ -3518,11 +3554,12 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetAssemblyRefProps(
     if (!cursor)
         return CLDB_E_RECORD_NOTFOUND;
 
+    dnmd::row_reader reader{cursor.as()};
     if (ppbPublicKeyOrToken != nullptr)
     {
         uint8_t const* publicKeyOrToken;
         uint32_t publicKeyOrTokenSize;
-        if (!cursor.as().get_column_value(AssemblyRef_PublicKeyOrToken, &publicKeyOrToken, &publicKeyOrTokenSize))
+        if (!reader.read(AssemblyRef_PublicKeyOrToken, &publicKeyOrToken, &publicKeyOrTokenSize))
             return CLDB_E_FILE_CORRUPT;
 
         *ppbPublicKeyOrToken = publicKeyOrToken;
@@ -3533,7 +3570,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetAssemblyRefProps(
     {
         uint8_t const* hashValue;
         uint32_t hashValueSize;
-        if (!cursor.as().get_column_value(AssemblyRef_HashValue, &hashValue, &hashValueSize))
+        if (!reader.read(AssemblyRef_HashValue, &hashValue, &hashValueSize))
             return CLDB_E_FILE_CORRUPT;
         *ppbHashValue = hashValue;
         *pcbHashValue = hashValueSize;
@@ -3545,16 +3582,16 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetAssemblyRefProps(
         uint32_t minorVersion;
         uint32_t buildNumber;
         uint32_t patchNumber;
-        if (!cursor.as().get_column_value(AssemblyRef_MajorVersion, &majorVersion))
+        if (!reader.read(AssemblyRef_MajorVersion, &majorVersion))
             return CLDB_E_FILE_CORRUPT;
 
-        if (!cursor.as().get_column_value(AssemblyRef_MinorVersion, &minorVersion))
+        if (!reader.read(AssemblyRef_MinorVersion, &minorVersion))
             return CLDB_E_FILE_CORRUPT;
 
-        if (!cursor.as().get_column_value(AssemblyRef_BuildNumber, &buildNumber))
+        if (!reader.read(AssemblyRef_BuildNumber, &buildNumber))
             return CLDB_E_FILE_CORRUPT;
 
-        if (!cursor.as().get_column_value(AssemblyRef_RevisionNumber, &patchNumber))
+        if (!reader.read(AssemblyRef_RevisionNumber, &patchNumber))
             return CLDB_E_FILE_CORRUPT;
 
         pMetaData->usMajorVersion = static_cast<uint16_t>(majorVersion);
@@ -3563,7 +3600,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetAssemblyRefProps(
         pMetaData->usRevisionNumber = static_cast<uint16_t>(patchNumber);
 
         char const* culture;
-        if (!cursor.as().get_column_value(AssemblyRef_Culture, &culture))
+        if (!reader.read(AssemblyRef_Culture, &culture))
             return CLDB_E_FILE_CORRUPT;
 
         HRESULT hr;
@@ -3577,7 +3614,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetAssemblyRefProps(
     if (pdwAssemblyRefFlags != nullptr)
     {
         uint32_t assemblyRefFlags;
-        if (!cursor.as().get_column_value(AssemblyRef_Flags, &assemblyRefFlags))
+        if (!reader.read(AssemblyRef_Flags, &assemblyRefFlags))
             return CLDB_E_FILE_CORRUPT;
 
         *pdwAssemblyRefFlags = assemblyRefFlags;
@@ -3586,7 +3623,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetAssemblyRefProps(
     if (szName != nullptr || pchName != nullptr)
     {
         char const* name;
-        if (!cursor.as().get_column_value(AssemblyRef_Name, &name))
+        if (!reader.read(AssemblyRef_Name, &name))
             return CLDB_E_FILE_CORRUPT;
 
         return ConvertAndReturnStringOutput(name, szName, cchName, pchName);
@@ -3609,11 +3646,12 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetFileProps(
     if (!cursor)
         return CLDB_E_RECORD_NOTFOUND;
 
+    dnmd::row_reader reader{cursor.as()};
     if (ppbHashValue != nullptr)
     {
         uint8_t const* hashValue;
         uint32_t hashValueSize;
-        if (!cursor.as().get_column_value(File_HashValue, &hashValue, &hashValueSize))
+        if (!reader.read(File_HashValue, &hashValue, &hashValueSize))
             return CLDB_E_FILE_CORRUPT;
         *ppbHashValue = hashValue;
         *pcbHashValue = hashValueSize;
@@ -3622,7 +3660,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetFileProps(
     if (pdwFileFlags != nullptr)
     {
         uint32_t fileFlags;
-        if (!cursor.as().get_column_value(File_Flags, &fileFlags))
+        if (!reader.read(File_Flags, &fileFlags))
             return CLDB_E_FILE_CORRUPT;
 
         *pdwFileFlags = fileFlags;
@@ -3631,7 +3669,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetFileProps(
     if (szName != nullptr || pchName != nullptr)
     {
         char const* name;
-        if (!cursor.as().get_column_value(File_Name, &name))
+        if (!reader.read(File_Name, &name))
             return CLDB_E_FILE_CORRUPT;
 
         return ConvertAndReturnStringOutput(name, szName, cchName, pchName);
@@ -3654,9 +3692,10 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetExportedTypeProps(
     if (!cursor)
         return CLDB_E_RECORD_NOTFOUND;
 
+    dnmd::row_reader reader{cursor.as()};
     if (ptkImplementation != nullptr)
     {
-        if (!cursor.as().get_column_value(ExportedType_Implementation, *ptkImplementation))
+        if (!reader.read(ExportedType_Implementation, *ptkImplementation))
             return CLDB_E_FILE_CORRUPT;
     }
 
@@ -3664,14 +3703,14 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetExportedTypeProps(
     {
         // This column points into the TypeDef table of another module,
         // so it isn't a true column reference here.
-        if (!cursor.as().get_column_value(ExportedType_TypeDefId, ptkTypeDef))
+        if (!reader.read(ExportedType_TypeDefId, ptkTypeDef))
             return CLDB_E_FILE_CORRUPT;
     }
 
     if (pdwExportedTypeFlags != nullptr)
     {
         uint32_t exportedTypeFlags;
-        if (!cursor.as().get_column_value(ExportedType_Flags, &exportedTypeFlags))
+        if (!reader.read(ExportedType_Flags, &exportedTypeFlags))
             return CLDB_E_FILE_CORRUPT;
 
         *pdwExportedTypeFlags = exportedTypeFlags;
@@ -3680,11 +3719,11 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetExportedTypeProps(
     if (szName != nullptr || pchName != nullptr)
     {
         char const* name;
-        if (!cursor.as().get_column_value(ExportedType_TypeName, &name))
+        if (!reader.read(ExportedType_TypeName, &name))
             return CLDB_E_FILE_CORRUPT;
 
         char const* nspace;
-        if (!cursor.as().get_column_value(ExportedType_TypeNamespace, &nspace))
+        if (!reader.read(ExportedType_TypeNamespace, &nspace))
             return CLDB_E_FILE_CORRUPT;
 
         HRESULT hr;
@@ -3711,16 +3750,17 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetManifestResourceProps(
     if (!cursor)
         return CLDB_E_RECORD_NOTFOUND;
 
+    dnmd::row_reader reader{cursor.as()};
     if (ptkImplementation != nullptr)
     {
-        if (!cursor.as().get_column_value(ManifestResource_Implementation, *ptkImplementation))
+        if (!reader.read(ManifestResource_Implementation, *ptkImplementation))
             return CLDB_E_FILE_CORRUPT;
     }
 
     if (pdwOffset != nullptr)
     {
         uint32_t offset;
-        if (!cursor.as().get_column_value(ManifestResource_Offset, &offset))
+        if (!reader.read(ManifestResource_Offset, &offset))
             return CLDB_E_FILE_CORRUPT;
 
         *pdwOffset = offset;
@@ -3729,7 +3769,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetManifestResourceProps(
     if (pdwResourceFlags != nullptr)
     {
         uint32_t resourceFlags;
-        if (!cursor.as().get_column_value(ManifestResource_Flags, &resourceFlags))
+        if (!reader.read(ManifestResource_Flags, &resourceFlags))
             return CLDB_E_FILE_CORRUPT;
 
         *pdwResourceFlags = resourceFlags;
@@ -3737,7 +3777,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetManifestResourceProps(
     if (szName != nullptr || pchName != nullptr)
     {
         char const* name;
-        if (!cursor.as().get_column_value(ManifestResource_Name, &name))
+        if (!reader.read(ManifestResource_Name, &name))
             return CLDB_E_FILE_CORRUPT;
 
         return ConvertAndReturnStringOutput(name, szName, cchName, pchName);
@@ -3843,7 +3883,8 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::FindExportedTypeByName(
     for (uint32_t i = 0; i < count; dnmd::md_cursor_next(cursor), i++)
     {
         mdToken implementation;
-        if (!cursor.as().get_column_value(ExportedType_Implementation, implementation))
+        dnmd::row_reader reader{cursor.as()};
+        if (!reader.read(ExportedType_Implementation, implementation))
             return CLDB_E_FILE_CORRUPT;
 
         // Handle the case of nested vs. non-nested classes
@@ -3862,14 +3903,14 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::FindExportedTypeByName(
         }
 
         char const* recordNspace;
-        if (!cursor.as().get_column_value(ExportedType_TypeNamespace, &recordNspace))
+        if (!reader.read(ExportedType_TypeNamespace, &recordNspace))
             return CLDB_E_FILE_CORRUPT;
 
         if (::strcmp(nspace, recordNspace) != 0)
             continue;
 
         char const* recordName;
-        if (!cursor.as().get_column_value(ExportedType_TypeName, &recordName))
+        if (!reader.read(ExportedType_TypeName, &recordName))
             return CLDB_E_FILE_CORRUPT;
 
         if (::strcmp(name, recordName) != 0)

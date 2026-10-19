@@ -415,6 +415,8 @@ bool initialize_table_details(
     table->row_count = all_table_row_counts[id];
     table->is_sorted = is_sorted;
     table->table_id = (uint8_t)id;
+    mdtable_id_t indirect_table = get_corresponding_indirection_table(id);
+    table->has_indirect_table = indirect_table != mdtid_Unused && all_table_row_counts[indirect_table] != 0;
 
 #define CODED_INDEX_ARGS(x) is_minimal_delta, all_table_row_counts, (x)
 #define TABLE_INDEX_ARGS(x) is_minimal_delta, all_table_row_counts, (x)

@@ -198,17 +198,18 @@ HRESULT MetadataEmit::DefineTypeDef(
     char const* name;
     SplitTypeName(cvt, &ns, &name);
     auto c_row = dnmd::raw_cursor<mdtid_TypeDef>{c}.as();
-    if (!c_row.set_column_value(TypeDef_TypeNamespace, ns))
+    dnmd::row_writer writer{c_row};
+    if (!writer.write(TypeDef_TypeNamespace, ns))
         return E_FAIL;
-    if (!c_row.set_column_value(TypeDef_TypeName, name))
+    if (!writer.write(TypeDef_TypeName, name))
         return E_FAIL;
 
     // TODO: Handle reserved flags
     uint32_t flags = (uint32_t)dwTypeDefFlags;
-    if (!c_row.set_column_value(TypeDef_Flags, flags))
+    if (!writer.write(TypeDef_Flags, flags))
         return E_FAIL;
 
-    if (!c_row.set_column_value(TypeDef_Extends, tkExtends))
+    if (!writer.write(TypeDef_Extends, tkExtends))
         return E_FAIL;
 
     mdcursor_t fieldCursor;
@@ -216,13 +217,13 @@ HRESULT MetadataEmit::DefineTypeDef(
     if (!md_create_cursor(MetaData(), mdtid_Field, &fieldCursor, &numFields))
     {
         mdToken nilField = mdFieldDefNil;
-        if (!c_row.set_column_value(TypeDef_FieldList, nilField))
+        if (!writer.write(TypeDef_FieldList, nilField))
             return E_FAIL;
     }
     else
     {
         md_cursor_move(&fieldCursor, numFields);
-        if (!c_row.set_column_value(TypeDef_FieldList, dnmd::raw_cursor<mdtid_Field>{fieldCursor}))
+        if (!writer.write(TypeDef_FieldList, dnmd::raw_cursor<mdtid_Field>{fieldCursor}))
             return E_FAIL;
     }
 
@@ -231,13 +232,13 @@ HRESULT MetadataEmit::DefineTypeDef(
     if (!md_create_cursor(MetaData(), mdtid_MethodDef, &methodCursor, &numMethods))
     {
         mdToken nilMethod = mdMethodDefNil;
-        if (!c_row.set_column_value(TypeDef_MethodList, nilMethod))
+        if (!writer.write(TypeDef_MethodList, nilMethod))
             return E_FAIL;
     }
     else
     {
         md_cursor_move(&methodCursor, numMethods);
-        if (!c_row.set_column_value(TypeDef_MethodList, dnmd::raw_cursor<mdtid_MethodDef>{methodCursor}))
+        if (!writer.write(TypeDef_MethodList, dnmd::raw_cursor<mdtid_MethodDef>{methodCursor}))
             return E_FAIL;
     }
 
@@ -251,11 +252,11 @@ HRESULT MetadataEmit::DefineTypeDef(
             if (!md_append_row(MetaData(), mdtid_InterfaceImpl, &interfaceImpl))
                 return E_FAIL;
 
-            auto interfaceImpl_row = dnmd::raw_cursor<mdtid_InterfaceImpl>{interfaceImpl}.as();
-            if (!interfaceImpl_row.set_column_value(InterfaceImpl_Class, c_row))
+            dnmd::row_writer interfaceImpl_writer{dnmd::raw_cursor<mdtid_InterfaceImpl>{interfaceImpl}.as()};
+            if (!interfaceImpl_writer.write(InterfaceImpl_Class, c_row))
                 return E_FAIL;
 
-            if (!interfaceImpl_row.set_column_value(InterfaceImpl_Interface, currentImplementation))
+            if (!interfaceImpl_writer.write(InterfaceImpl_Interface, currentImplementation))
                 return E_FAIL;
         }
     }
@@ -290,11 +291,11 @@ HRESULT MetadataEmit::DefineNestedType(
     if (!md_append_row(MetaData(), mdtid_NestedClass, &c))
         return E_FAIL;
 
-    auto c_row = dnmd::raw_cursor<mdtid_NestedClass>{c}.as();
-    if (!c_row.set_column_value(NestedClass_NestedClass, *ptd))
+    dnmd::row_writer writer{dnmd::raw_cursor<mdtid_NestedClass>{c}.as()};
+    if (!writer.write(NestedClass_NestedClass, *ptd))
         return E_FAIL;
 
-    if (!c_row.set_column_value(NestedClass_EnclosingClass, tdEncloser))
+    if (!writer.write(NestedClass_EnclosingClass, tdEncloser))
         return E_FAIL;
 
     // TODO: Update ENC log
@@ -335,24 +336,24 @@ HRESULT MetadataEmit::DefineMethod(
     pal::StringConvert<WCHAR, char> cvt(szName);
 
     char const* name = cvt;
-    auto newMethod_row = dnmd::raw_cursor<mdtid_MethodDef>{newMethod}.as();
-    if (!newMethod_row.set_column_value(MethodDef_Name, name))
+    dnmd::row_writer newMethod_writer{dnmd::raw_cursor<mdtid_MethodDef>{newMethod}.as()};
+    if (!newMethod_writer.write(MethodDef_Name, name))
         return E_FAIL;
 
     uint32_t flags = dwMethodFlags;
-    if (!newMethod_row.set_column_value(MethodDef_Flags, flags))
+    if (!newMethod_writer.write(MethodDef_Flags, flags))
         return E_FAIL;
 
     uint32_t sigLength = cbSigBlob;
-    if (!newMethod_row.set_column_value(MethodDef_Signature, pvSigBlob, sigLength))
+    if (!newMethod_writer.write(MethodDef_Signature, pvSigBlob, sigLength))
         return E_FAIL;
 
     uint32_t implFlags = dwImplFlags;
-    if (!newMethod_row.set_column_value(MethodDef_ImplFlags, implFlags))
+    if (!newMethod_writer.write(MethodDef_ImplFlags, implFlags))
         return E_FAIL;
 
     uint32_t rva = ulCodeRVA;
-    if (!newMethod_row.set_column_value(MethodDef_Rva, rva))
+    if (!newMethod_writer.write(MethodDef_Rva, rva))
         return E_FAIL;
 
     if (!md_cursor_to_token(newMethod, pmd))
@@ -371,14 +372,14 @@ HRESULT MetadataEmit::DefineMethodImpl(
     if (!md_append_row(MetaData(), mdtid_MethodImpl, &c))
         return E_FAIL;
 
-    auto c_row = dnmd::raw_cursor<mdtid_MethodImpl>{c}.as();
-    if (!c_row.set_column_value(MethodImpl_Class, td))
+    dnmd::row_writer writer{dnmd::raw_cursor<mdtid_MethodImpl>{c}.as()};
+    if (!writer.write(MethodImpl_Class, td))
         return E_FAIL;
 
-    if (!c_row.set_column_value(MethodImpl_MethodBody, tkBody))
+    if (!writer.write(MethodImpl_MethodBody, tkBody))
         return E_FAIL;
 
-    if (!c_row.set_column_value(MethodImpl_MethodDeclaration, tkDecl))
+    if (!writer.write(MethodImpl_MethodDeclaration, tkDecl))
         return E_FAIL;
 
     // TODO: Update ENC log
@@ -394,8 +395,8 @@ HRESULT MetadataEmit::DefineTypeRefByName(
     if (!md_append_row(MetaData(), mdtid_TypeRef, &c))
         return E_FAIL;
 
-    auto c_row = dnmd::raw_cursor<mdtid_TypeRef>{c}.as();
-    if (!c_row.set_column_value(TypeRef_ResolutionScope, tkResolutionScope))
+    dnmd::row_writer writer{dnmd::raw_cursor<mdtid_TypeRef>{c}.as()};
+    if (!writer.write(TypeRef_ResolutionScope, tkResolutionScope))
         return E_FAIL;
 
     pal::StringConvert<WCHAR, char> cv(szName);
@@ -407,9 +408,9 @@ HRESULT MetadataEmit::DefineTypeRefByName(
     char const* name;
     SplitTypeName(cv, &ns, &name);
 
-    if (!c_row.set_column_value(TypeRef_TypeNamespace, ns))
+    if (!writer.write(TypeRef_TypeNamespace, ns))
         return E_FAIL;
-    if (!c_row.set_column_value(TypeRef_TypeName, name))
+    if (!writer.write(TypeRef_TypeName, name))
         return E_FAIL;
 
     if (!md_cursor_to_token(c, ptr))
@@ -488,16 +489,16 @@ HRESULT MetadataEmit::DefineMemberRef(
     if (!md_append_row(MetaData(), mdtid_MemberRef, &c))
         return E_FAIL;
 
-    auto c_row = dnmd::raw_cursor<mdtid_MemberRef>{c}.as();
-    if (!c_row.set_column_value(MemberRef_Class, tkImport))
+    dnmd::row_writer writer{dnmd::raw_cursor<mdtid_MemberRef>{c}.as()};
+    if (!writer.write(MemberRef_Class, tkImport))
         return E_FAIL;
 
-    if (!c_row.set_column_value(MemberRef_Name, name))
+    if (!writer.write(MemberRef_Name, name))
         return E_FAIL;
 
     uint8_t const* sig = (uint8_t const*)pvSigBlob;
     uint32_t sigLength = cbSigBlob;
-    if (!c_row.set_column_value(MemberRef_Signature, sig, sigLength))
+    if (!writer.write(MemberRef_Signature, sig, sigLength))
         return E_FAIL;
 
     if (!md_cursor_to_token(c, pmr))
@@ -538,15 +539,15 @@ namespace
         if (!md_append_row(md, mdtid_MethodSemantics, &addMethodSemantic))
             return E_FAIL;
 
-        auto row = dnmd::raw_cursor<mdtid_MethodSemantics>{addMethodSemantic}.as();
-        if (!row.set_column_value(MethodSemantics_Association, parent))
+        dnmd::row_writer writer{dnmd::raw_cursor<mdtid_MethodSemantics>{addMethodSemantic}.as()};
+        if (!writer.write(MethodSemantics_Association, parent))
             return E_FAIL;
 
         uint32_t semantics = semantic;
-        if (!row.set_column_value(MethodSemantics_Semantics, semantics))
+        if (!writer.write(MethodSemantics_Semantics, semantics))
             return E_FAIL;
 
-        if (!row.set_column_value(MethodSemantics_Method, method))
+        if (!writer.write(MethodSemantics_Method, method))
             return E_FAIL;
 
         // TODO: Update EncLog
@@ -683,15 +684,15 @@ HRESULT MetadataEmit::DefineEvent(
         if (!md_add_new_row_to_list(c, mdtEventMap_EventList, &addedEvent))
             return E_FAIL;
 
-        auto addedEvent_row = dnmd::raw_cursor<mdtid_Event>{addedEvent}.as();
-        if (!addedEvent_row.set_column_value(Event_Name, name))
+        dnmd::row_writer addedEvent_writer{dnmd::raw_cursor<mdtid_Event>{addedEvent}.as()};
+        if (!addedEvent_writer.write(Event_Name, name))
             return E_FAIL;
 
         uint32_t flags = dwEventFlags;
-        if (!addedEvent_row.set_column_value(Event_EventFlags, flags))
+        if (!addedEvent_writer.write(Event_EventFlags, flags))
             return E_FAIL;
 
-        if (!addedEvent_row.set_column_value(Event_EventType, tkEventType))
+        if (!addedEvent_writer.write(Event_EventType, tkEventType))
             return E_FAIL;
 
         if (mdAddOn != mdMethodDefNil)
@@ -756,11 +757,12 @@ HRESULT MetadataEmit::SetClassLayout(
     RETURN_IF_FAILED(FindOrCreateParentedRow(MetaData(), td, ClassLayout_Parent, [=](dnmd::cursor<mdtid_ClassLayout> c)
     {
         uint32_t packSize = (uint32_t)dwPackSize;
-        if (!c.set_column_value(ClassLayout_PackingSize, packSize))
+        dnmd::row_writer writer{c};
+        if (!writer.write(ClassLayout_PackingSize, packSize))
             return E_FAIL;
 
         uint32_t classSize = (uint32_t)ulClassSize;
-        if (!c.set_column_value(ClassLayout_ClassSize, classSize))
+        if (!writer.write(ClassLayout_ClassSize, classSize))
             return E_FAIL;
 
         return S_OK;
@@ -871,8 +873,8 @@ HRESULT MetadataEmit::DefinePermissionSet(
     if (!md_append_row(MetaData(), mdtid_DeclSecurity, &c))
         return E_FAIL;
 
-    auto c_row = dnmd::raw_cursor<mdtid_DeclSecurity>{c}.as();
-    if (!c_row.set_column_value(DeclSecurity_Parent, tk))
+    dnmd::row_writer writer{dnmd::raw_cursor<mdtid_DeclSecurity>{c}.as()};
+    if (!writer.write(DeclSecurity_Parent, tk))
         return E_FAIL;
 
     if (TypeFromToken(tk) == mdtTypeDef
@@ -892,12 +894,12 @@ HRESULT MetadataEmit::DefinePermissionSet(
     }
 
     uint32_t action = dwAction;
-    if (!c_row.set_column_value(DeclSecurity_Action, action))
+    if (!writer.write(DeclSecurity_Action, action))
         return E_FAIL;
 
     uint8_t const* permission = (uint8_t const*)pvPermission;
     uint32_t permissionLength = cbPermission;
-    if (!c_row.set_column_value(DeclSecurity_PermissionSet, permission, permissionLength))
+    if (!writer.write(DeclSecurity_PermissionSet, permission, permissionLength))
         return E_FAIL;
 
     if (!md_cursor_to_token(c, ppm))
@@ -1178,26 +1180,26 @@ HRESULT MetadataEmit::SetMethodProps(
     if (!c)
         return CLDB_E_FILE_CORRUPT;
 
-    auto c_row = c.as();
+    dnmd::row_writer writer{c.as()};
     if (dwMethodFlags != std::numeric_limits<DWORD>::max())
     {
         // TODO: Strip the reserved flags from user input and preserve the existing reserved flags.
         uint32_t flags = dwMethodFlags;
-        if (!c_row.set_column_value(MethodDef_Flags, flags))
+        if (!writer.write(MethodDef_Flags, flags))
             return E_FAIL;
     }
 
     if (ulCodeRVA != std::numeric_limits<ULONG>::max())
     {
         uint32_t rva = ulCodeRVA;
-        if (!c_row.set_column_value(MethodDef_Rva, rva))
+        if (!writer.write(MethodDef_Rva, rva))
             return E_FAIL;
     }
 
     if (dwImplFlags != std::numeric_limits<DWORD>::max())
     {
         uint32_t implFlags = dwImplFlags;
-        if (!c_row.set_column_value(MethodDef_ImplFlags, implFlags))
+        if (!writer.write(MethodDef_ImplFlags, implFlags))
             return E_FAIL;
     }
 
@@ -1216,11 +1218,12 @@ HRESULT MetadataEmit::SetTypeDefProps(
         return CLDB_E_FILE_CORRUPT;
 
     auto c_row = c.as();
+    dnmd::row_writer writer{c_row};
     if (dwTypeDefFlags != std::numeric_limits<DWORD>::max())
     {
         // TODO: Strip the reserved flags from user input and preserve the existing reserved flags.
         uint32_t flags = dwTypeDefFlags;
-        if (!c_row.set_column_value(TypeDef_Flags, flags))
+        if (!writer.write(TypeDef_Flags, flags))
             return E_FAIL;
     }
 
@@ -1229,7 +1232,7 @@ HRESULT MetadataEmit::SetTypeDefProps(
         if (IsNilToken(tkExtends))
             tkExtends = mdTypeDefNil;
 
-        if (!c_row.set_column_value(TypeDef_Extends, tkExtends))
+        if (!writer.write(TypeDef_Extends, tkExtends))
             return E_FAIL;
     }
 
@@ -1271,11 +1274,11 @@ HRESULT MetadataEmit::SetTypeDefProps(
             if (!md_append_row(MetaData(), mdtid_InterfaceImpl, &interfaceImpl))
                 return E_FAIL;
 
-            auto interfaceImpl_row = dnmd::raw_cursor<mdtid_InterfaceImpl>{interfaceImpl}.as();
-            if (!interfaceImpl_row.set_column_value(InterfaceImpl_Class, c_row))
+            dnmd::row_writer interfaceImpl_writer{dnmd::raw_cursor<mdtid_InterfaceImpl>{interfaceImpl}.as()};
+            if (!interfaceImpl_writer.write(InterfaceImpl_Class, c_row))
                 return E_FAIL;
 
-            if (!interfaceImpl_row.set_column_value(InterfaceImpl_Interface, currentImplementation))
+            if (!interfaceImpl_writer.write(InterfaceImpl_Interface, currentImplementation))
                 return E_FAIL;
         } while ((currentImplementation = rtkImplements[++implIndex]) != mdTokenNil);
     }
@@ -1300,19 +1303,20 @@ namespace
 
         for (uint32_t i = 0; i < count; ++i, md_cursor_next(&c))
         {
+            auto row = dnmd::raw_cursor<mdtid_MethodSemantics>{c}.as();
+            dnmd::row_reader reader{row};
             mdToken association;
-            if (!md_get_column_value_as_token(c, mdtMethodSemantics_Association, &association))
+            if (!reader.read(MethodSemantics_Association, association))
                 return E_FAIL;
 
             uint32_t recordSemantic;
-            if (!md_get_column_value_as_constant(c, mdtMethodSemantics_Semantics, &recordSemantic))
+            if (!reader.read(MethodSemantics_Semantics, &recordSemantic))
                 return E_FAIL;
 
             if (association == parent && recordSemantic == (uint32_t)semantic)
             {
                 association = TokenFromRid(mdTokenNil, TypeFromToken(association));
-                auto c_row = dnmd::raw_cursor<mdtid_MethodSemantics>{c}.as();
-                if (!c_row.set_column_value(MethodSemantics_Association, association))
+                if (!row.set_column_value(MethodSemantics_Association, association))
                     return E_FAIL;
             }
         }
@@ -1335,17 +1339,17 @@ HRESULT MetadataEmit::SetEventProps(
     if (!c)
         return CLDB_E_FILE_CORRUPT;
 
-    auto c_row = c.as();
+    dnmd::row_writer writer{c.as()};
     if (dwEventFlags != std::numeric_limits<DWORD>::max())
     {
         uint32_t eventFlags = dwEventFlags;
-        if (!c_row.set_column_value(Event_EventFlags, eventFlags))
+        if (!writer.write(Event_EventFlags, eventFlags))
             return E_FAIL;
     }
 
     if (!IsNilToken(tkEventType))
     {
-        if (!c_row.set_column_value(Event_EventType, tkEventType))
+        if (!writer.write(Event_EventType, tkEventType))
             return E_FAIL;
     }
 
@@ -1403,13 +1407,13 @@ HRESULT MetadataEmit::SetPermissionSetProps(
         return CLDB_E_RECORD_NOTFOUND;
 
     uint32_t action = dwAction;
-    auto c_row = dnmd::raw_cursor<mdtid_DeclSecurity>{c}.as();
-    if (!c_row.set_column_value(DeclSecurity_Action, action))
+    dnmd::row_writer writer{dnmd::raw_cursor<mdtid_DeclSecurity>{c}.as()};
+    if (!writer.write(DeclSecurity_Action, action))
         return E_FAIL;
 
     uint8_t const* permission = (uint8_t const*)pvPermission;
     uint32_t permissionLength = cbPermission;
-    if (!c_row.set_column_value(DeclSecurity_PermissionSet, permission, permissionLength))
+    if (!writer.write(DeclSecurity_PermissionSet, permission, permissionLength))
         return E_FAIL;
 
     if (!md_cursor_to_token(c, ppm))
@@ -1452,8 +1456,8 @@ HRESULT MetadataEmit::DefinePinvokeMap(
         return E_FAIL;
     added_row_wrapper = dnmd::added_row_t(row_to_edit);
 
-    auto row_to_edit_row = dnmd::raw_cursor<mdtid_ImplMap>{row_to_edit}.as();
-    if (!row_to_edit_row.set_column_value(ImplMap_MemberForwarded, tk))
+    dnmd::row_writer row_to_edit_writer{dnmd::raw_cursor<mdtid_ImplMap>{row_to_edit}.as()};
+    if (!row_to_edit_writer.write(ImplMap_MemberForwarded, tk))
         return E_FAIL;
 
     if (dwMappingFlags == std::numeric_limits<uint32_t>::max())
@@ -1463,12 +1467,12 @@ HRESULT MetadataEmit::DefinePinvokeMap(
     }
 
     uint32_t mappingFlags = dwMappingFlags;
-    if (!row_to_edit_row.set_column_value(ImplMap_MappingFlags, mappingFlags))
+    if (!row_to_edit_writer.write(ImplMap_MappingFlags, mappingFlags))
         return E_FAIL;
 
     pal::StringConvert<WCHAR, char> cvt(szImportName);
     char const* name = cvt;
-    if (!row_to_edit_row.set_column_value(ImplMap_ImportName, name))
+    if (!row_to_edit_writer.write(ImplMap_ImportName, name))
         return E_FAIL;
 
     if (IsNilToken(mrImportDLL))
@@ -1476,7 +1480,7 @@ HRESULT MetadataEmit::DefinePinvokeMap(
         // TODO: If the token is nil, create a module ref to "" (if it doesn't exist) and use that.
     }
 
-    if (!row_to_edit_row.set_column_value(ImplMap_ImportScope, mrImportDLL))
+    if (!row_to_edit_writer.write(ImplMap_ImportScope, mrImportDLL))
         return E_FAIL;
 
     // TODO: Update EncLog
@@ -1502,11 +1506,11 @@ HRESULT MetadataEmit::SetPinvokeMap(
     if (!md_find_row_from_cursor(implMapCursor, mdtImplMap_MemberForwarded, tk, &row_to_edit))
         return CLDB_E_RECORD_NOTFOUND;
 
-    auto row_to_edit_row = dnmd::raw_cursor<mdtid_ImplMap>{row_to_edit}.as();
+    dnmd::row_writer row_to_edit_writer{dnmd::raw_cursor<mdtid_ImplMap>{row_to_edit}.as()};
     if (dwMappingFlags != std::numeric_limits<uint32_t>::max())
     {
         uint32_t mappingFlags = dwMappingFlags;
-        if (!row_to_edit_row.set_column_value(ImplMap_MappingFlags, mappingFlags))
+        if (!row_to_edit_writer.write(ImplMap_MappingFlags, mappingFlags))
             return E_FAIL;
     }
 
@@ -1514,11 +1518,11 @@ HRESULT MetadataEmit::SetPinvokeMap(
     {
         pal::StringConvert<WCHAR, char> cvt(szImportName);
         char const* name = cvt;
-        if (!row_to_edit_row.set_column_value(ImplMap_ImportName, name))
+        if (!row_to_edit_writer.write(ImplMap_ImportName, name))
             return E_FAIL;
     }
 
-    if (!row_to_edit_row.set_column_value(ImplMap_ImportScope, mrImportDLL))
+    if (!row_to_edit_writer.write(ImplMap_ImportScope, mrImportDLL))
         return E_FAIL;
 
     // TODO: Update EncLog
@@ -1568,16 +1572,16 @@ HRESULT MetadataEmit::DefineCustomAttribute(
     if (!md_append_row(MetaData(), mdtid_CustomAttribute, &new_row))
         return E_FAIL;
 
-    auto new_row_row = dnmd::raw_cursor<mdtid_CustomAttribute>{new_row}.as();
-    if (!new_row_row.set_column_value(CustomAttribute_Parent, tkOwner))
+    dnmd::row_writer new_row_writer{dnmd::raw_cursor<mdtid_CustomAttribute>{new_row}.as()};
+    if (!new_row_writer.write(CustomAttribute_Parent, tkOwner))
         return E_FAIL;
 
-    if (!new_row_row.set_column_value(CustomAttribute_Type, tkCtor))
+    if (!new_row_writer.write(CustomAttribute_Type, tkCtor))
         return E_FAIL;
 
     uint8_t const* pCustomAttributeBlob = (uint8_t const*)pCustomAttribute;
     uint32_t customAttributeBlobLen = cbCustomAttribute;
-    if (!new_row_row.set_column_value(CustomAttribute_Value, pCustomAttributeBlob, customAttributeBlobLen))
+    if (!new_row_writer.write(CustomAttribute_Value, pCustomAttributeBlob, customAttributeBlobLen))
         return E_FAIL;
 
     if (!md_cursor_to_token(new_row, pcv))
@@ -1697,7 +1701,8 @@ HRESULT MetadataEmit::DefineField(
         return E_FAIL;
 
     auto c_row = dnmd::raw_cursor<mdtid_Field>{c}.as();
-    if (!c_row.set_column_value(Field_Name, name))
+    dnmd::row_writer writer{c_row};
+    if (!writer.write(Field_Name, name))
         return E_FAIL;
 
     bool hasConstant = false;
@@ -1722,7 +1727,7 @@ HRESULT MetadataEmit::DefineField(
         {
             fieldFlags |= fdRTSpecialName | fdSpecialName;
         }
-        if (!c_row.set_column_value(Field_Flags, fieldFlags))
+        if (!writer.write(Field_Flags, fieldFlags))
             return E_FAIL;
     }
     else
@@ -1736,7 +1741,7 @@ HRESULT MetadataEmit::DefineField(
         {
             fieldFlags |= fdRTSpecialName | fdSpecialName;
         }
-        if (!c_row.set_column_value(Field_Flags, fieldFlags))
+        if (!writer.write(Field_Flags, fieldFlags))
             return E_FAIL;
     }
 
@@ -1744,7 +1749,7 @@ HRESULT MetadataEmit::DefineField(
     uint32_t sigLength = cbSigBlob;
     if (sigLength != 0)
     {
-        if (!c_row.set_column_value(Field_Signature, sig, sigLength))
+        if (!writer.write(Field_Signature, sig, sigLength))
             return E_FAIL;
     }
 
@@ -1754,12 +1759,12 @@ HRESULT MetadataEmit::DefineField(
         if (!md_append_row(MetaData(), mdtid_Constant, &constant))
             return E_FAIL;
 
-        auto constant_row = dnmd::raw_cursor<mdtid_Constant>{constant}.as();
-        if (!constant_row.set_column_value(Constant_Parent, c_row))
+        dnmd::row_writer constant_writer{dnmd::raw_cursor<mdtid_Constant>{constant}.as()};
+        if (!constant_writer.write(Constant_Parent, c_row))
             return E_FAIL;
 
         uint32_t type = dwCPlusTypeFlag;
-        if (!constant_row.set_column_value(Constant_Type, type))
+        if (!constant_writer.write(Constant_Type, type))
             return E_FAIL;
 
         uint64_t defaultConstantValue = 0;
@@ -1768,7 +1773,7 @@ HRESULT MetadataEmit::DefineField(
             pConstantValue = (uint8_t const*)&defaultConstantValue;
 
         uint32_t constantSize = GetSizeOfConstantBlob(dwCPlusTypeFlag, pConstantValue, cchValue);
-        if (!constant_row.set_column_value(Constant_Value, pConstantValue, constantSize))
+        if (!constant_writer.write(Constant_Value, pConstantValue, constantSize))
             return E_FAIL;
 
     }
@@ -1807,7 +1812,8 @@ HRESULT MetadataEmit::DefineProperty(
 
             char const* name = cvt;
             auto c_row = dnmd::raw_cursor<mdtid_Property>{c}.as();
-            if (!c_row.set_column_value(Property_Name, name))
+            dnmd::row_writer writer{c_row};
+            if (!writer.write(Property_Name, name))
                 return E_FAIL;
 
 
@@ -1815,7 +1821,7 @@ HRESULT MetadataEmit::DefineProperty(
             {
                 uint8_t const* sig = (uint8_t const*)pvSig;
                 uint32_t sigLength = cbSig;
-                if (!c_row.set_column_value(Property_Type, sig, sigLength))
+                if (!writer.write(Property_Type, sig, sigLength))
                     return E_FAIL;
             }
 
@@ -1842,7 +1848,7 @@ HRESULT MetadataEmit::DefineProperty(
                 hasConstant = true;
             }
 
-            if (!c_row.set_column_value(Property_Flags, propFlags))
+            if (!writer.write(Property_Flags, propFlags))
                 return E_FAIL;
 
             if (mdGetter != mdMethodDefNil)
@@ -1869,12 +1875,12 @@ HRESULT MetadataEmit::DefineProperty(
                 if (!md_append_row(MetaData(), mdtid_Constant, &constant))
                     return E_FAIL;
 
-                auto constant_row = dnmd::raw_cursor<mdtid_Constant>{constant}.as();
-                if (!constant_row.set_column_value(Constant_Parent, c_row))
+                dnmd::row_writer constant_writer{dnmd::raw_cursor<mdtid_Constant>{constant}.as()};
+                if (!constant_writer.write(Constant_Parent, c_row))
                     return E_FAIL;
 
                 uint32_t type = dwCPlusTypeFlag;
-                if (!constant_row.set_column_value(Constant_Type, type))
+                if (!constant_writer.write(Constant_Type, type))
                     return E_FAIL;
 
                 uint64_t defaultConstantValue = 0;
@@ -1883,7 +1889,7 @@ HRESULT MetadataEmit::DefineProperty(
                     pConstantValue = (uint8_t const*)&defaultConstantValue;
 
                 uint32_t constantSize = GetSizeOfConstantBlob(dwCPlusTypeFlag, pConstantValue, cchValue);
-                if (!constant_row.set_column_value(Constant_Value, pConstantValue, constantSize))
+                if (!constant_writer.write(Constant_Value, pConstantValue, constantSize))
                     return E_FAIL;
             }
 
@@ -1921,7 +1927,8 @@ HRESULT MetadataEmit::DefineParam(
         return E_FAIL;
 
     auto c_row = dnmd::raw_cursor<mdtid_Param>{c}.as();
-    if (!c_row.set_column_value(Param_Name, name))
+    dnmd::row_writer writer{c_row};
+    if (!writer.write(Param_Name, name))
         return E_FAIL;
 
     bool hasConstant = false;
@@ -1939,13 +1946,13 @@ HRESULT MetadataEmit::DefineParam(
         // TODO: Handle reserved flags
         uint32_t flags = dwParamFlags;
 
-        if (!c_row.set_column_value(Param_Flags, flags))
+        if (!writer.write(Param_Flags, flags))
             return E_FAIL;
     }
     else
     {
         uint32_t flags = 0;
-        if (!c_row.set_column_value(Param_Flags, flags))
+        if (!writer.write(Param_Flags, flags))
             return E_FAIL;
     }
 
@@ -1955,12 +1962,12 @@ HRESULT MetadataEmit::DefineParam(
         if (!md_append_row(MetaData(), mdtid_Constant, &constant))
             return E_FAIL;
 
-        auto constant_row = dnmd::raw_cursor<mdtid_Constant>{constant}.as();
-        if (!constant_row.set_column_value(Constant_Parent, c_row))
+        dnmd::row_writer constant_writer{dnmd::raw_cursor<mdtid_Constant>{constant}.as()};
+        if (!constant_writer.write(Constant_Parent, c_row))
             return E_FAIL;
 
         uint32_t type = dwCPlusTypeFlag;
-        if (!constant_row.set_column_value(Constant_Type, type))
+        if (!constant_writer.write(Constant_Type, type))
             return E_FAIL;
 
         uint64_t defaultConstantValue = 0;
@@ -1969,7 +1976,7 @@ HRESULT MetadataEmit::DefineParam(
             pConstantValue = (uint8_t const*)&defaultConstantValue;
 
         uint32_t constantSize = GetSizeOfConstantBlob(dwCPlusTypeFlag, pConstantValue, cchValue);
-        if (!constant_row.set_column_value(Constant_Value, pConstantValue, constantSize))
+        if (!constant_writer.write(Constant_Value, pConstantValue, constantSize))
             return E_FAIL;
 
     }
@@ -2017,7 +2024,8 @@ HRESULT MetadataEmit::SetFieldProps(
         return FindOrCreateParentedRow(MetaData(), fd, Constant_Parent, [=](dnmd::cursor<mdtid_Constant> constant)
         {
             uint32_t type = dwCPlusTypeFlag;
-            if (!constant.set_column_value(Constant_Type, type))
+            dnmd::row_writer constant_writer{constant};
+            if (!constant_writer.write(Constant_Type, type))
                 return E_FAIL;
 
             uint64_t defaultConstantValue = 0;
@@ -2026,7 +2034,7 @@ HRESULT MetadataEmit::SetFieldProps(
                 pConstantValue = (uint8_t const*)&defaultConstantValue;
 
             uint32_t constantSize = GetSizeOfConstantBlob(dwCPlusTypeFlag, pConstantValue, cchValue);
-            if (!constant.set_column_value(Constant_Value, pConstantValue, constantSize))
+            if (!constant_writer.write(Constant_Value, pConstantValue, constantSize))
                 return E_FAIL;
 
             return S_OK;
@@ -2104,7 +2112,8 @@ HRESULT MetadataEmit::SetPropertyProps(
         return FindOrCreateParentedRow(MetaData(), pr, Constant_Parent, [=](dnmd::cursor<mdtid_Constant> constant)
         {
             uint32_t type = dwCPlusTypeFlag;
-            if (!constant.set_column_value(Constant_Type, type))
+            dnmd::row_writer constant_writer{constant};
+            if (!constant_writer.write(Constant_Type, type))
                 return E_FAIL;
 
             uint64_t defaultConstantValue = 0;
@@ -2113,7 +2122,7 @@ HRESULT MetadataEmit::SetPropertyProps(
                 pConstantValue = (uint8_t const*)&defaultConstantValue;
 
             uint32_t constantSize = GetSizeOfConstantBlob(dwCPlusTypeFlag, pConstantValue, cchValue);
-            if (!constant.set_column_value(Constant_Value, pConstantValue, constantSize))
+            if (!constant_writer.write(Constant_Value, pConstantValue, constantSize))
                 return E_FAIL;
 
             return S_OK;
@@ -2142,8 +2151,8 @@ HRESULT MetadataEmit::SetParamProps(
         return E_INVALIDARG;
 
     char const* name = cvt;
-    auto c_row = c.as();
-    if (!c_row.set_column_value(Param_Name, name))
+    dnmd::row_writer writer{c.as()};
+    if (!writer.write(Param_Name, name))
         return E_FAIL;
 
     bool hasConstant = false;
@@ -2160,7 +2169,7 @@ HRESULT MetadataEmit::SetParamProps(
     {
         // TODO: Handle reserved flags
         uint32_t flags = dwParamFlags;
-        if (!c_row.set_column_value(Param_Flags, flags))
+        if (!writer.write(Param_Flags, flags))
             return E_FAIL;
     }
 
@@ -2170,7 +2179,8 @@ HRESULT MetadataEmit::SetParamProps(
         return FindOrCreateParentedRow(MetaData(), pd, Constant_Parent, [=](dnmd::cursor<mdtid_Constant> constant)
         {
             uint32_t type = dwCPlusTypeFlag;
-            if (!constant.set_column_value(Constant_Type, type))
+            dnmd::row_writer constant_writer{constant};
+            if (!constant_writer.write(Constant_Type, type))
                 return E_FAIL;
 
             uint64_t defaultConstantValue = 0;
@@ -2179,7 +2189,7 @@ HRESULT MetadataEmit::SetParamProps(
                 pConstantValue = (uint8_t const*)&defaultConstantValue;
 
             uint32_t constantSize = GetSizeOfConstantBlob(dwCPlusTypeFlag, pConstantValue, cchValue);
-            if (!constant.set_column_value(Constant_Value, pConstantValue, constantSize))
+            if (!constant_writer.write(Constant_Value, pConstantValue, constantSize))
                 return E_FAIL;
 
             return S_OK;
@@ -2352,12 +2362,12 @@ HRESULT MetadataEmit::DefineMethodSpec(
     if (!md_append_row(MetaData(), mdtid_MethodSpec, &c))
         return E_FAIL;
 
-    auto c_row = dnmd::raw_cursor<mdtid_MethodSpec>{c}.as();
-    if (!c_row.set_column_value(MethodSpec_Method, tkParent))
+    dnmd::row_writer writer{dnmd::raw_cursor<mdtid_MethodSpec>{c}.as()};
+    if (!writer.write(MethodSpec_Method, tkParent))
         return E_FAIL;
 
     uint32_t sigLength = cbSigBlob;
-    if (!c_row.set_column_value(MethodSpec_Instantiation, pvSigBlob, sigLength))
+    if (!writer.write(MethodSpec_Instantiation, pvSigBlob, sigLength))
         return E_FAIL;
 
     if (!md_cursor_to_token(c, pmi))
@@ -2428,15 +2438,16 @@ HRESULT MetadataEmit::DefineGenericParam(
         return E_FAIL;
 
     auto c_row = dnmd::raw_cursor<mdtid_GenericParam>{c}.as();
-    if (!c_row.set_column_value(GenericParam_Owner, tk))
+    dnmd::row_writer writer{c_row};
+    if (!writer.write(GenericParam_Owner, tk))
         return E_FAIL;
 
     uint32_t paramSeq = ulParamSeq;
-    if (!c_row.set_column_value(GenericParam_Number, paramSeq))
+    if (!writer.write(GenericParam_Number, paramSeq))
         return E_FAIL;
 
     uint32_t flags = dwParamFlags;
-    if (!c_row.set_column_value(GenericParam_Flags, flags))
+    if (!writer.write(GenericParam_Flags, flags))
         return E_FAIL;
 
     if (szname != nullptr)
@@ -2446,13 +2457,13 @@ HRESULT MetadataEmit::DefineGenericParam(
             return E_INVALIDARG;
 
         char const* name = cvt;
-        if (!c_row.set_column_value(GenericParam_Name, name))
+        if (!writer.write(GenericParam_Name, name))
             return E_FAIL;
     }
     else
     {
         char const* name = nullptr;
-        if (!c_row.set_column_value(GenericParam_Name, name))
+        if (!writer.write(GenericParam_Name, name))
             return E_FAIL;
     }
 
@@ -2464,11 +2475,11 @@ HRESULT MetadataEmit::DefineGenericParam(
             if (!md_append_row(MetaData(), mdtid_GenericParamConstraint, &added_row))
                 return E_FAIL;
 
-            auto constraint_row = dnmd::raw_cursor<mdtid_GenericParamConstraint>{added_row}.as();
-            if (!constraint_row.set_column_value(GenericParamConstraint_Owner, c_row))
+            dnmd::row_writer constraint_writer{dnmd::raw_cursor<mdtid_GenericParamConstraint>{added_row}.as()};
+            if (!constraint_writer.write(GenericParamConstraint_Owner, c_row))
                 return E_FAIL;
 
-            if (!constraint_row.set_column_value(GenericParamConstraint_Constraint, rtkConstraints[i]))
+            if (!constraint_writer.write(GenericParamConstraint_Constraint, rtkConstraints[i]))
                 return E_FAIL;
 
             // TODO: Update EncLog
@@ -2498,7 +2509,8 @@ HRESULT MetadataEmit::SetGenericParamProps(
 
     uint32_t flags = dwParamFlags;
     auto c_row = c.as();
-    if (!c_row.set_column_value(GenericParam_Flags, flags))
+    dnmd::row_writer writer{c_row};
+    if (!writer.write(GenericParam_Flags, flags))
         return E_FAIL;
 
     if (szName != nullptr)
@@ -2508,7 +2520,7 @@ HRESULT MetadataEmit::SetGenericParamProps(
             return E_INVALIDARG;
 
         char const* name = cvt;
-        if (!c_row.set_column_value(GenericParam_Name, name))
+        if (!writer.write(GenericParam_Name, name))
             return E_FAIL;
     }
 
@@ -2543,10 +2555,11 @@ HRESULT MetadataEmit::SetGenericParamProps(
                 return E_FAIL;
 
             auto constraint_row = dnmd::raw_cursor<mdtid_GenericParamConstraint>{added_row}.as();
-            if (!constraint_row.set_column_value(GenericParamConstraint_Owner, c_row))
+            dnmd::row_writer constraint_writer{constraint_row};
+            if (!constraint_writer.write(GenericParamConstraint_Owner, c_row))
                 return E_FAIL;
 
-            if (!constraint_row.set_column_value(GenericParamConstraint_Constraint, rtkConstraints[i]))
+            if (!constraint_writer.write(GenericParamConstraint_Constraint, rtkConstraints[i]))
                 return E_FAIL;
 
             // TODO: Update EncLog
@@ -2600,45 +2613,45 @@ HRESULT MetadataEmit::DefineAssembly(
     }
 
     const uint8_t* publicKey = (const uint8_t*)pbPublicKey;
-    auto c_row = dnmd::raw_cursor<mdtid_Assembly>{c}.as();
+    dnmd::row_writer writer{dnmd::raw_cursor<mdtid_Assembly>{c}.as()};
     if (publicKey != nullptr)
     {
         uint32_t publicKeyLength = cbPublicKey;
-        if (!c_row.set_column_value(Assembly_PublicKey, publicKey, publicKeyLength))
+        if (!writer.write(Assembly_PublicKey, publicKey, publicKeyLength))
             return E_FAIL;
     }
     else
     {
         uint32_t publicKeyLength = 0;
-        if (!c_row.set_column_value(Assembly_PublicKey, publicKey, publicKeyLength))
+        if (!writer.write(Assembly_PublicKey, publicKey, publicKeyLength))
             return E_FAIL;
     }
 
-    if (!c_row.set_column_value(Assembly_Flags, assemblyFlags))
+    if (!writer.write(Assembly_Flags, assemblyFlags))
         return E_FAIL;
 
     char const* name = cvt;
-    if (!c_row.set_column_value(Assembly_Name, name))
+    if (!writer.write(Assembly_Name, name))
         return E_FAIL;
 
     uint32_t hashAlgId = ulHashAlgId;
-    if (!c_row.set_column_value(Assembly_HashAlgId, hashAlgId))
+    if (!writer.write(Assembly_HashAlgId, hashAlgId))
         return E_FAIL;
 
     uint32_t majorVersion = pMetaData->usMajorVersion != std::numeric_limits<uint16_t>::max() ? pMetaData->usMajorVersion : 0;
-    if (!c_row.set_column_value(Assembly_MajorVersion, majorVersion))
+    if (!writer.write(Assembly_MajorVersion, majorVersion))
         return E_FAIL;
 
     uint32_t minorVersion = pMetaData->usMinorVersion != std::numeric_limits<uint16_t>::max() ? pMetaData->usMinorVersion : 0;
-    if (!c_row.set_column_value(Assembly_MinorVersion, minorVersion))
+    if (!writer.write(Assembly_MinorVersion, minorVersion))
         return E_FAIL;
 
     uint32_t buildNumber = pMetaData->usBuildNumber != std::numeric_limits<uint16_t>::max() ? pMetaData->usBuildNumber : 0;
-    if (!c_row.set_column_value(Assembly_BuildNumber, buildNumber))
+    if (!writer.write(Assembly_BuildNumber, buildNumber))
         return E_FAIL;
 
     uint32_t revisionNumber = pMetaData->usRevisionNumber != std::numeric_limits<uint16_t>::max() ? pMetaData->usRevisionNumber : 0;
-    if (!c_row.set_column_value(Assembly_RevisionNumber, revisionNumber))
+    if (!writer.write(Assembly_RevisionNumber, revisionNumber))
         return E_FAIL;
 
     if (pMetaData->szLocale != nullptr)
@@ -2648,13 +2661,13 @@ HRESULT MetadataEmit::DefineAssembly(
             return E_INVALIDARG;
 
         char const* locale = cvtLocale;
-        if (!c_row.set_column_value(Assembly_Culture, locale))
+        if (!writer.write(Assembly_Culture, locale))
             return E_FAIL;
     }
     else
     {
         char const* locale = nullptr;
-        if (!c_row.set_column_value(Assembly_Culture, locale))
+        if (!writer.write(Assembly_Culture, locale))
             return E_FAIL;
     }
 
@@ -2688,17 +2701,17 @@ HRESULT MetadataEmit::DefineAssemblyRef(
         return E_FAIL;
 
     const uint8_t* publicKey = (const uint8_t*)pbPublicKeyOrToken;
-    auto c_row = dnmd::raw_cursor<mdtid_AssemblyRef>{c}.as();
+    dnmd::row_writer writer{dnmd::raw_cursor<mdtid_AssemblyRef>{c}.as()};
     if (publicKey != nullptr)
     {
         uint32_t publicKeyLength = cbPublicKeyOrToken;
-        if (!c_row.set_column_value(AssemblyRef_PublicKeyOrToken, publicKey, publicKeyLength))
+        if (!writer.write(AssemblyRef_PublicKeyOrToken, publicKey, publicKeyLength))
             return E_FAIL;
     }
     else
     {
         uint32_t publicKeyLength = 0;
-        if (!c_row.set_column_value(AssemblyRef_PublicKeyOrToken, publicKey, publicKeyLength))
+        if (!writer.write(AssemblyRef_PublicKeyOrToken, publicKey, publicKeyLength))
             return E_FAIL;
     }
 
@@ -2706,39 +2719,39 @@ HRESULT MetadataEmit::DefineAssemblyRef(
     {
         uint8_t const* hashValue = (uint8_t const*)pbHashValue;
         uint32_t hashValueLength = cbHashValue;
-        if (!c_row.set_column_value(AssemblyRef_HashValue, hashValue, hashValueLength))
+        if (!writer.write(AssemblyRef_HashValue, hashValue, hashValueLength))
             return E_FAIL;
     }
     else
     {
         uint8_t const* hashValue = nullptr;
         uint32_t hashValueLength = 0;
-        if (!c_row.set_column_value(AssemblyRef_HashValue, hashValue, hashValueLength))
+        if (!writer.write(AssemblyRef_HashValue, hashValue, hashValueLength))
             return E_FAIL;
     }
 
     uint32_t assemblyFlags = PrepareForSaving(dwAssemblyRefFlags);
-    if (!c_row.set_column_value(AssemblyRef_Flags, assemblyFlags))
+    if (!writer.write(AssemblyRef_Flags, assemblyFlags))
         return E_FAIL;
 
     char const* name = cvt;
-    if (!c_row.set_column_value(AssemblyRef_Name, name))
+    if (!writer.write(AssemblyRef_Name, name))
         return E_FAIL;
 
     uint32_t majorVersion = pMetaData->usMajorVersion != std::numeric_limits<uint16_t>::max() ? pMetaData->usMajorVersion : 0;
-    if (!c_row.set_column_value(AssemblyRef_MajorVersion, majorVersion))
+    if (!writer.write(AssemblyRef_MajorVersion, majorVersion))
         return E_FAIL;
 
     uint32_t minorVersion = pMetaData->usMinorVersion != std::numeric_limits<uint16_t>::max() ? pMetaData->usMinorVersion : 0;
-    if (!c_row.set_column_value(AssemblyRef_MinorVersion, minorVersion))
+    if (!writer.write(AssemblyRef_MinorVersion, minorVersion))
         return E_FAIL;
 
     uint32_t buildNumber = pMetaData->usBuildNumber != std::numeric_limits<uint16_t>::max() ? pMetaData->usBuildNumber : 0;
-    if (!c_row.set_column_value(AssemblyRef_BuildNumber, buildNumber))
+    if (!writer.write(AssemblyRef_BuildNumber, buildNumber))
         return E_FAIL;
 
     uint32_t revisionNumber = pMetaData->usRevisionNumber != std::numeric_limits<uint16_t>::max() ? pMetaData->usRevisionNumber : 0;
-    if (!c_row.set_column_value(AssemblyRef_RevisionNumber, revisionNumber))
+    if (!writer.write(AssemblyRef_RevisionNumber, revisionNumber))
         return E_FAIL;
 
     if (pMetaData->szLocale != nullptr)
@@ -2748,13 +2761,13 @@ HRESULT MetadataEmit::DefineAssemblyRef(
             return E_INVALIDARG;
 
         char const* locale = cvtLocale;
-        if (!c_row.set_column_value(AssemblyRef_Culture, locale))
+        if (!writer.write(AssemblyRef_Culture, locale))
             return E_FAIL;
     }
     else
     {
         char const* locale = nullptr;
-        if (!c_row.set_column_value(AssemblyRef_Culture, locale))
+        if (!writer.write(AssemblyRef_Culture, locale))
             return E_FAIL;
     }
 
@@ -2785,27 +2798,27 @@ HRESULT MetadataEmit::DefineFile(
 
     char const* name = cvt;
 
-    auto c_row = dnmd::raw_cursor<mdtid_File>{c}.as();
-    if (!c_row.set_column_value(File_Name, name))
+    dnmd::row_writer writer{dnmd::raw_cursor<mdtid_File>{c}.as()};
+    if (!writer.write(File_Name, name))
         return E_FAIL;
 
     if (pbHashValue != nullptr)
     {
         uint8_t const* hashValue = (uint8_t const*)pbHashValue;
         uint32_t hashValueLength = cbHashValue;
-        if (!c_row.set_column_value(File_HashValue, hashValue, hashValueLength))
+        if (!writer.write(File_HashValue, hashValue, hashValueLength))
             return E_FAIL;
     }
     else
     {
         uint8_t const* hashValue = nullptr;
         uint32_t hashValueLength = 0;
-        if (!c_row.set_column_value(File_HashValue, hashValue, hashValueLength))
+        if (!writer.write(File_HashValue, hashValue, hashValueLength))
             return E_FAIL;
     }
 
     uint32_t fileFlags = dwFileFlags != std::numeric_limits<uint32_t>::max() ? dwFileFlags : 0;
-    if (!c_row.set_column_value(File_Flags, fileFlags))
+    if (!writer.write(File_Flags, fileFlags))
         return E_FAIL;
 
     if (!md_cursor_to_token(c, pmdf))
@@ -2834,15 +2847,15 @@ HRESULT MetadataEmit::DefineExportedType(
     char const* ns;
     char const* name;
     SplitTypeName(cvt, &ns, &name);
-    auto c_row = dnmd::raw_cursor<mdtid_ExportedType>{c}.as();
-    if (!c_row.set_column_value(ExportedType_TypeNamespace, ns))
+    dnmd::row_writer writer{dnmd::raw_cursor<mdtid_ExportedType>{c}.as()};
+    if (!writer.write(ExportedType_TypeNamespace, ns))
         return E_FAIL;
-    if (!c_row.set_column_value(ExportedType_TypeName, name))
+    if (!writer.write(ExportedType_TypeName, name))
         return E_FAIL;
 
     if (!IsNilToken(tkImplementation))
     {
-        if (!c_row.set_column_value(ExportedType_Implementation, tkImplementation))
+        if (!writer.write(ExportedType_Implementation, tkImplementation))
             return E_FAIL;
     }
     else
@@ -2850,24 +2863,24 @@ HRESULT MetadataEmit::DefineExportedType(
         // COMPAT: When the implementation column isn't defined, it is defaulted to the 0 value.
         // For the Implementation coded index, the nil File token is the 0 value;
         mdToken nilToken = mdFileNil;
-        if (!c_row.set_column_value(ExportedType_Implementation, nilToken))
+        if (!writer.write(ExportedType_Implementation, nilToken))
             return E_FAIL;
     }
 
     if (!IsNilToken(tkTypeDef))
     {
-        if (!c_row.set_column_value(ExportedType_TypeDefId, tkTypeDef))
+        if (!writer.write(ExportedType_TypeDefId, tkTypeDef))
             return E_FAIL;
     }
     else
     {
         mdToken nilToken = 0;
-        if (!c_row.set_column_value(ExportedType_TypeDefId, nilToken))
+        if (!writer.write(ExportedType_TypeDefId, nilToken))
             return E_FAIL;
     }
 
     uint32_t exportedTypeFlags = dwExportedTypeFlags != std::numeric_limits<uint32_t>::max() ? dwExportedTypeFlags : 0;
-    if (!c_row.set_column_value(ExportedType_Flags, exportedTypeFlags))
+    if (!writer.write(ExportedType_Flags, exportedTypeFlags))
         return E_FAIL;
 
     if (!md_cursor_to_token(c, pmdct))
@@ -2894,13 +2907,13 @@ HRESULT MetadataEmit::DefineManifestResource(
         return E_INVALIDARG;
 
     char const* name = cvt;
-    auto c_row = dnmd::raw_cursor<mdtid_ManifestResource>{c}.as();
-    if (!c_row.set_column_value(ManifestResource_Name, name))
+    dnmd::row_writer writer{dnmd::raw_cursor<mdtid_ManifestResource>{c}.as()};
+    if (!writer.write(ManifestResource_Name, name))
         return E_FAIL;
 
     if (!IsNilToken(tkImplementation))
     {
-        if (!c_row.set_column_value(ManifestResource_Implementation, tkImplementation))
+        if (!writer.write(ManifestResource_Implementation, tkImplementation))
             return E_FAIL;
     }
     else
@@ -2908,16 +2921,16 @@ HRESULT MetadataEmit::DefineManifestResource(
         // COMPAT: When the implementation column isn't defined, it is defaulted to the 0 value.
         // For the Implementation coded index, the nil File token is the 0 value;
         mdToken nilToken = mdFileNil;
-        if (!c_row.set_column_value(ManifestResource_Implementation, nilToken))
+        if (!writer.write(ManifestResource_Implementation, nilToken))
             return E_FAIL;
     }
 
     uint32_t offset = dwOffset != std::numeric_limits<uint32_t>::max() ? dwOffset : 0;
-    if (!c_row.set_column_value(ManifestResource_Offset, offset))
+    if (!writer.write(ManifestResource_Offset, offset))
         return E_FAIL;
 
     uint32_t resourceFlags = dwResourceFlags != std::numeric_limits<uint32_t>::max() ? dwResourceFlags : 0;
-    if (!c_row.set_column_value(ManifestResource_Flags, resourceFlags))
+    if (!writer.write(ManifestResource_Flags, resourceFlags))
         return E_FAIL;
 
     if (!md_cursor_to_token(c, pmdmr))
@@ -2947,15 +2960,15 @@ HRESULT MetadataEmit::SetAssemblyProps(
     }
 
     const uint8_t* publicKey = (const uint8_t*)pbPublicKey;
-    auto c_row = c.as();
+    dnmd::row_writer writer{c.as()};
     if (publicKey != nullptr)
     {
         uint32_t publicKeyLength = cbPublicKey;
-        if (!c_row.set_column_value(Assembly_PublicKey, publicKey, publicKeyLength))
+        if (!writer.write(Assembly_PublicKey, publicKey, publicKeyLength))
             return E_FAIL;
     }
 
-    if (!c_row.set_column_value(Assembly_Flags, assemblyFlags))
+    if (!writer.write(Assembly_Flags, assemblyFlags))
         return E_FAIL;
 
     if (szName != nullptr)
@@ -2965,42 +2978,42 @@ HRESULT MetadataEmit::SetAssemblyProps(
             return E_INVALIDARG;
 
         char const* name = cvt;
-        if (!c_row.set_column_value(Assembly_Name, name))
+        if (!writer.write(Assembly_Name, name))
             return E_FAIL;
     }
 
     if (ulHashAlgId != std::numeric_limits<uint32_t>::max())
     {
         uint32_t hashAlgId = ulHashAlgId;
-        if (!c_row.set_column_value(Assembly_HashAlgId, hashAlgId))
+        if (!writer.write(Assembly_HashAlgId, hashAlgId))
             return E_FAIL;
     }
 
     if (pMetaData->usMajorVersion != std::numeric_limits<uint16_t>::max())
     {
         uint32_t majorVersion = pMetaData->usMajorVersion;
-        if (!c_row.set_column_value(Assembly_MajorVersion, majorVersion))
+        if (!writer.write(Assembly_MajorVersion, majorVersion))
             return E_FAIL;
     }
 
     if (pMetaData->usMinorVersion != std::numeric_limits<uint16_t>::max())
     {
         uint32_t minorVersion = pMetaData->usMinorVersion;
-        if (!c_row.set_column_value(Assembly_MinorVersion, minorVersion))
+        if (!writer.write(Assembly_MinorVersion, minorVersion))
             return E_FAIL;
     }
 
     if (pMetaData->usBuildNumber != std::numeric_limits<uint16_t>::max())
     {
         uint32_t buildNumber = pMetaData->usBuildNumber;
-        if (!c_row.set_column_value(Assembly_BuildNumber, buildNumber))
+        if (!writer.write(Assembly_BuildNumber, buildNumber))
             return E_FAIL;
     }
 
     if (pMetaData->usRevisionNumber != std::numeric_limits<uint16_t>::max())
     {
         uint32_t revisionNumber = pMetaData->usRevisionNumber;
-        if (!c_row.set_column_value(Assembly_RevisionNumber, revisionNumber))
+        if (!writer.write(Assembly_RevisionNumber, revisionNumber))
             return E_FAIL;
     }
 
@@ -3011,7 +3024,7 @@ HRESULT MetadataEmit::SetAssemblyProps(
             return E_INVALIDARG;
 
         char const* locale = cvtLocale;
-        if (!c_row.set_column_value(Assembly_Culture, locale))
+        if (!writer.write(Assembly_Culture, locale))
             return E_FAIL;
     }
 
@@ -3041,11 +3054,11 @@ HRESULT MetadataEmit::SetAssemblyRefProps(
     }
 
     const uint8_t* publicKey = (const uint8_t*)pbPublicKeyOrToken;
-    auto c_row = c.as();
+    dnmd::row_writer writer{c.as()};
     if (publicKey != nullptr)
     {
         uint32_t publicKeyLength = cbPublicKeyOrToken;
-        if (!c_row.set_column_value(AssemblyRef_PublicKeyOrToken, publicKey, publicKeyLength))
+        if (!writer.write(AssemblyRef_PublicKeyOrToken, publicKey, publicKeyLength))
             return E_FAIL;
     }
 
@@ -3053,11 +3066,11 @@ HRESULT MetadataEmit::SetAssemblyRefProps(
     {
         uint8_t const* hashValue = (uint8_t const*)pbHashValue;
         uint32_t hashValueLength = cbHashValue;
-        if (!c_row.set_column_value(AssemblyRef_HashValue, hashValue, hashValueLength))
+        if (!writer.write(AssemblyRef_HashValue, hashValue, hashValueLength))
             return E_FAIL;
     }
 
-    if (!c_row.set_column_value(AssemblyRef_Flags, assemblyFlags))
+    if (!writer.write(AssemblyRef_Flags, assemblyFlags))
         return E_FAIL;
 
     if (szName != nullptr)
@@ -3067,35 +3080,35 @@ HRESULT MetadataEmit::SetAssemblyRefProps(
             return E_INVALIDARG;
 
         char const* name = cvt;
-        if (!c_row.set_column_value(AssemblyRef_Name, name))
+        if (!writer.write(AssemblyRef_Name, name))
             return E_FAIL;
     }
 
     if (pMetaData->usMajorVersion != std::numeric_limits<uint16_t>::max())
     {
         uint32_t majorVersion = pMetaData->usMajorVersion;
-        if (!c_row.set_column_value(AssemblyRef_MajorVersion, majorVersion))
+        if (!writer.write(AssemblyRef_MajorVersion, majorVersion))
             return E_FAIL;
     }
 
     if (pMetaData->usMinorVersion != std::numeric_limits<uint16_t>::max())
     {
         uint32_t minorVersion = pMetaData->usMinorVersion;
-        if (!c_row.set_column_value(AssemblyRef_MinorVersion, minorVersion))
+        if (!writer.write(AssemblyRef_MinorVersion, minorVersion))
             return E_FAIL;
     }
 
     if (pMetaData->usBuildNumber != std::numeric_limits<uint16_t>::max())
     {
         uint32_t buildNumber = pMetaData->usBuildNumber;
-        if (!c_row.set_column_value(AssemblyRef_BuildNumber, buildNumber))
+        if (!writer.write(AssemblyRef_BuildNumber, buildNumber))
             return E_FAIL;
     }
 
     if (pMetaData->usRevisionNumber != std::numeric_limits<uint16_t>::max())
     {
         uint32_t revisionNumber = pMetaData->usRevisionNumber;
-        if (!c_row.set_column_value(AssemblyRef_RevisionNumber, revisionNumber))
+        if (!writer.write(AssemblyRef_RevisionNumber, revisionNumber))
             return E_FAIL;
     }
 
@@ -3106,7 +3119,7 @@ HRESULT MetadataEmit::SetAssemblyRefProps(
             return E_INVALIDARG;
 
         char const* locale = cvtLocale;
-        if (!c_row.set_column_value(AssemblyRef_Culture, locale))
+        if (!writer.write(AssemblyRef_Culture, locale))
             return E_FAIL;
     }
 
@@ -3125,19 +3138,19 @@ HRESULT MetadataEmit::SetFileProps(
     if (!c)
         return E_INVALIDARG;
 
-    auto c_row = c.as();
+    dnmd::row_writer writer{c.as()};
     if (pbHashValue != nullptr)
     {
         uint8_t const* hashValue = (uint8_t const*)pbHashValue;
         uint32_t hashValueLength = cbHashValue;
-        if (!c_row.set_column_value(File_HashValue, hashValue, hashValueLength))
+        if (!writer.write(File_HashValue, hashValue, hashValueLength))
             return E_FAIL;
     }
 
     if (dwFileFlags != std::numeric_limits<uint32_t>::max())
     {
         uint32_t fileFlags = dwFileFlags;
-        if (!c_row.set_column_value(File_Flags, fileFlags))
+        if (!writer.write(File_Flags, fileFlags))
             return E_FAIL;
     }
 
@@ -3156,23 +3169,23 @@ HRESULT MetadataEmit::SetExportedTypeProps(
     if (!c)
         return E_INVALIDARG;
 
-    auto c_row = c.as();
+    dnmd::row_writer writer{c.as()};
     if (!IsNilToken(tkImplementation))
     {
-        if (!c_row.set_column_value(ExportedType_Implementation, tkImplementation))
+        if (!writer.write(ExportedType_Implementation, tkImplementation))
             return E_FAIL;
     }
 
     if (!IsNilToken(tkTypeDef))
     {
-        if (!c_row.set_column_value(ExportedType_TypeDefId, tkTypeDef))
+        if (!writer.write(ExportedType_TypeDefId, tkTypeDef))
             return E_FAIL;
     }
 
     if (dwExportedTypeFlags != std::numeric_limits<uint32_t>::max())
     {
         uint32_t exportedTypeFlags = dwExportedTypeFlags;
-        if (!c_row.set_column_value(ExportedType_Flags, exportedTypeFlags))
+        if (!writer.write(ExportedType_Flags, exportedTypeFlags))
             return E_FAIL;
     }
 
@@ -3191,24 +3204,24 @@ HRESULT MetadataEmit::SetManifestResourceProps(
     if (!c)
         return E_INVALIDARG;
 
-    auto c_row = c.as();
+    dnmd::row_writer writer{c.as()};
     if (!IsNilToken(tkImplementation))
     {
-        if (!c_row.set_column_value(ManifestResource_Implementation, tkImplementation))
+        if (!writer.write(ManifestResource_Implementation, tkImplementation))
             return E_FAIL;
     }
 
     if (dwOffset != std::numeric_limits<uint32_t>::max())
     {
         uint32_t offset = dwOffset;
-        if (!c_row.set_column_value(ManifestResource_Offset, offset))
+        if (!writer.write(ManifestResource_Offset, offset))
             return E_FAIL;
     }
 
     if (dwResourceFlags != std::numeric_limits<uint32_t>::max())
     {
         uint32_t resourceFlags = dwResourceFlags;
-        if (!c_row.set_column_value(ManifestResource_Flags, resourceFlags))
+        if (!writer.write(ManifestResource_Flags, resourceFlags))
             return E_FAIL;
     }
 

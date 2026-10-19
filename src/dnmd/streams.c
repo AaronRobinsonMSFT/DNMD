@@ -261,6 +261,13 @@ bool initialize_tables(mdcxt_t* cxt)
     }
 #endif // DNMD_PORTABLE_PDB
 
+    // Empty element tables still need to know whether their Ptr table is present.
+    for (mdtable_id_t id = mdtid_First; id < mdtid_End; ++id)
+    {
+        mdtable_id_t indirect = get_corresponding_indirection_table(id);
+        cxt->tables[id].has_indirect_table = indirect != mdtid_Unused && row_counts[indirect] != 0;
+    }
+
     mdtable_t* table;
     valid = valid_tables;
     for (size_t i = 0; valid; ++i)

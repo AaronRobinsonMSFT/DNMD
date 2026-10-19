@@ -126,6 +126,7 @@ bool create_and_fill_indirect_table(mdcxt_t* cxt, mdtable_id_t original_table, m
 
     // Introducing a Ptr table means the table heap is now uncompressed.
     cxt->context_flags |= mdc_uncompressed_table_heap;
+    editor->tables[original_table].table->has_indirect_table = true;
     return true;
 }
 

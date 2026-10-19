@@ -1177,3 +1177,73 @@ TEST(CppCursorEmitWrites, ExportedTypeIdIsWrittenAsAConstant)
     EXPECT_EQ(expected, actual);
     EXPECT_EQ(file, implementation);
 }
+
+TEST(CppCursorImport, MultiColumnLookupsAdvanceReadersWithTheirRows)
+{
+    dncp::com_ptr<IMetaDataEmit> emit;
+    ASSERT_NO_FATAL_FAILURE(CreateEmit(emit));
+    mdTypeDef first_type;
+    mdTypeDef second_type;
+    ASSERT_EQ(S_OK, emit->DefineTypeDef(W("First"), tdPublic, mdTypeDefNil, nullptr, &first_type));
+    ASSERT_EQ(S_OK, emit->DefineTypeDef(W("Second"), tdPublic, mdTypeDefNil, nullptr, &second_type));
+    uint8_t signature[] = {IMAGE_CEE_CS_CALLCONV_DEFAULT, 0, ELEMENT_TYPE_VOID};
+    mdMethodDef other_method;
+    mdMethodDef target_method;
+    ASSERT_EQ(S_OK, emit->DefineMethod(first_type, W("Other"), mdPublic | mdStatic,
+        signature, sizeof(signature), 0, 0, &other_method));
+    ASSERT_EQ(S_OK, emit->DefineMethod(first_type, W("Target"), mdPublic | mdStatic,
+        signature, sizeof(signature), 0, 0, &target_method));
+    uint8_t field_signature[] = {IMAGE_CEE_CS_CALLCONV_FIELD, ELEMENT_TYPE_I4};
+    mdFieldDef other_field;
+    mdFieldDef target_field;
+    ASSERT_EQ(S_OK, emit->DefineField(first_type, W("Other"), fdPublic,
+        field_signature, sizeof(field_signature), ELEMENT_TYPE_VOID, nullptr, 0, &other_field));
+    ASSERT_EQ(S_OK, emit->DefineField(first_type, W("Target"), fdPublic,
+        field_signature, sizeof(field_signature), ELEMENT_TYPE_VOID, nullptr, 0, &target_field));
+    mdMemberRef other_ref;
+    mdMemberRef target_ref;
+    ASSERT_EQ(S_OK, emit->DefineMemberRef(first_type, W("Other"),
+        signature, sizeof(signature), &other_ref));
+    ASSERT_EQ(S_OK, emit->DefineMemberRef(first_type, W("Target"),
+        signature, sizeof(signature), &target_ref));
+    dncp::com_ptr<IMetaDataImport> import;
+    ASSERT_EQ(S_OK, emit->QueryInterface(IID_IMetaDataImport, (void**)&import));
+    mdTypeDef found_type;
+    ASSERT_EQ(S_OK, import->FindTypeDefByName(W("Second"), mdTokenNil, &found_type));
+    EXPECT_EQ(second_type, found_type);
+    mdMethodDef found_method;
+    ASSERT_EQ(S_OK, import->FindMethod(first_type, W("Target"), signature, sizeof(signature), &found_method));
+    EXPECT_EQ(target_method, found_method);
+    mdFieldDef found_field;
+    ASSERT_EQ(S_OK, import->FindField(first_type, W("Target"),
+        field_signature, sizeof(field_signature), &found_field));
+    EXPECT_EQ(target_field, found_field);
+    mdMemberRef found_ref;
+    ASSERT_EQ(S_OK, import->FindMemberRef(first_type, W("Target"), signature, sizeof(signature), &found_ref));
+    EXPECT_EQ(target_ref, found_ref);
+}
+
+TEST(CppCursorImport, ReusesAccessorsAcrossLargeStringProperties)
+{
+    dncp::com_ptr<IMetaDataEmit> emit;
+    ASSERT_NO_FATAL_FAILURE(CreateEmit(emit));
+    WSTR_string name(4000, static_cast<WCHAR>('N'));
+    name += W(".LongType");
+    mdTypeDef type;
+    ASSERT_EQ(S_OK, emit->DefineTypeDef(name.c_str(), tdPublic | tdAbstract, mdTypeDefNil, nullptr, &type));
+    dncp::com_ptr<IMetaDataImport> import;
+    ASSERT_EQ(S_OK, emit->QueryInterface(IID_IMetaDataImport, (void**)&import));
+    WSTR_string actual(name.size() + 1, 0);
+    ULONG length;
+    DWORD flags;
+    mdToken extends;
+    ASSERT_EQ(S_OK, import->GetTypeDefProps(type, actual.data(), static_cast<ULONG>(actual.size()),
+        &length, &flags, &extends));
+    ASSERT_EQ(name.size() + 1, length);
+    EXPECT_EQ(0, std::memcmp(name.data(), actual.data(), name.size() * sizeof(WCHAR)));
+    EXPECT_EQ(static_cast<DWORD>(tdPublic | tdAbstract), flags);
+    EXPECT_EQ(mdTypeRefNil, extends);
+    mdTypeDef found;
+    ASSERT_EQ(S_OK, import->FindTypeDefByName(name.c_str(), mdTokenNil, &found));
+    EXPECT_EQ(type, found);
+}

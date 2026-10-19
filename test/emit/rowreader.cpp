@@ -1,6 +1,7 @@
 #include <dnmd.hpp>
 #include <gtest/gtest.h>
 #include <array>
+#include <vector>
 
 namespace
 {
@@ -23,6 +24,8 @@ namespace
         decltype(dnmd::columns::TypeDef_Extends)::value_type&>);
     static_assert(can_read_v<type_reader, decltype(dnmd::columns::TypeDef_MethodList),
         dnmd::indirect_cursor<mdtid_MethodDef, mdtid_MethodPtr>&>);
+    static_assert(can_read_v<type_reader, decltype(dnmd::columns::TypeDef_MethodList),
+        dnmd::indirect_cursor<mdtid_MethodDef, mdtid_MethodPtr>&, uint32_t*>);
     static_assert(!can_read_v<type_reader, decltype(dnmd::columns::Module_Name), char const**>);
     static_assert(!can_read_v<type_reader, decltype(dnmd::columns::TypeDef_Flags), char const**>);
     static_assert(!can_read_v<type_reader, decltype(dnmd::columns::TypeDef_TypeName), uint32_t*>);
@@ -168,6 +171,12 @@ namespace
             mdcursor_t direct{};
             ASSERT_TRUE(md_add_new_row_to_list(owner, list.column_index, &direct));
             md_commit_row_add(direct);
+            EXPECT_FALSE(dnmd::detail::CursorTable(direct)->has_indirect_table);
+            position_type initial;
+            ASSERT_TRUE(owner.get_column_value(list, initial));
+            mdToken initial_token;
+            ASSERT_TRUE(initial.get_token(initial_token));
+            EXPECT_EQ(CreateTokenType(DirectTableId) | dnmd::detail::CursorRow(direct), initial_token);
             auto other_owner = AppendRow<OwnerTableId>();
             mdcursor_t other{};
             ASSERT_TRUE(md_add_new_row_to_list(other_owner, list.column_index, &other));
@@ -175,6 +184,7 @@ namespace
             ASSERT_TRUE(md_add_new_row_to_list(owner, list.column_index, &other));
             md_commit_row_add(other);
             auto pointer = GetRow<IndirectTableId>();
+            EXPECT_TRUE(dnmd::detail::CursorTable(direct)->has_indirect_table);
             constexpr auto target_column = dnmd::detail::pointer_column<IndirectTableId>();
             ASSERT_TRUE(pointer.set_column_value(target_column, dnmd::raw_cursor<DirectTableId>{direct}));
 
@@ -227,7 +237,7 @@ namespace
             ASSERT_TRUE(pointer.set_column_value(target_column, direct_token));
             auto table = dnmd::detail::CursorTable(source);
             auto saved = table->column_details[0];
-            table->column_details[0] = static_cast<mdtcol_t>(static_cast<uint32_t>(saved) & ~mdtc_categorymask);
+            table->column_details[0] = static_cast<mdtcol_t>(saved & (mdtc_widthmask | mdtc_comask));
             position_type typed{source};
             mdcursor_t c_target{};
             EXPECT_FALSE(md_resolve_indirect_cursor(source, &c_target));
@@ -236,6 +246,53 @@ namespace
             EXPECT_TRUE(typed.get_target_token(token));
             EXPECT_EQ(direct_token, token);
             table->column_details[0] = saved;
+
+            position_type expected_list;
+            uint32_t expected_count;
+            ASSERT_TRUE(owner.get_column_value_as_range(list, expected_list, &expected_count));
+            mdToken expected_source;
+            ASSERT_TRUE(expected_list.get_token(expected_source));
+            auto owner_table = dnmd::detail::CursorTable(owner);
+            auto& list_details = owner_table->column_details[static_cast<uint8_t>(list.column_index)];
+            auto saved_list_details = list_details;
+            list_details = static_cast<mdtcol_t>(list_details & (mdtc_widthmask | mdtc_comask));
+            dnmd::row_reader reader{owner};
+            mdToken actual_source;
+            EXPECT_TRUE(reader.read(list, actual_source));
+            EXPECT_EQ(expected_source, actual_source);
+            position_type actual_list;
+            EXPECT_TRUE(reader.read(list, actual_list));
+            EXPECT_TRUE(actual_list.get_token(actual_source));
+            EXPECT_EQ(expected_source, actual_source);
+            uint32_t actual_count;
+            ASSERT_TRUE(reader.read(list, actual_list, &actual_count));
+            EXPECT_EQ(expected_count, actual_count);
+            dnmd::row_writer writer{owner};
+            EXPECT_TRUE(writer.write(list, actual_list));
+            EXPECT_FALSE(writer.write(list, direct_token));
+            dnmd::row_reader after_write{owner};
+            EXPECT_TRUE(after_write.read(list, actual_source));
+            EXPECT_EQ(expected_source, actual_source);
+            list_details = saved_list_details;
+
+            size_t image_size = 0;
+            EXPECT_FALSE(md_write_to_buffer(handle.get(), nullptr, &image_size));
+            ASSERT_GT(image_size, 0u);
+            std::vector<uint8_t> image(image_size);
+            ASSERT_TRUE(md_write_to_buffer(handle.get(), image.data(), &image_size));
+            mdhandle_t raw;
+            ASSERT_TRUE(md_create_handle(image.data(), image.size(), &raw));
+            dnmd::handle_ptr loaded{raw};
+            auto loaded_direct = dnmd::md_create_cursor<DirectTableId>(loaded.get());
+            ASSERT_TRUE(loaded_direct);
+            EXPECT_TRUE(dnmd::detail::CursorTable(loaded_direct)->has_indirect_table);
+            mdToken owner_token;
+            ASSERT_TRUE(owner.get_token(owner_token));
+            auto loaded_owner = dnmd::md_token_to_cursor<OwnerTableId>(loaded.get(), owner_token);
+            ASSERT_TRUE(loaded_owner);
+            dnmd::row_reader loaded_reader{loaded_owner.as()};
+            EXPECT_TRUE(loaded_reader.read(list, actual_source));
+            EXPECT_EQ(expected_source, actual_source);
 
             mdcursor_t unchanged = direct;
             EXPECT_FALSE((dnmd::detail::resolve_indirect_cursor<DirectTableId, IndirectTableId>({}, unchanged)));
@@ -341,6 +398,48 @@ TEST_F(CppRowReader, ReferenceFailuresPreserveOutputs)
     EXPECT_EQ(before._reserved2, static_cast<mdcursor_t>(target)._reserved2);
 }
 
+TEST_F(CppRowReader, ReusesReaderAcrossListRanges)
+{
+    auto owner = GetRow<mdtid_TypeDef>();
+    mdcursor_t child;
+    for (uint32_t i = 0; i < 3; ++i)
+    {
+        ASSERT_TRUE(md_add_new_row_to_list(owner, TypeDef_MethodList.column_index, &child));
+        md_commit_row_add(child);
+    }
+    ASSERT_TRUE(md_add_new_row_to_list(owner, TypeDef_FieldList.column_index, &child));
+    md_commit_row_add(child);
+    auto next_owner = AppendRow<mdtid_TypeDef>();
+    ASSERT_TRUE(md_add_new_row_to_list(next_owner, TypeDef_MethodList.column_index, &child));
+    md_commit_row_add(child);
+
+    dnmd::row_reader reader{owner};
+    dnmd::indirect_cursor<mdtid_MethodDef, mdtid_MethodPtr> methods;
+    dnmd::indirect_cursor<mdtid_Field, mdtid_FieldPtr> fields;
+    uint32_t method_count;
+    uint32_t field_count;
+    ASSERT_TRUE(reader.read(TypeDef_MethodList, methods, &method_count));
+    EXPECT_EQ(3u, method_count);
+    ASSERT_TRUE(reader.read(TypeDef_FieldList, fields, &field_count));
+    EXPECT_EQ(1u, field_count);
+    ASSERT_TRUE(reader.read(TypeDef_MethodList, methods, &method_count));
+    EXPECT_EQ(3u, method_count);
+    mdToken token;
+    ASSERT_TRUE(methods.get_target_token(token));
+    EXPECT_EQ(CreateTokenType(mdtid_MethodDef) | 1, token);
+    ASSERT_TRUE(fields.get_target_token(token));
+    EXPECT_EQ(CreateTokenType(mdtid_Field) | 1, token);
+
+    dnmd::row_reader next_reader{next_owner};
+    ASSERT_TRUE(next_reader.read(TypeDef_MethodList, methods, &method_count));
+    EXPECT_EQ(1u, method_count);
+    ASSERT_TRUE(methods.get_target_token(token));
+    EXPECT_EQ(CreateTokenType(mdtid_MethodDef) | 4, token);
+    ASSERT_TRUE(next_reader.read(TypeDef_FieldList, fields, &field_count));
+    EXPECT_EQ(0u, field_count);
+    EXPECT_FALSE(fields);
+}
+
 TEST_F(CppRowReader, WideIndices)
 {
     constexpr uint32_t row = 0x00abcdef;
@@ -388,6 +487,68 @@ TEST_F(CppRowReader, EmptyIndirectTargetsKeepSentinelTokens)
     ASSERT_NO_FATAL_FAILURE((CheckEmptyTarget<mdtid_Param, mdtid_ParamPtr>()));
     ASSERT_NO_FATAL_FAILURE((CheckEmptyTarget<mdtid_Event, mdtid_EventPtr>()));
     ASSERT_NO_FATAL_FAILURE((CheckEmptyTarget<mdtid_Property, mdtid_PropertyPtr>()));
+}
+
+TEST_F(CppRowReader, TypeDefListsSelectIndirectionIndependently)
+{
+    auto owner = GetRow<mdtid_TypeDef>();
+    mdcursor_t field;
+    ASSERT_TRUE(md_add_new_row_to_list(owner, TypeDef_FieldList.column_index, &field));
+    md_commit_row_add(field);
+    mdcursor_t method;
+    ASSERT_TRUE(md_add_new_row_to_list(owner, TypeDef_MethodList.column_index, &method));
+    md_commit_row_add(method);
+    auto other = AppendRow<mdtid_TypeDef>();
+    mdcursor_t child;
+    ASSERT_TRUE(md_add_new_row_to_list(other, TypeDef_FieldList.column_index, &child));
+    md_commit_row_add(child);
+    ASSERT_TRUE(md_add_new_row_to_list(owner, TypeDef_FieldList.column_index, &child));
+    md_commit_row_add(child);
+    EXPECT_TRUE(dnmd::detail::CursorTable(field)->has_indirect_table);
+    EXPECT_FALSE(dnmd::detail::CursorTable(method)->has_indirect_table);
+    dnmd::row_reader reader{owner};
+    mdToken token;
+    ASSERT_TRUE(reader.read(TypeDef_FieldList, token));
+    EXPECT_EQ(mdtid_FieldPtr, ExtractTokenType(token));
+    ASSERT_TRUE(reader.read(TypeDef_MethodList, token));
+    EXPECT_EQ(CreateTokenType(mdtid_MethodDef) | 1, token);
+}
+
+TEST_F(CppRowReader, LoadingFlagsIndirectionWithAnEmptyElementTable)
+{
+    std::array<uint8_t, 92> image{};
+    std::memcpy(image.data(), "BSJB", 4);
+    image[4] = 1;
+    image[6] = 1;
+    image[12] = 12;
+    std::memcpy(image.data() + 16, "v4.0.30319", sizeof("v4.0.30319"));
+    image[30] = 1;
+    image[32] = 44;
+    image[36] = 48;
+    std::memcpy(image.data() + 40, "#-", 2);
+    image[48] = 2;
+    image[51] = 1;
+    image[52] = (1 << mdtid_TypeDef) | (1 << mdtid_FieldPtr);
+    image[68] = 1;
+    image[72] = 1;
+    image[86] = 1;
+    mdhandle_t raw;
+    ASSERT_TRUE(md_create_handle(image.data(), image.size(), &raw));
+    dnmd::handle_ptr loaded{raw};
+    auto owner = dnmd::md_create_cursor<mdtid_TypeDef>(loaded.get());
+    ASSERT_TRUE(owner);
+    auto context = dnmd::detail::CursorTable(owner)->cxt;
+    EXPECT_EQ(0u, context->tables[mdtid_Field].row_count);
+    EXPECT_TRUE(context->tables[mdtid_Field].has_indirect_table);
+    dnmd::row_reader reader{owner.as()};
+    dnmd::indirect_cursor<mdtid_Field, mdtid_FieldPtr> field;
+    ASSERT_TRUE(reader.read(TypeDef_FieldList, field));
+    EXPECT_FALSE(field);
+    mdToken token;
+    ASSERT_TRUE(field.get_token(token));
+    EXPECT_EQ(CreateTokenType(mdtid_FieldPtr) | 1, token);
+    ASSERT_TRUE(field.get_target_token(token));
+    EXPECT_EQ(CreateTokenType(mdtid_Field), token);
 }
 
 #ifdef DNMD_PORTABLE_PDB

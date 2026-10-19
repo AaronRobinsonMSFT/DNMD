@@ -124,6 +124,14 @@ inline uint32_t CursorRow(mdcursor_t const& c) noexcept
     return (RidFromToken)(c._reserved2);
 }
 
+template<mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
+inline mdtable_id_t list_target_table(mdtable_t const* source) noexcept
+{
+    static_assert(DirectTableId >= mdtid_First && DirectTableId < mdtid_End);
+    static_assert(IndirectTableId >= mdtid_First && IndirectTableId < mdtid_End);
+    return source->cxt->tables[DirectTableId].has_indirect_table ? IndirectTableId : DirectTableId;
+}
+
 template<mdtable_id_t TableId, mdtable_id_t... TableIds>
 inline constexpr bool contains_table_id_v = ((TableId == TableIds) || ...);
 
@@ -264,7 +272,7 @@ private:
     template<mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
     bool read_position(column<TableId, indirect_cursor<DirectTableId, IndirectTableId>> col, mdcursor_t& value) const noexcept
     {
-        auto target = static_cast<mdtable_id_t>((static_cast<uint32_t>(column_details(col)) & mdtc_timask) >> 16);
+        auto target = detail::list_target_table<DirectTableId, IndirectTableId>(_table);
         return detail::resolve_column_reference(_table, target, (detail::RidFromToken)(read_raw(col)), &value);
     }
 
@@ -311,7 +319,7 @@ public:
     template<mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
     bool read(column<TableId, indirect_cursor<DirectTableId, IndirectTableId>> col, mdToken& value) const noexcept
     {
-        auto table = static_cast<mdtable_id_t>((static_cast<uint32_t>(column_details(col)) & mdtc_timask) >> 16);
+        auto table = detail::list_target_table<DirectTableId, IndirectTableId>(_table);
         value = CreateTokenType(table) | (detail::RidFromToken)(read_raw(col));
         return true;
     }
@@ -323,6 +331,42 @@ public:
         if (!read_position(col, position))
             return false;
         value = indirect_cursor<DirectTableId, IndirectTableId>{position};
+        return true;
+    }
+
+    template<mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
+    bool read(column<TableId, indirect_cursor<DirectTableId, IndirectTableId>> col,
+        indirect_cursor<DirectTableId, IndirectTableId>& value, uint32_t* count) const noexcept
+    {
+        assert(count != nullptr);
+        mdcursor_t position;
+        if (!read_position(col, position))
+            return false;
+        auto target = detail::CursorTable(position);
+        uint32_t first = detail::CursorRow(position);
+        uint32_t length = 0;
+        if (first != 0 && first != target->row_count + 1)
+        {
+            length = target->row_count - first + 1;
+            auto next = *this;
+            auto end = _table->data.ptr + size_t{_table->row_count} * _table->row_size_bytes;
+            for (next.advance(); next._data < end; next.advance())
+            {
+                mdcursor_t next_position;
+                if (!next.read_position(col, next_position))
+                    return false;
+                assert(detail::CursorTable(next_position) == target);
+                uint32_t last = detail::CursorRow(next_position);
+                if (last == 0)
+                    continue;
+                if (last < first)
+                    return false;
+                length = last - first;
+                break;
+            }
+        }
+        value = indirect_cursor<DirectTableId, IndirectTableId>{position};
+        *count = length;
         return true;
     }
 
@@ -472,8 +516,7 @@ public:
     bool write(column<TableId, indirect_cursor<DirectTableId, IndirectTableId>> col, mdToken value) const noexcept
     {
         auto table = detail::CursorTable(_cursor);
-        auto details = table->column_details[static_cast<uint8_t>(col.column_index)];
-        auto target = static_cast<mdtable_id_t>((static_cast<uint32_t>(details) & mdtc_timask) >> 16);
+        auto target = detail::list_target_table<DirectTableId, IndirectTableId>(table);
         if (static_cast<mdtable_id_t>(ExtractTokenType(value)) != target)
             return false;
         return write_reference(col, value, (detail::RidFromToken)(value));
@@ -699,37 +742,7 @@ struct cursor final
         template<mdtable_id_t TargetTableId, mdtable_id_t IndirectTableId>
         bool get_column_value_as_range(column<TableId, indirect_cursor<TargetTableId, IndirectTableId>> column, indirect_cursor<TargetTableId, IndirectTableId>& range_cursor, uint32_t* count) const noexcept
         {
-            assert(count != nullptr);
-            row_reader<TableId> reader{*this};
-            mdcursor_t c;
-            if (!reader.read_position(column, c))
-                return false;
-            auto target = detail::CursorTable(c);
-            uint32_t first = detail::CursorRow(c);
-            uint32_t length = 0;
-            if (first != 0 && first != target->row_count + 1)
-            {
-                length = target->row_count - first + 1;
-                uint32_t row = detail::CursorRow(_cursor);
-                for (; row < reader._table->row_count; ++row)
-                {
-                    reader.advance();
-                    mdcursor_t next;
-                    if (!reader.read_position(column, next))
-                        return false;
-                    assert(detail::CursorTable(next) == target);
-                    uint32_t end = detail::CursorRow(next);
-                    if (end == 0)
-                        continue;
-                    if (end < first)
-                        return false;
-                    length = end - first;
-                    break;
-                }
-            }
-            range_cursor = indirect_cursor<TargetTableId, IndirectTableId>{c};
-            *count = length;
-            return true;
+            return row_reader<TableId>{*this}.read(column, range_cursor, count);
         }
 };
 

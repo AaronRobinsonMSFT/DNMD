@@ -70,12 +70,17 @@ source table, column value kind, and output type without category assertions.
 It contains no writable data pointer. Cursor reads, including ranges and bulk
 token reads, use this context rather than the C API's `create_access_context`
 path. Heap offsets, encoded tags, and referenced row bounds are still validated.
+For list columns, `reader.read(column, position, &count)` returns the range
+without rebinding the reader.
 Recreate readers after metadata edits that can invalidate their borrowed storage.
 
 For reference columns, a single table ID denotes a direct row index. Multiple
 table IDs specify a coded index in encoded tag order, including `mdtid_Unused`
 placeholders for reserved tags. Reserved and out-of-range tags fail the read.
-List columns use their direct/indirection-table metadata rather than coded tags.
+List columns select their direct or Ptr target from `mdtable_t::has_indirect_table`
+on the element table, not from column target bits. The flag is initialized when
+loading an image and set when editing introduces its Ptr table. Keeping it on
+the element table lets TypeDef field and method lists select independently.
 
 Rows provide matching `set_column_value` overloads for constants, UTF-8 strings,
 blobs, GUIDs, user strings, and table references. They delegate to the corresponding

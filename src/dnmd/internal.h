@@ -62,19 +62,6 @@ static_assert(MDTABLE_MAX_COUNT <= 64, "Specification sets max table count to 64
 
 #define MDTABLE_MAX_COLUMN_COUNT 9
 
-// Flags and masks for context details
-typedef enum
-{
-    mdc_none                    = 0x0000,
-    mdc_large_string_heap       = 0x0001,
-    mdc_large_guid_heap         = 0x0002,
-    mdc_large_blob_heap         = 0x0004,
-    mdc_extra_data              = 0x0040,
-    mdc_image_flags             = 0xffff,
-    mdc_minimal_delta           = 0x00010000,
-    mdc_uncompressed_table_heap = 0x00020000,
-} mdcxt_flag_t;
-
 // Macros used to insert/extract the column offset.
 #define InsertOffset(o) ((o << 8) & mdtc_comask)
 #define ExtractOffset(o) ((o & mdtc_comask) >> 8)
@@ -90,42 +77,6 @@ typedef enum
 // Macros used to insert/extract the heap type
 #define InsertHeapType(h) ((h) & mdtc_hmask)
 #define ExtractHeapType(h) ((h) & mdtc_hmask)
-
-typedef mdcdata_t mdstream_t;
-
-typedef struct mdmem__ mdmem_t;
-
-typedef struct mdeditor__ mdeditor_t;
-
-typedef struct mdcxt__
-{
-    uint32_t magic; // mdlib magic
-    mdcdata_t raw_metadata; // metadata raw bytes
-    mdeditor_t* editor; // metadata editor
-    mdcxt_flag_t context_flags;
-
-    // Metadata root details - II.24.2.1
-    uint16_t major_ver;
-    uint16_t minor_ver;
-    uint16_t flags;
-    char const* version;
-
-    // Metadata heaps - II.24.2.2
-    mdstream_t strings_heap;
-    mdstream_t guid_heap;
-    mdstream_t blob_heap;
-    mdstream_t user_string_heap;
-    mdstream_t tables_heap;
-#ifdef DNMD_PORTABLE_PDB
-    mdstream_t pdb;
-#endif // DNMD_PORTABLE_PDB
-
-    // Metadata tables - II.22
-    mdtable_t* tables;
-
-    // Additional memory used for dynamic operations
-    mdmem_t* mem;
-} mdcxt_t;
 
 // Extract a context from the mdhandle_t.
 mdcxt_t* extract_mdcxt(mdhandle_t md);
