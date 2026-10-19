@@ -63,6 +63,24 @@ Use `dnmd::md_is_valid_token` when only validation is needed. Rows provide
 Typed range searches use column descriptors and return a raw cursor in the
 searched table along with the range status and count.
 
+The C++ `md_find_*` APIs search constant, reference, and list-position columns;
+heap columns are not searchable. Reference search values are full tokens or typed
+cursors, not bare RIDs. `column_iterator<TableId, ColumnType>` is a read-only
+random-access iterator bound to a row and column. It yields stored `uint32_t`
+values so coded indices retain encoded RID/tag order rather than token-type order.
+Iterators borrow metadata storage and are invalidated by edits like row readers.
+
+Row searches return the first match at or after the supplied row, using
+`std::lower_bound` for sorted primary keys and `std::find` otherwise. Range
+searches use `std::equal_range` only for a sorted primary key with no pending row
+addition; unsupported, missing, or invalid-key results leave output parameters
+unchanged. The range is restricted to the supplied row's suffix.
+Parent searches use typed list columns and Ptr reverse lookup, preserve empty
+runs and nil starts, and project Event/Property maps back to TypeDef positions.
+Loaded direct runs use `std::upper_bound` with nil-boundary normalization;
+edited or indirected runs use a linear fallback rather than assume partitioning.
+The legacy C entrypoints remain available for the C core.
+
 `dnmd::row_reader<TableId>` is a borrowed, read-only row access context
 constructed from a dereferenceable `cursor<TableId>`. Reuse it across columns of
 that row with `reader.read(column, output)`; overload resolution enforces the
@@ -98,8 +116,18 @@ layout and writable storage for each write, preserving copy-on-write behavior,
 sorted-table bookkeeping, and Portable PDB reference tracking. Reacquire writers
 after edits that change the row's identity, such as inserting rows before it.
 Column encoding and storage writes use the typed C++ path rather than the C
-setters' access-context checks; allocation and metadata bookkeeping remain shared
-with the core.
+setters' access-context checks; allocation and Portable PDB reference tracking
+remain shared with the core.
+
+C++ sorted-state maintenance uses complete typed, ordered key sequences, including
+GenericParam's Owner/Number keys and LocalScope's descending Length tie-breaker.
+Key writes compare the row lexicographically against both neighbors; non-key
+writes do not affect sortedness, and an unsorted table is not marked sorted again.
+Validation is deferred while initializing a new row. Finish with
+`dnmd::md_commit_row_add(row)` or let `dnmd::added_row_t` commit it on destruction;
+both use the C++ full-key validation. Binary searches use only an ascending first
+key from these same sequences, never a secondary key in isolation.
+Legacy C validation and delta-only physical list sorting remain in the C core.
 
 Raw and indirect cursors expose `get_token(mdToken&)`, including for sentinel
 positions. An indirect cursor additionally exposes `get_target_token(mdToken&)`

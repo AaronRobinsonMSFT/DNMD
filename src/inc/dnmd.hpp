@@ -2,9 +2,12 @@
 #define _SRC_INC_DNMD_HPP_
 
 #include "dnmd.h"
+#include <algorithm>
 #include <cassert>
 #include <cstring>
+#include <iterator>
 #include <memory>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 
@@ -22,6 +25,11 @@ struct handle_deleter_t final
 
 // C++ lifetime wrapper for mdhandle_t type
 using handle_ptr = std::unique_ptr<mdhandle_t, handle_deleter_t>;
+
+namespace detail
+{
+inline void commit_row_add(mdcursor_t row) noexcept;
+}
 
 struct added_row_t final
 {
@@ -46,7 +54,7 @@ public:
 
     ~added_row_t()
     {
-        ::md_commit_row_add(new_row);
+        detail::commit_row_add(new_row);
     }
 
     operator mdcursor_t()
@@ -90,6 +98,48 @@ struct indirect_cursor;
 
 namespace detail
 {
+struct stored_column_value {};
+struct list_boundary_value {};
+
+template<mdtable_id_t TableId>
+constexpr mdtable_id_t parent_table_id() noexcept
+{
+    if constexpr (TableId == mdtid_Field || TableId == mdtid_MethodDef
+        || TableId == mdtid_Event || TableId == mdtid_Property)
+        return mdtid_TypeDef;
+    else if constexpr (TableId == mdtid_Param)
+        return mdtid_MethodDef;
+#ifdef DNMD_PORTABLE_PDB
+    else if constexpr (TableId == mdtid_LocalVariable || TableId == mdtid_LocalConstant)
+        return mdtid_LocalScope;
+#endif
+    else
+        return mdtid_Unused;
+}
+
+template<mdtable_id_t TableId>
+constexpr mdtable_id_t pointer_table_id() noexcept
+{
+    if constexpr (TableId == mdtid_Field) return mdtid_FieldPtr;
+    else if constexpr (TableId == mdtid_MethodDef) return mdtid_MethodPtr;
+    else if constexpr (TableId == mdtid_Param) return mdtid_ParamPtr;
+    else if constexpr (TableId == mdtid_Event) return mdtid_EventPtr;
+    else if constexpr (TableId == mdtid_Property) return mdtid_PropertyPtr;
+    else return mdtid_Unused;
+}
+
+template<typename ColumnType>
+struct searchable_column : std::false_type {};
+
+template<>
+struct searchable_column<column_type_constant> : std::true_type {};
+
+template<mdtable_id_t... TableIds>
+struct searchable_column<raw_cursor<TableIds...>> : std::true_type {};
+
+template<mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
+struct searchable_column<indirect_cursor<DirectTableId, IndirectTableId>> : std::true_type {};
+
 template<mdtable_id_t TableId>
 constexpr auto pointer_column() noexcept
 {
@@ -124,6 +174,12 @@ inline uint32_t CursorRow(mdcursor_t const& c) noexcept
     return (RidFromToken)(c._reserved2);
 }
 
+inline mdcursor_t CreateCursor(mdtable_t const* table, uint32_t row) noexcept
+{
+    assert(table != nullptr && row <= table->row_count + 1);
+    return {reinterpret_cast<intptr_t>(table), static_cast<intptr_t>(row)};
+}
+
 template<mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
 inline mdtable_id_t list_target_table(mdtable_t const* source) noexcept
 {
@@ -131,6 +187,25 @@ inline mdtable_id_t list_target_table(mdtable_t const* source) noexcept
     static_assert(IndirectTableId >= mdtid_First && IndirectTableId < mdtid_End);
     return source->cxt->tables[DirectTableId].has_indirect_table ? IndirectTableId : DirectTableId;
 }
+
+template<mdtable_id_t TableId, mdtable_id_t TargetTableId>
+inline uint32_t list_end_row(mdtable_t const* source, column<TableId, raw_cursor<TargetTableId>>) noexcept
+{
+    return source->cxt->tables[TargetTableId].row_count + 1;
+}
+
+template<mdtable_id_t TableId, mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
+inline uint32_t list_end_row(mdtable_t const* source,
+    column<TableId, indirect_cursor<DirectTableId, IndirectTableId>>) noexcept
+{
+    return source->cxt->tables[list_target_table<DirectTableId, IndirectTableId>(source)].row_count + 1;
+}
+
+template<mdtable_id_t TableId, typename ColumnType>
+inline bool sorted_search(mdtable_t const* table, column<TableId, ColumnType> col) noexcept;
+
+template<mdtable_id_t TableId, typename ColumnType>
+inline void update_column_sort_order(mdcursor_t row, column<TableId, ColumnType> col) noexcept;
 
 template<mdtable_id_t TableId, mdtable_id_t... TableIds>
 inline constexpr bool contains_table_id_v = ((TableId == TableIds) || ...);
@@ -205,7 +280,6 @@ bool try_get_blob(::mdcxt__* context, size_t offset, uint8_t const** value, uint
 bool try_get_guid(::mdcxt__* context, size_t index, mdguid_t* value);
 bool try_get_user_string(::mdcxt__* context, size_t offset, mduserstring_t* value, size_t* next_offset);
 uint8_t* get_writable_table_data(mdtable_t* table, bool make_writable);
-void update_column_sort_order(mdcursor_t row, col_index_t column);
 uint32_t add_to_string_heap(::mdcxt__* context, char const* value);
 uint32_t add_to_blob_heap(::mdcxt__* context, uint8_t const* value, uint32_t length);
 uint32_t add_to_guid_heap(::mdcxt__* context, mdguid_t value);
@@ -221,14 +295,24 @@ template<mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
 inline bool resolve_indirect_cursor(mdcursor_t source, mdcursor_t& target) noexcept;
 }
 
+template<mdtable_id_t TableId, typename ColumnType, typename ValuePolicy = detail::stored_column_value>
+struct column_iterator;
+
+template<mdtable_id_t TableId>
+bool md_find_token_of_range_element(cursor<TableId> element, mdToken& token) noexcept;
+
 template<mdtable_id_t TableId>
 struct row_reader final
 {
 private:
     friend struct cursor<TableId>;
+    template<mdtable_id_t, typename, typename>
+    friend struct column_iterator;
 
     mdtable_t const* _table;
     uint8_t const* _data;
+
+    row_reader(mdtable_t const* table, uint8_t const* data) noexcept : _table{table}, _data{data} {}
 
     template<typename ColumnType>
     mdtcol_t column_details(column<TableId, ColumnType> col) const noexcept
@@ -392,6 +476,121 @@ public:
     }
 };
 
+template<mdtable_id_t TableId, typename ColumnType, typename ValuePolicy>
+struct column_iterator final
+{
+    static_assert(detail::searchable_column<ColumnType>::value,
+        "Only constant, reference, and list columns support numeric iteration.");
+    static_assert(std::is_same_v<ValuePolicy, detail::stored_column_value>
+        || std::is_same_v<ValuePolicy, detail::list_boundary_value>);
+
+private:
+    template<mdtable_id_t, typename, typename>
+    friend struct column_iterator;
+
+    row_reader<TableId> _reader;
+    column<TableId, ColumnType> _column;
+
+    column_iterator(row_reader<TableId> reader, column<TableId, ColumnType> col) noexcept
+        : _reader{reader}, _column{col} {}
+
+    void assert_same_column(column_iterator const& other) const noexcept
+    {
+        assert(_reader._table == other._reader._table && _column.column_index == other._column.column_index);
+        (void)other;
+    }
+
+public:
+    using iterator_category = std::random_access_iterator_tag;
+    using value_type = uint32_t;
+    using difference_type = std::ptrdiff_t;
+    using reference = value_type;
+    using pointer = void;
+
+    column_iterator() noexcept : _reader{nullptr, nullptr}, _column{static_cast<col_index_t>(0)} {}
+
+    column_iterator(cursor<TableId> const& row, column<TableId, ColumnType> col) noexcept
+        : _reader{row}, _column{col} {}
+
+    value_type operator*() const noexcept
+    {
+        assert(_reader._table != nullptr);
+        assert(_reader._data >= _reader._table->data.ptr);
+        assert(_reader._data < _reader._table->data.ptr
+            + size_t{_reader._table->row_count} * _reader._table->row_size_bytes);
+        uint32_t value = _reader.read_raw(_column);
+        if constexpr (std::is_same_v<ValuePolicy, detail::list_boundary_value>)
+        {
+            if (value == 0)
+            {
+                column_iterator<TableId, ColumnType> probe{_reader, _column};
+                auto last = probe.end();
+                auto next = std::find_if(++probe, last, [](uint32_t start) { return start != 0; });
+                return next == last ? detail::list_end_row(_reader._table, _column) : *next;
+            }
+        }
+        return value;
+    }
+
+    column_iterator& operator++() noexcept { return *this += 1; }
+    column_iterator operator++(int) noexcept { auto old = *this; ++*this; return old; }
+    column_iterator& operator--() noexcept { return *this -= 1; }
+    column_iterator operator--(int) noexcept { auto old = *this; --*this; return old; }
+
+    column_iterator& operator+=(difference_type delta) noexcept
+    {
+        assert(_reader._table != nullptr);
+#ifndef NDEBUG
+        auto index = (_reader._data - _reader._table->data.ptr) / _reader._table->row_size_bytes;
+        assert(delta >= -index && delta <= static_cast<difference_type>(_reader._table->row_count) - index);
+#endif
+        _reader._data += delta * _reader._table->row_size_bytes;
+        return *this;
+    }
+
+    column_iterator& operator-=(difference_type delta) noexcept { return *this += -delta; }
+    column_iterator operator+(difference_type delta) const noexcept { auto result = *this; return result += delta; }
+    column_iterator operator-(difference_type delta) const noexcept { auto result = *this; return result -= delta; }
+    friend column_iterator operator+(difference_type delta, column_iterator iterator) noexcept { return iterator += delta; }
+
+    difference_type operator-(column_iterator const& other) const noexcept
+    {
+        assert_same_column(other);
+        if (_reader._data == other._reader._data)
+            return 0;
+        return (_reader._data - other._reader._data) / _reader._table->row_size_bytes;
+    }
+
+    reference operator[](difference_type delta) const noexcept { return *(*this + delta); }
+    bool operator==(column_iterator const& other) const noexcept
+    {
+        return _reader._table == other._reader._table && _reader._data == other._reader._data
+            && _column.column_index == other._column.column_index;
+    }
+    bool operator!=(column_iterator const& other) const noexcept { return !(*this == other); }
+    bool operator<(column_iterator const& other) const noexcept { assert_same_column(other); return _reader._data < other._reader._data; }
+    bool operator>(column_iterator const& other) const noexcept { return other < *this; }
+    bool operator<=(column_iterator const& other) const noexcept { return !(other < *this); }
+    bool operator>=(column_iterator const& other) const noexcept { return !(*this < other); }
+
+    column_iterator end() const noexcept
+    {
+        assert(_reader._table != nullptr);
+        auto result = *this;
+        result._reader._data = _reader._table->data.ptr
+            + size_t{_reader._table->row_count} * _reader._table->row_size_bytes;
+        return result;
+    }
+
+    raw_cursor<TableId> position() const noexcept
+    {
+        assert(_reader._table != nullptr);
+        auto row = static_cast<uint32_t>((_reader._data - _reader._table->data.ptr)
+            / _reader._table->row_size_bytes) + 1;
+        return raw_cursor<TableId>{detail::CreateCursor(_reader._table, row)};
+    }
+};
+
 template<mdtable_id_t TableId>
 struct row_writer final
 {
@@ -428,7 +627,7 @@ private:
         }
 #endif
         if constexpr (TrackOrder)
-            detail::update_column_sort_order(_cursor, col.column_index);
+            detail::update_column_sort_order(_cursor, col);
         return true;
     }
 
@@ -593,7 +792,7 @@ struct cursor final
 #endif
                 || TableId == mdtid_Property,
                 "The row must belong to a list.");
-            return ::md_find_token_of_range_element(_cursor, &tk);
+            return dnmd::md_find_token_of_range_element(*this, tk);
         }
 
         template<mdtable_id_t... TargetTableIds>
@@ -961,65 +1160,140 @@ inline bool md_cursor_next(indirect_cursor<TableId, IndirectTableId>& cursor) no
 
 namespace detail
 {
-template<mdtable_id_t TableId>
-inline raw_cursor<TableId> find_row(cursor<TableId> begin, col_index_t column, uint32_t value) noexcept
+template<typename ColumnType, mdtable_id_t... ValueTableIds>
+struct search_reference_tables : std::false_type {};
+
+template<mdtable_id_t... TargetTableIds, mdtable_id_t... ValueTableIds>
+struct search_reference_tables<raw_cursor<TargetTableIds...>, ValueTableIds...>
+    : std::conjunction<std::bool_constant<contains_table_id_v<ValueTableIds, TargetTableIds...>>...> {};
+
+template<mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId, mdtable_id_t... ValueTableIds>
+struct search_reference_tables<indirect_cursor<DirectTableId, IndirectTableId>, ValueTableIds...>
+    : std::conjunction<std::bool_constant<contains_table_id_v<ValueTableIds, DirectTableId, IndirectTableId>>...> {};
+
+template<typename ColumnType, typename Value>
+struct search_reference_value : std::false_type {};
+
+template<typename ColumnType, mdtable_id_t ValueTableId>
+struct search_reference_value<ColumnType, cursor<ValueTableId>> : search_reference_tables<ColumnType, ValueTableId> {};
+
+template<typename ColumnType, mdtable_id_t... ValueTableIds>
+struct search_reference_value<ColumnType, raw_cursor<ValueTableIds...>> : search_reference_tables<ColumnType, ValueTableIds...> {};
+
+template<typename ColumnType, mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
+struct search_reference_value<ColumnType, indirect_cursor<DirectTableId, IndirectTableId>>
+    : search_reference_tables<ColumnType, DirectTableId> {};
+
+template<mdtable_id_t TableId, typename ColumnType, mdtable_id_t ValueTableId>
+inline bool search_token(column<TableId, ColumnType>, cursor<ValueTableId> const& value, mdToken& token) noexcept
 {
-    mdcursor_t c;
-    if (!::md_find_row_from_cursor(begin, column, value, &c))
-        return {};
-    return raw_cursor<TableId>{c};
+    token = CreateTokenType(ValueTableId) | CursorRow(value);
+    return true;
 }
+
+template<mdtable_id_t TableId, typename ColumnType, mdtable_id_t... ValueTableIds>
+inline bool search_token(column<TableId, ColumnType>, raw_cursor<ValueTableIds...> const& value, mdToken& token) noexcept
+{
+    return value.get_token(token);
+}
+
+template<mdtable_id_t TableId, typename ColumnType, mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
+inline bool search_token(column<TableId, ColumnType>, indirect_cursor<DirectTableId, IndirectTableId> const& value, mdToken& token) noexcept
+{
+    if constexpr (std::is_same_v<ColumnType, indirect_cursor<DirectTableId, IndirectTableId>>)
+        return value.get_token(token);
+    else
+        return value.get_target_token(token);
 }
 
 template<mdtable_id_t TableId>
-inline raw_cursor<TableId> md_find_row_from_cursor(cursor<TableId> begin, column<TableId, column_type_constant> column, uint32_t value) noexcept
+inline bool search_value(mdtable_t const*, column<TableId, column_type_constant>, uint32_t value, uint32_t& raw) noexcept
 {
-    return detail::find_row(begin, column.column_index, value);
+    raw = value;
+    return true;
 }
 
 template<mdtable_id_t TableId, mdtable_id_t... TargetTableIds>
-inline raw_cursor<TableId> md_find_row_from_cursor(cursor<TableId> begin, column<TableId, raw_cursor<TargetTableIds...>> column, mdToken tk) noexcept
+inline bool search_value(mdtable_t const*, column<TableId, raw_cursor<TargetTableIds...>>, mdToken value, uint32_t& raw) noexcept
 {
-    if (!((ExtractTokenType(tk) == TargetTableIds) || ...))
-        return {};
-    if constexpr (sizeof...(TargetTableIds) == 1)
-        tk = (detail::RidFromToken)(tk);
-    return detail::find_row(begin, column.column_index, tk);
-}
-
-template<mdtable_id_t TableId, mdtable_id_t... TargetTableIds, mdtable_id_t SearchTableId>
-inline raw_cursor<TableId> md_find_row_from_cursor(cursor<TableId> begin, column<TableId, raw_cursor<TargetTableIds...>> column, cursor<SearchTableId> value) noexcept
-{
-    static_assert(((SearchTableId == TargetTableIds) || ...), "The value must belong to a table referenced by the column.");
-    mdToken tk;
-    if (!::md_cursor_to_token(value, &tk))
-        return {};
-    return md_find_row_from_cursor(begin, column, tk);
-}
-
-template<mdtable_id_t TableId, mdtable_id_t... TargetTableIds>
-inline md_range_result_t md_find_range_from_cursor(cursor<TableId> begin,
-    column<TableId, raw_cursor<TargetTableIds...>> column, mdToken tk,
-    raw_cursor<TableId>& start, uint32_t* count) noexcept
-{
-    if (!((ExtractTokenType(tk) == TargetTableIds) || ...))
-        return MD_RANGE_NOT_FOUND;
-    if constexpr (sizeof...(TargetTableIds) == 1)
-        tk = (detail::RidFromToken)(tk);
-    mdcursor_t c;
-    auto result = ::md_find_range_from_cursor(begin, column.column_index, tk, &c, count);
-    if (result == MD_RANGE_FOUND)
-        start = raw_cursor<TableId>{c};
-    return result;
+    return column_reference_codec<TargetTableIds...>::encode(value, raw);
 }
 
 template<mdtable_id_t TableId, mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
-inline raw_cursor<TableId> md_find_row_from_cursor(cursor<TableId> begin, column<TableId, indirect_cursor<DirectTableId, IndirectTableId>> column, indirect_cursor<DirectTableId, IndirectTableId> const& value) noexcept
+inline bool search_value(mdtable_t const* table,
+    column<TableId, indirect_cursor<DirectTableId, IndirectTableId>>, mdToken value, uint32_t& raw) noexcept
 {
-    mdToken tk;
-    if (!value.get_token(tk) || (ExtractTokenType(tk) != DirectTableId && ExtractTokenType(tk) != IndirectTableId))
+    if (static_cast<mdtable_id_t>(ExtractTokenType(value)) != list_target_table<DirectTableId, IndirectTableId>(table))
+        return false;
+    raw = (RidFromToken)(value);
+    return true;
+}
+
+template<mdtable_id_t TableId, typename ColumnType>
+inline raw_cursor<TableId> find_row(cursor<TableId> begin, column<TableId, ColumnType> col, uint32_t value) noexcept
+{
+    column_iterator first{begin, col};
+    auto last = first.end();
+    auto found = sorted_search(CursorTable(begin), col)
+        ? std::lower_bound(first, last, value) : std::find(first, last, value);
+    if (found == last || *found != value)
         return {};
-    return detail::find_row(begin, column.column_index, (detail::RidFromToken)(tk));
+    return found.position();
+}
+}
+
+template<mdtable_id_t TableId, typename ColumnType,
+    std::enable_if_t<detail::searchable_column<ColumnType>::value, int> = 0>
+inline raw_cursor<TableId> md_find_row_from_cursor(cursor<TableId> begin, column<TableId, ColumnType> col, uint32_t value) noexcept
+{
+    uint32_t encoded;
+    if (!detail::search_value(detail::CursorTable(begin), col, value, encoded))
+        return {};
+    return detail::find_row(begin, col, encoded);
+}
+
+template<mdtable_id_t TableId, typename ColumnType, typename Value,
+    std::enable_if_t<detail::search_reference_value<ColumnType, Value>::value, int> = 0>
+inline raw_cursor<TableId> md_find_row_from_cursor(cursor<TableId> begin, column<TableId, ColumnType> col,
+    Value const& value) noexcept
+{
+    mdToken token;
+    if (!detail::search_token(col, value, token))
+        return {};
+    return md_find_row_from_cursor(begin, col, token);
+}
+
+template<mdtable_id_t TableId, typename ColumnType,
+    std::enable_if_t<detail::searchable_column<ColumnType>::value, int> = 0>
+inline md_range_result_t md_find_range_from_cursor(cursor<TableId> begin,
+    column<TableId, ColumnType> col, uint32_t value,
+    raw_cursor<TableId>& start, uint32_t* count) noexcept
+{
+    assert(count != nullptr);
+    uint32_t encoded;
+    auto table = detail::CursorTable(begin);
+    if (!detail::search_value(table, col, value, encoded))
+        return MD_RANGE_NOT_FOUND;
+    if (!detail::sorted_search(table, col))
+        return MD_RANGE_NOT_SUPPORTED;
+    column_iterator first{begin, col};
+    auto range = std::equal_range(first, first.end(), encoded);
+    if (range.first == range.second)
+        return MD_RANGE_NOT_FOUND;
+    start = range.first.position();
+    *count = static_cast<uint32_t>(range.second - range.first);
+    return MD_RANGE_FOUND;
+}
+
+template<mdtable_id_t TableId, typename ColumnType, typename Value,
+    std::enable_if_t<detail::search_reference_value<ColumnType, Value>::value, int> = 0>
+inline md_range_result_t md_find_range_from_cursor(cursor<TableId> begin, column<TableId, ColumnType> col,
+    Value const& value, raw_cursor<TableId>& start, uint32_t* count) noexcept
+{
+    mdToken token;
+    if (!detail::search_token(col, value, token))
+        return MD_RANGE_NOT_FOUND;
+    return md_find_range_from_cursor(begin, col, token, start, count);
 }
 
 template<mdtable_id_t TableId>
@@ -1253,6 +1527,242 @@ inline constexpr column<mdtid_CustomDebugInformation, raw_cursor<mdtid_MethodDef
 inline constexpr column<mdtid_CustomDebugInformation, column_type_guid> CustomDebugInformation_Kind{ mdtCustomDebugInformation_Kind };
 inline constexpr column<mdtid_CustomDebugInformation, column_type_blob> CustomDebugInformation_Value{ mdtCustomDebugInformation_Value };
 #endif // DNMD_PORTABLE_PDB
+}
+
+namespace detail
+{
+template<typename Column>
+struct sort_key final
+{
+    Column column;
+    bool descending;
+
+    constexpr sort_key(Column col, bool desc = false) noexcept : column{col}, descending{desc} {}
+};
+
+template<mdtable_id_t TableId>
+constexpr auto table_sort_keys() noexcept
+{
+    using namespace columns;
+    if constexpr (TableId == mdtid_ClassLayout) return std::tuple{sort_key{ClassLayout_Parent}};
+    else if constexpr (TableId == mdtid_Constant) return std::tuple{sort_key{Constant_Parent}};
+    else if constexpr (TableId == mdtid_CustomAttribute) return std::tuple{sort_key{CustomAttribute_Parent}};
+    else if constexpr (TableId == mdtid_DeclSecurity) return std::tuple{sort_key{DeclSecurity_Parent}};
+    else if constexpr (TableId == mdtid_FieldLayout) return std::tuple{sort_key{FieldLayout_Field}};
+    else if constexpr (TableId == mdtid_FieldMarshal) return std::tuple{sort_key{FieldMarshal_Parent}};
+    else if constexpr (TableId == mdtid_FieldRva) return std::tuple{sort_key{FieldRva_Field}};
+    else if constexpr (TableId == mdtid_GenericParam)
+        return std::tuple{sort_key{GenericParam_Owner}, sort_key{GenericParam_Number}};
+    else if constexpr (TableId == mdtid_GenericParamConstraint) return std::tuple{sort_key{GenericParamConstraint_Owner}};
+    else if constexpr (TableId == mdtid_ImplMap) return std::tuple{sort_key{ImplMap_MemberForwarded}};
+    else if constexpr (TableId == mdtid_InterfaceImpl) return std::tuple{sort_key{InterfaceImpl_Class}};
+    else if constexpr (TableId == mdtid_MethodImpl) return std::tuple{sort_key{MethodImpl_Class}};
+    else if constexpr (TableId == mdtid_MethodSemantics) return std::tuple{sort_key{MethodSemantics_Association}};
+    else if constexpr (TableId == mdtid_NestedClass) return std::tuple{sort_key{NestedClass_NestedClass}};
+#ifdef DNMD_PORTABLE_PDB
+    else if constexpr (TableId == mdtid_LocalScope)
+        return std::tuple{sort_key{LocalScope_Method}, sort_key{LocalScope_StartOffset}, sort_key{LocalScope_Length, true}};
+    else if constexpr (TableId == mdtid_StateMachineMethod) return std::tuple{sort_key{StateMachineMethod_MoveNextMethod}};
+    else if constexpr (TableId == mdtid_CustomDebugInformation) return std::tuple{sort_key{CustomDebugInformation_Parent}};
+#endif
+    else return std::tuple{};
+}
+
+template<mdtable_id_t TableId, typename ColumnType>
+inline bool sorted_search(mdtable_t const* table, column<TableId, ColumnType> col) noexcept
+{
+    constexpr auto keys = table_sort_keys<TableId>();
+    if constexpr (std::tuple_size_v<decltype(keys)> == 0)
+        return false;
+    else
+        return table->is_sorted && !table->is_adding_new_row && !std::get<0>(keys).descending
+            && col.column_index == std::get<0>(keys).column.column_index;
+}
+
+template<size_t Key = 0, mdtable_id_t TableId>
+inline bool rows_sorted(cursor<TableId> first, cursor<TableId> second) noexcept
+{
+    constexpr auto keys = table_sort_keys<TableId>();
+    if constexpr (Key == std::tuple_size_v<decltype(keys)>)
+        return true;
+    else
+    {
+        constexpr auto key = std::get<Key>(keys);
+        uint32_t first_value = *column_iterator{first, key.column};
+        uint32_t second_value = *column_iterator{second, key.column};
+        if (first_value == second_value)
+            return rows_sorted<Key + 1>(first, second);
+        return key.descending ? first_value > second_value : first_value < second_value;
+    }
+}
+
+template<mdtable_id_t TableId>
+inline bool validate_row_sorted_within_table(cursor<TableId> row) noexcept
+{
+    auto table = CursorTable(row);
+    uint32_t index = CursorRow(row);
+    if (index > 1 && !rows_sorted(raw_cursor<TableId>{CreateCursor(table, index - 1)}.as(), row))
+        return false;
+    return index == table->row_count || rows_sorted(row, raw_cursor<TableId>{CreateCursor(table, index + 1)}.as());
+}
+
+template<mdtable_id_t TableId, typename ColumnType>
+inline void update_column_sort_order(mdcursor_t row, column<TableId, ColumnType> col) noexcept
+{
+    auto table = CursorTable(row);
+    if (!table->is_sorted || table->is_adding_new_row)
+        return;
+    bool is_key = std::apply([col](auto... keys) {
+        return ((col.column_index == keys.column.column_index) || ...);
+    }, table_sort_keys<TableId>());
+    if (is_key)
+        table->is_sorted = validate_row_sorted_within_table(raw_cursor<TableId>{row}.as());
+}
+}
+
+template<mdtable_id_t TableId>
+inline void md_commit_row_add(cursor<TableId> row) noexcept
+{
+    auto table = detail::CursorTable(row);
+    assert(table->is_adding_new_row);
+    if (table->is_sorted)
+        table->is_sorted = detail::validate_row_sorted_within_table(row);
+    table->is_adding_new_row = false;
+}
+
+namespace detail
+{
+inline void commit_row_add(mdcursor_t row) noexcept
+{
+    auto table = CursorTable(row);
+    if (table == nullptr)
+        return;
+
+    switch (table->table_id)
+    {
+    case mdtid_ClassLayout: return dnmd::md_commit_row_add(raw_cursor<mdtid_ClassLayout>{row}.as());
+    case mdtid_Constant: return dnmd::md_commit_row_add(raw_cursor<mdtid_Constant>{row}.as());
+    case mdtid_CustomAttribute: return dnmd::md_commit_row_add(raw_cursor<mdtid_CustomAttribute>{row}.as());
+    case mdtid_DeclSecurity: return dnmd::md_commit_row_add(raw_cursor<mdtid_DeclSecurity>{row}.as());
+    case mdtid_FieldLayout: return dnmd::md_commit_row_add(raw_cursor<mdtid_FieldLayout>{row}.as());
+    case mdtid_FieldMarshal: return dnmd::md_commit_row_add(raw_cursor<mdtid_FieldMarshal>{row}.as());
+    case mdtid_FieldRva: return dnmd::md_commit_row_add(raw_cursor<mdtid_FieldRva>{row}.as());
+    case mdtid_GenericParam: return dnmd::md_commit_row_add(raw_cursor<mdtid_GenericParam>{row}.as());
+    case mdtid_GenericParamConstraint: return dnmd::md_commit_row_add(raw_cursor<mdtid_GenericParamConstraint>{row}.as());
+    case mdtid_ImplMap: return dnmd::md_commit_row_add(raw_cursor<mdtid_ImplMap>{row}.as());
+    case mdtid_InterfaceImpl: return dnmd::md_commit_row_add(raw_cursor<mdtid_InterfaceImpl>{row}.as());
+    case mdtid_MethodImpl: return dnmd::md_commit_row_add(raw_cursor<mdtid_MethodImpl>{row}.as());
+    case mdtid_MethodSemantics: return dnmd::md_commit_row_add(raw_cursor<mdtid_MethodSemantics>{row}.as());
+    case mdtid_NestedClass: return dnmd::md_commit_row_add(raw_cursor<mdtid_NestedClass>{row}.as());
+#ifdef DNMD_PORTABLE_PDB
+    case mdtid_LocalScope: return dnmd::md_commit_row_add(raw_cursor<mdtid_LocalScope>{row}.as());
+    case mdtid_StateMachineMethod: return dnmd::md_commit_row_add(raw_cursor<mdtid_StateMachineMethod>{row}.as());
+    case mdtid_CustomDebugInformation: return dnmd::md_commit_row_add(raw_cursor<mdtid_CustomDebugInformation>{row}.as());
+#endif
+    default:
+        assert(table->is_adding_new_row);
+        table->is_adding_new_row = false;
+    }
+}
+
+template<mdtable_id_t ElementTableId>
+constexpr auto parent_list_column() noexcept
+{
+    if constexpr (ElementTableId == mdtid_Field) return columns::TypeDef_FieldList;
+    else if constexpr (ElementTableId == mdtid_MethodDef) return columns::TypeDef_MethodList;
+    else if constexpr (ElementTableId == mdtid_Param) return columns::MethodDef_ParamList;
+    else if constexpr (ElementTableId == mdtid_Event) return columns::EventMap_EventList;
+    else if constexpr (ElementTableId == mdtid_Property) return columns::PropertyMap_PropertyList;
+#ifdef DNMD_PORTABLE_PDB
+    else if constexpr (ElementTableId == mdtid_LocalVariable) return columns::LocalScope_VariableList;
+    else if constexpr (ElementTableId == mdtid_LocalConstant) return columns::LocalScope_ConstantList;
+#endif
+    else
+        static_assert(parent_table_id<ElementTableId>() != mdtid_Unused, "The row must belong to a list.");
+}
+
+template<mdtable_id_t ElementTableId, mdtable_id_t OwnerTableId, typename ColumnType>
+inline raw_cursor<OwnerTableId> find_list_owner(cursor<ElementTableId> element,
+    column<OwnerTableId, ColumnType> col) noexcept
+{
+    auto element_table = CursorTable(element);
+    auto owner_table = &element_table->cxt->tables[OwnerTableId];
+    if (owner_table->row_count == 0)
+        return {};
+
+    uint32_t index = CursorRow(element);
+    constexpr auto pointer_id = pointer_table_id<ElementTableId>();
+    if constexpr (pointer_id != mdtid_Unused)
+    {
+        if (element_table->has_indirect_table)
+        {
+            auto pointer_table = &element_table->cxt->tables[pointer_id];
+            if (pointer_table->row_count == 0)
+                return {};
+            auto pointer_begin = raw_cursor<pointer_id>{CreateCursor(pointer_table, 1)}.as();
+            auto pointer = md_find_row_from_cursor(pointer_begin, pointer_column<pointer_id>(), element);
+            if (!pointer)
+                return {};
+            index = CursorRow(pointer);
+        }
+    }
+
+    auto owner_begin = raw_cursor<OwnerTableId>{CreateCursor(owner_table, 1)}.as();
+    column_iterator first{owner_begin, col};
+    auto last = first.end();
+    auto found = last;
+    if (element_table->cxt->editor != nullptr || element_table->has_indirect_table)
+    {
+        // Edited/indirected runs can contain unpartitioned starts; Ptr lookup is already linear.
+        auto reverse = std::find_if(std::make_reverse_iterator(last), std::make_reverse_iterator(first),
+            [index](uint32_t start) { return start != 0 && start <= index; });
+        if (reverse == std::make_reverse_iterator(first))
+            return {};
+        found = reverse.base() - 1;
+    }
+    else
+    {
+        column_iterator<OwnerTableId, ColumnType, list_boundary_value> ordered{owner_begin, col};
+        auto after = std::upper_bound(ordered, ordered.end(), index);
+        if (after == ordered)
+            return {};
+        found = column_iterator{(--after).position().as(), col};
+    }
+
+    auto next = std::find_if(found + 1, last, [](uint32_t start) { return start != 0; });
+    uint32_t end_row = list_end_row(owner_table, col);
+    uint32_t end = next == last ? end_row : *next;
+    if (*found == 0 || *found > index || end > end_row || index >= end)
+        return {};
+    return found.position();
+}
+}
+
+template<mdtable_id_t ElementTableId, mdtable_id_t ParentTableId>
+inline bool md_find_cursor_of_range_element(cursor<ElementTableId> element, raw_cursor<ParentTableId>& parent) noexcept
+{
+    static_assert(detail::parent_table_id<ElementTableId>() != mdtid_Unused, "The row must belong to a list.");
+    static_assert(ParentTableId == detail::parent_table_id<ElementTableId>(), "The parent table type is incorrect.");
+    auto owner = detail::find_list_owner(element, detail::parent_list_column<ElementTableId>());
+    if (!owner)
+        return false;
+    if constexpr (ElementTableId == mdtid_Event)
+        return row_reader{owner.as()}.read(columns::EventMap_Parent, parent);
+    else if constexpr (ElementTableId == mdtid_Property)
+        return row_reader{owner.as()}.read(columns::PropertyMap_Parent, parent);
+    else
+    {
+        parent = owner;
+        return true;
+    }
+}
+
+template<mdtable_id_t TableId>
+inline bool md_find_token_of_range_element(cursor<TableId> element, mdToken& token) noexcept
+{
+    static_assert(detail::parent_table_id<TableId>() != mdtid_Unused, "The row must belong to a list.");
+    raw_cursor<detail::parent_table_id<TableId>()> parent;
+    return md_find_cursor_of_range_element(element, parent) && parent.get_token(token);
 }
 
 } // namespace dnmd

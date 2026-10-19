@@ -65,7 +65,7 @@ HRESULT MetadataEmit::SetModuleProps(
     {
         if (md_append_row(MetaData(), mdtid_Module, &c))
         {
-            md_commit_row_add(c);
+            dnmd::md_commit_row_add(dnmd::raw_cursor<mdtid_Module>{c}.as());
         }
         else
         {
@@ -1147,15 +1147,14 @@ HRESULT MetadataEmit::DeleteToken(
                 return S_OK;
             }
 
-            mdcursor_t permissions;
-            uint32_t numPermissions;
-            if (!md_create_cursor(MetaData(), mdtid_DeclSecurity, &permissions, &numPermissions))
+            auto permissions = dnmd::md_create_cursor<mdtid_DeclSecurity>(MetaData());
+            if (!permissions)
                 return E_FAIL;
 
             // If we have no more permissions for this parent, remove the HasSecurity bit.
             // Since we just need to know if there's any matching row and we don't need a range of rows,
             // we can use find_row instead of find_range.
-            if (!md_find_row_from_cursor(permissions, mdtDeclSecurity_Parent, originalParent, &permissions))
+            if (!dnmd::md_find_row_from_cursor(permissions.as(), DeclSecurity_Parent, originalParent))
             {
                 return TypeFromToken(originalParent) == mdtTypeDef
                     ? RemoveFlag(MetaData(), originalParent, TypeDef_Flags, tdHasSecurity)
@@ -1242,10 +1241,11 @@ HRESULT MetadataEmit::SetTypeDefProps(
         // We can't delete here as we hand out tokens into this table to the caller.
         // This would be much more efficient if we could delete rows, as nulling out the parent will almost assuredly make the column
         // unsorted.
-        mdcursor_t interfaceImplCursor;
         uint32_t numInterfaceImpls;
-        if (md_create_cursor(MetaData(), mdtid_InterfaceImpl, &interfaceImplCursor, &numInterfaceImpls)
-            && md_find_range_from_cursor(interfaceImplCursor, mdtInterfaceImpl_Class, RidFromToken(td), &interfaceImplCursor, &numInterfaceImpls) != MD_RANGE_NOT_FOUND)
+        auto interfaceImplCursor = dnmd::md_create_cursor<mdtid_InterfaceImpl>(MetaData(), &numInterfaceImpls);
+        if (interfaceImplCursor
+            && dnmd::md_find_range_from_cursor(interfaceImplCursor.as(), InterfaceImpl_Class, td,
+                interfaceImplCursor, &numInterfaceImpls) != MD_RANGE_NOT_FOUND)
         {
             for (uint32_t i = 0; i < numInterfaceImpls; ++i)
             {
@@ -1292,18 +1292,18 @@ namespace
     // Set all rows in the MethodSemantic table with a matching Association column of parent to the nil token of parent's table.
     HRESULT RemoveSemantics(mdhandle_t md, mdToken parent, CorMethodSemanticsAttr semantic)
     {
-        mdcursor_t c;
         uint32_t count;
-        if (!md_create_cursor(md, mdtid_MethodSemantics, &c, &count))
+        auto c = dnmd::md_create_cursor<mdtid_MethodSemantics>(md, &count);
+        if (!c)
             return CLDB_E_RECORD_NOTFOUND;
 
-        md_range_result_t result = md_find_range_from_cursor(c, mdtMethodSemantics_Association, parent, &c, &count);
+        md_range_result_t result = dnmd::md_find_range_from_cursor(c.as(), MethodSemantics_Association, parent, c, &count);
         if (result == MD_RANGE_NOT_FOUND)
             return S_OK;
 
-        for (uint32_t i = 0; i < count; ++i, md_cursor_next(&c))
+        for (uint32_t i = 0; i < count; ++i, dnmd::md_cursor_next(c))
         {
-            auto row = dnmd::raw_cursor<mdtid_MethodSemantics>{c}.as();
+            auto row = c.as();
             dnmd::row_reader reader{row};
             mdToken association;
             if (!reader.read(MethodSemantics_Association, association))
@@ -1398,12 +1398,12 @@ HRESULT MetadataEmit::SetPermissionSetProps(
     if (dwAction == UINT32_MAX || dwAction == 0 || dwAction > dclMaximumValue)
         return E_INVALIDARG;
 
-    mdcursor_t c;
-    uint32_t count;
-    if (!md_create_cursor(MetaData(), mdtid_DeclSecurity, &c, &count))
+    auto c = dnmd::md_create_cursor<mdtid_DeclSecurity>(MetaData());
+    if (!c)
         return CLDB_E_RECORD_NOTFOUND;
 
-    if (!md_find_row_from_cursor(c, mdtDeclSecurity_Parent, tk, &c))
+    c = dnmd::md_find_row_from_cursor(c.as(), DeclSecurity_Parent, tk);
+    if (!c)
         return CLDB_E_RECORD_NOTFOUND;
 
     uint32_t action = dwAction;
@@ -1497,13 +1497,12 @@ HRESULT MetadataEmit::SetPinvokeMap(
     if (!md_token_to_cursor(MetaData(), tk, &c))
         return CLDB_E_FILE_CORRUPT;
 
-    mdcursor_t implMapCursor;
-    uint32_t numImplMaps;
-    if (!md_create_cursor(MetaData(), mdtid_ImplMap, &implMapCursor, &numImplMaps))
+    auto implMapCursor = dnmd::md_create_cursor<mdtid_ImplMap>(MetaData());
+    if (!implMapCursor)
         return E_FAIL;
 
-    mdcursor_t row_to_edit;
-    if (!md_find_row_from_cursor(implMapCursor, mdtImplMap_MemberForwarded, tk, &row_to_edit))
+    auto row_to_edit = dnmd::md_find_row_from_cursor(implMapCursor.as(), ImplMap_MemberForwarded, tk);
+    if (!row_to_edit)
         return CLDB_E_RECORD_NOTFOUND;
 
     dnmd::row_writer row_to_edit_writer{dnmd::raw_cursor<mdtid_ImplMap>{row_to_edit}.as()};
@@ -2527,12 +2526,13 @@ HRESULT MetadataEmit::SetGenericParamProps(
     if (rtkConstraints != nullptr)
     {
         // Delete all existing constraints
-        mdcursor_t constraint;
         uint32_t count;
-        if (md_create_cursor(MetaData(), mdtid_GenericParamConstraint, &constraint, &count)
-            && md_find_range_from_cursor(constraint, mdtGenericParamConstraint_Owner, RidFromToken(gp), &constraint, &count) != MD_RANGE_NOT_FOUND)
+        auto constraint = dnmd::md_create_cursor<mdtid_GenericParamConstraint>(MetaData(), &count);
+        if (constraint
+            && dnmd::md_find_range_from_cursor(constraint.as(), GenericParamConstraint_Owner, gp,
+                constraint, &count) != MD_RANGE_NOT_FOUND)
         {
-            for (uint32_t i = 0; i < count; ++i, md_cursor_next(&constraint))
+            for (uint32_t i = 0; i < count; ++i, dnmd::md_cursor_next(constraint))
             {
                 mdToken parent;
                 if (!md_get_column_value_as_token(constraint, mdtGenericParamConstraint_Owner, &parent))
@@ -2598,7 +2598,7 @@ HRESULT MetadataEmit::DefineAssembly(
     {
         if (md_append_row(MetaData(), mdtid_Assembly, &c))
         {
-            md_commit_row_add(c);
+            dnmd::md_commit_row_add(dnmd::raw_cursor<mdtid_Assembly>{c}.as());
         }
         else
         {

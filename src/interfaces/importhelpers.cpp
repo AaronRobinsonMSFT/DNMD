@@ -822,14 +822,13 @@ HRESULT ImportReferenceToTypeDef(
 
         typesForTypeRefs.push(importType);
 
-        mdcursor_t nestedClasses;
-        uint32_t nestedClassCount;
-        if (!md_create_cursor(sourceModule, mdtid_NestedClass, &nestedClasses, &nestedClassCount))
+        auto nestedClasses = dnmd::md_create_cursor<mdtid_NestedClass>(sourceModule);
+        if (!nestedClasses)
             return E_FAIL;
 
         mdToken nestedTypeToken = tdImport;
-        mdcursor_t nestedClass;
-        while (md_find_row_from_cursor(nestedClasses, mdtNestedClass_NestedClass, RidFromToken(nestedTypeToken), &nestedClass))
+        while (auto nestedClass = dnmd::md_find_row_from_cursor(
+            nestedClasses.as(), dnmd::columns::NestedClass_NestedClass, nestedTypeToken))
         {
             mdcursor_t enclosingClass;
             if (!md_get_column_value_as_cursor(nestedClass, mdtNestedClass_EnclosingClass, &enclosingClass))
@@ -1022,16 +1021,15 @@ namespace
             {
                 // Make sure that this type is not nested.
                 // For this to be the same type, it must not be a nested type.
-                mdcursor_t nestedType;
-                uint32_t nestedTypeCount;
-                if (!md_create_cursor(assembly, mdtid_NestedClass, &nestedType, &nestedTypeCount))
+                auto nestedType = dnmd::md_create_cursor<mdtid_NestedClass>(assembly);
+                if (!nestedType)
                     return E_FAIL;
 
                 mdToken typeDefToken;
                 if (!md_cursor_to_token(typeDef, &typeDefToken))
                     return CLDB_E_FILE_CORRUPT;
 
-                if (md_find_row_from_cursor(nestedType, mdtNestedClass_NestedClass, RidFromToken(typeDefToken), &nestedType))
+                if (dnmd::md_find_row_from_cursor(nestedType.as(), dnmd::columns::NestedClass_NestedClass, typeDefToken))
                     return E_FAIL;
 
                 // If we found the type defined in the assembly, then the correct imported scope is the assembly module.
@@ -1446,10 +1444,10 @@ namespace
                         if (std::strcmp(typeName, sourceAssemblyTypeDefName) != 0 && std::strcmp(typeNamespace, sourceAssemblyTypeDefNamespace) != 0)
                             continue;
 
-                        mdcursor_t sourceAssemblyTypeDefEnclosingClass;
-                        uint32_t ignored;
-                        if (md_create_cursor(sourceAssembly, mdtid_NestedClass, &sourceAssemblyTypeDefEnclosingClass, &ignored)
-                            && md_find_row_from_cursor(sourceAssemblyTypeDefEnclosingClass, mdtNestedClass_NestedClass, TokenFromRid(i + 1, mdtTypeDef), &sourceAssemblyTypeDefEnclosingClass))
+                        auto sourceAssemblyTypeDefEnclosingClass = dnmd::md_create_cursor<mdtid_NestedClass>(sourceAssembly);
+                        if (sourceAssemblyTypeDefEnclosingClass
+                            && dnmd::md_find_row_from_cursor(sourceAssemblyTypeDefEnclosingClass.as(),
+                                dnmd::columns::NestedClass_NestedClass, TokenFromRid(i + 1, mdtTypeDef)))
                         {
                             // If the type is nested, then it can't be the right type as we're already at the outermost scope.
                             continue;
@@ -1586,11 +1584,11 @@ namespace
                     if (!md_cursor_to_token(targetTypeDef, &targetTypeDefToken))
                         return E_FAIL;
 
-                    mdcursor_t targetNestedClass;
-                    uint32_t targetNestedClassCount;
+                    auto targetNestedClass = dnmd::md_create_cursor<mdtid_NestedClass>(targetModule);
                     if (shouldHaveEnclosingType !=
-                        (md_create_cursor(targetModule, mdtid_NestedClass, &targetNestedClass, &targetNestedClassCount)
-                            && md_find_row_from_cursor(targetNestedClass, mdtNestedClass_NestedClass, RidFromToken(targetTypeDefToken), &targetNestedClass)))
+                        (targetNestedClass
+                            && (targetNestedClass = dnmd::md_find_row_from_cursor(targetNestedClass.as(),
+                                dnmd::columns::NestedClass_NestedClass, targetTypeDefToken))))
                     {
                         // If the source TypeRef has an enclosing type, then the target TypeDef must have an enclosing type and vice versa.
                         continue;
