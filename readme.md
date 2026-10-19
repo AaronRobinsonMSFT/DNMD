@@ -28,6 +28,21 @@ The primary goal of DNMD is to explore the benefits of a rewrite of the metadata
 
 `dnmd.hpp` provides typed cursors and column descriptors in the `dnmd` namespace.
 The C API names and types in `dnmd.h` remain global.
+It includes the complete C++ API and retains the `handle_ptr` and `added_row_t`
+lifetime wrappers. The typed API is organized into these headers:
+
+| Header | Contents |
+| --- | --- |
+| `dnmd_columns.hpp` | Column types, descriptors, and shared schema metadata |
+| `dnmd_cursors.hpp` | Row/position cursors, conversions, navigation, and factories |
+| `dnmd_read.hpp` | Row readers and read-only column iterators |
+| `dnmd_write.hpp` | Row writers, cursor write methods, and row-add commits |
+| `dnmd_search.hpp` | Typed searches and cursor parent lookup |
+
+Each header includes its dependencies. When using individual headers instead of
+the umbrella, include `dnmd_write.hpp` for cursor `set_column_value` methods and
+`dnmd_search.hpp` for `get_parent_token`.
+
 `dnmd::cursor<TableId>` represents an existing, dereferenceable row and cannot be
 default-constructed or constructed directly from a C cursor.
 `dnmd::raw_cursor<TableIds...>` and `dnmd::indirect_cursor<DirectTableId, IndirectTableId>`
