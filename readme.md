@@ -76,7 +76,11 @@ callable for nil or end positions.
 Use `dnmd::md_is_valid_token` when only validation is needed. Rows provide
 `get_column_values` for bulk token reads and `get_parent_token` for list owners.
 Typed range searches use column descriptors and return a raw cursor in the
-searched table along with the range status and count.
+searched table along with the range status and count. Their status type is
+`dnmd::range_result`, an enum class declared in `dnmd_search.hpp` with values
+`found`, `not_found`, and `not_supported`. Their numeric values match the C API's
+`MD_RANGE_FOUND`, `MD_RANGE_NOT_FOUND`, and `MD_RANGE_NOT_SUPPORTED`, respectively;
+the C API continues to use `md_range_result_t`.
 
 The C++ `md_find_*` APIs search constant, reference, and list-position columns;
 heap columns are not searchable. Reference search values are full tokens or typed

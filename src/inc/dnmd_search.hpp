@@ -8,6 +8,13 @@
 namespace dnmd
 {
 
+enum class range_result
+{
+    found = MD_RANGE_FOUND,
+    not_found = MD_RANGE_NOT_FOUND,
+    not_supported = MD_RANGE_NOT_SUPPORTED,
+};
+
 namespace detail
 {
 template<mdtable_id_t TableId, typename ColumnType>
@@ -129,7 +136,7 @@ inline raw_cursor<TableId> md_find_row_from_cursor(cursor<TableId> begin, column
 
 template<mdtable_id_t TableId, typename ColumnType,
     std::enable_if_t<detail::searchable_column<ColumnType>::value, int> = 0>
-inline md_range_result_t md_find_range_from_cursor(cursor<TableId> begin,
+inline range_result md_find_range_from_cursor(cursor<TableId> begin,
     column<TableId, ColumnType> col, uint32_t value,
     raw_cursor<TableId>& start, uint32_t* count) noexcept
 {
@@ -137,26 +144,26 @@ inline md_range_result_t md_find_range_from_cursor(cursor<TableId> begin,
     uint32_t encoded;
     auto table = detail::CursorTable(begin);
     if (!detail::search_value(table, col, value, encoded))
-        return MD_RANGE_NOT_FOUND;
+        return range_result::not_found;
     if (!detail::sorted_search(table, col))
-        return MD_RANGE_NOT_SUPPORTED;
+        return range_result::not_supported;
     column_iterator first{begin, col};
     auto range = std::equal_range(first, first.end(), encoded);
     if (range.first == range.second)
-        return MD_RANGE_NOT_FOUND;
+        return range_result::not_found;
     start = range.first.position();
     *count = static_cast<uint32_t>(range.second - range.first);
-    return MD_RANGE_FOUND;
+    return range_result::found;
 }
 
 template<mdtable_id_t TableId, typename ColumnType, typename Value,
     std::enable_if_t<detail::search_reference_value<ColumnType, Value>::value, int> = 0>
-inline md_range_result_t md_find_range_from_cursor(cursor<TableId> begin, column<TableId, ColumnType> col,
+inline range_result md_find_range_from_cursor(cursor<TableId> begin, column<TableId, ColumnType> col,
     Value const& value, raw_cursor<TableId>& start, uint32_t* count) noexcept
 {
     mdToken token;
     if (!detail::search_token(col, value, token))
-        return MD_RANGE_NOT_FOUND;
+        return range_result::not_found;
     return md_find_range_from_cursor(begin, col, token, start, count);
 }
 

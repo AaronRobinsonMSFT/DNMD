@@ -786,12 +786,12 @@ TEST_F(CppCursor, FindRowsReturnsTheSearchedTable)
     EXPECT_FALSE(dnmd::md_find_row_from_cursor(rows.as(), NestedClass_NestedClass, CreateTokenType(mdtid_MethodDef) | 2));
 
     dnmd::raw_cursor<mdtid_NestedClass> range;
-    ASSERT_EQ(MD_RANGE_FOUND, dnmd::md_find_range_from_cursor(rows.as(), NestedClass_NestedClass, child_token, range, &count));
+    ASSERT_EQ(dnmd::range_result::found, dnmd::md_find_range_from_cursor(rows.as(), NestedClass_NestedClass, child_token, range, &count));
     EXPECT_EQ(1u, count);
     ASSERT_TRUE(range);
-    EXPECT_EQ(MD_RANGE_NOT_FOUND, dnmd::md_find_range_from_cursor(rows.as(), NestedClass_NestedClass,
+    EXPECT_EQ(dnmd::range_result::not_found, dnmd::md_find_range_from_cursor(rows.as(), NestedClass_NestedClass,
         CreateTokenType(mdtid_TypeDef) | 100, range, &count));
-    EXPECT_EQ(MD_RANGE_NOT_FOUND, dnmd::md_find_range_from_cursor(rows.as(), NestedClass_NestedClass,
+    EXPECT_EQ(dnmd::range_result::not_found, dnmd::md_find_range_from_cursor(rows.as(), NestedClass_NestedClass,
         CreateTokenType(mdtid_MethodDef) | 2, range, &count));
 
     mdToken tokens[2] = {mdTokenNil, 0x12345678};
@@ -818,7 +818,7 @@ TEST_F(CppCursor, FindCodedIndexRows)
     EXPECT_TRUE(dnmd::md_find_row_from_cursor(rows.as(), TypeRef_ResolutionScope, CreateTokenType(mdtid_Module) | 1));
     EXPECT_FALSE(dnmd::md_find_row_from_cursor(rows.as(), TypeRef_ResolutionScope, CreateTokenType(mdtid_AssemblyRef) | 1));
     dnmd::raw_cursor<mdtid_TypeRef> range;
-    EXPECT_EQ(MD_RANGE_NOT_SUPPORTED, dnmd::md_find_range_from_cursor(rows.as(), TypeRef_ResolutionScope,
+    EXPECT_EQ(dnmd::range_result::not_supported, dnmd::md_find_range_from_cursor(rows.as(), TypeRef_ResolutionScope,
         CreateTokenType(mdtid_Module) | 1, range, &count));
 }
 

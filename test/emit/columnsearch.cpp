@@ -114,7 +114,7 @@ namespace
             dnmd::detail::CursorTable(row)->is_sorted = true;
             dnmd::raw_cursor<TableId> start;
             uint32_t count = 0;
-            ASSERT_EQ(MD_RANGE_FOUND, dnmd::md_find_range_from_cursor(row, col, nil, start, &count));
+            ASSERT_EQ(dnmd::range_result::found, dnmd::md_find_range_from_cursor(row, col, nil, start, &count));
             EXPECT_EQ(1u, count);
             mdcursor_t c_start;
             uint32_t c_count = 0;
@@ -252,7 +252,7 @@ TEST_F(CppColumnSearch, NarrowConstantKeysAreNotTruncated)
     EXPECT_FALSE(dnmd::md_find_row_from_cursor(first.as(), ClassLayout_PackingSize, 0x10001));
     uint32_t count = 0x12345678;
     auto start = first;
-    EXPECT_EQ(MD_RANGE_NOT_SUPPORTED, dnmd::md_find_range_from_cursor(first.as(), ClassLayout_PackingSize, 1, start, &count));
+    EXPECT_EQ(dnmd::range_result::not_supported, dnmd::md_find_range_from_cursor(first.as(), ClassLayout_PackingSize, 1, start, &count));
     EXPECT_EQ(0x12345678u, count);
     EXPECT_EQ(static_cast<mdcursor_t>(first)._reserved2, static_cast<mdcursor_t>(start)._reserved2);
 }
@@ -271,7 +271,7 @@ TEST_F(CppColumnSearch, SecondaryKeysDoNotUseBinarySearch)
     ASSERT_NO_FATAL_FAILURE(ExpectRow(dnmd::md_find_row_from_cursor(first.as(), GenericParam_Number, 7), 2));
     dnmd::raw_cursor<mdtid_GenericParam> range;
     uint32_t count = 99;
-    EXPECT_EQ(MD_RANGE_NOT_SUPPORTED, dnmd::md_find_range_from_cursor(first.as(), GenericParam_Number, 7, range, &count));
+    EXPECT_EQ(dnmd::range_result::not_supported, dnmd::md_find_range_from_cursor(first.as(), GenericParam_Number, 7, range, &count));
     EXPECT_EQ(99u, count);
 }
 
@@ -284,12 +284,12 @@ TEST_F(CppColumnSearch, SortedPrimaryRangesRespectTheSuffix)
     dnmd::detail::CursorTable(first)->is_sorted = true;
     dnmd::raw_cursor<mdtid_ClassLayout> start;
     uint32_t count;
-    ASSERT_EQ(MD_RANGE_FOUND, dnmd::md_find_range_from_cursor(first.as(), ClassLayout_Parent,
+    ASSERT_EQ(dnmd::range_result::found, dnmd::md_find_range_from_cursor(first.as(), ClassLayout_Parent,
         CreateTokenType(mdtid_TypeDef) | 2, start, &count));
     EXPECT_EQ(3u, count);
     ASSERT_NO_FATAL_FAILURE(ExpectRow(start, 2));
     ASSERT_TRUE(dnmd::md_cursor_move(first, 2));
-    ASSERT_EQ(MD_RANGE_FOUND, dnmd::md_find_range_from_cursor(first.as(), ClassLayout_Parent,
+    ASSERT_EQ(dnmd::range_result::found, dnmd::md_find_range_from_cursor(first.as(), ClassLayout_Parent,
         CreateTokenType(mdtid_TypeDef) | 2, start, &count));
     EXPECT_EQ(2u, count);
     ASSERT_NO_FATAL_FAILURE(ExpectRow(start, 3));
@@ -297,12 +297,27 @@ TEST_F(CppColumnSearch, SortedPrimaryRangesRespectTheSuffix)
         CreateTokenType(mdtid_TypeDef) | 4), 5));
     count = 0x12345678;
     auto before = start;
-    EXPECT_EQ(MD_RANGE_NOT_FOUND, dnmd::md_find_range_from_cursor(first.as(), ClassLayout_Parent,
+    EXPECT_EQ(dnmd::range_result::not_found, dnmd::md_find_range_from_cursor(first.as(), ClassLayout_Parent,
         CreateTokenType(mdtid_TypeDef) | 3, start, &count));
     EXPECT_EQ(0x12345678u, count);
     EXPECT_EQ(static_cast<mdcursor_t>(before)._reserved2, static_cast<mdcursor_t>(start)._reserved2);
-    EXPECT_EQ(MD_RANGE_NOT_FOUND, dnmd::md_find_range_from_cursor(first.as(), ClassLayout_Parent,
+    EXPECT_EQ(dnmd::range_result::not_found, dnmd::md_find_range_from_cursor(first.as(), ClassLayout_Parent,
         CreateTokenType(mdtid_MethodDef) | 2, start, &count));
+}
+
+TEST_F(CppColumnSearch, EmptyTypedRangeKeyPreservesOutputs)
+{
+    ASSERT_NO_FATAL_FAILURE(Fill(ClassLayout_Parent, {CreateTokenType(mdtid_TypeDef) | 1}));
+    auto first = dnmd::md_create_cursor<mdtid_ClassLayout>(handle.get());
+    dnmd::detail::CursorTable(first)->is_sorted = true;
+    dnmd::raw_cursor<mdtid_TypeDef> missing;
+    auto start = first;
+    uint32_t count = 0x12345678;
+    EXPECT_EQ(dnmd::range_result::not_found, dnmd::md_find_range_from_cursor(
+        first.as(), ClassLayout_Parent, missing, start, &count));
+    EXPECT_EQ(0x12345678u, count);
+    EXPECT_EQ(static_cast<mdcursor_t>(first)._reserved1, static_cast<mdcursor_t>(start)._reserved1);
+    EXPECT_EQ(static_cast<mdcursor_t>(first)._reserved2, static_cast<mdcursor_t>(start)._reserved2);
 }
 
 TEST_F(CppColumnSearch, CodedIndexSearchUsesStoredOrdering)
@@ -321,7 +336,7 @@ TEST_F(CppColumnSearch, CodedIndexSearchUsesStoredOrdering)
         CreateTokenType(mdtid_Field) | 1), 2));
     dnmd::raw_cursor<mdtid_CustomAttribute> range;
     uint32_t count;
-    ASSERT_EQ(MD_RANGE_FOUND, dnmd::md_find_range_from_cursor(first.as(), CustomAttribute_Parent,
+    ASSERT_EQ(dnmd::range_result::found, dnmd::md_find_range_from_cursor(first.as(), CustomAttribute_Parent,
         CreateTokenType(mdtid_MethodDef) | 2, range, &count));
     EXPECT_EQ(2u, count);
     ASSERT_NO_FATAL_FAILURE(ExpectRow(range, 4));
@@ -342,7 +357,7 @@ TEST_F(CppColumnSearch, PendingRowsDisableBinaryRangeSearch)
         CreateTokenType(mdtid_TypeDef) | 2), 3));
     uint32_t count = 99;
     auto output = first;
-    EXPECT_EQ(MD_RANGE_NOT_SUPPORTED, dnmd::md_find_range_from_cursor(first.as(), ClassLayout_Parent,
+    EXPECT_EQ(dnmd::range_result::not_supported, dnmd::md_find_range_from_cursor(first.as(), ClassLayout_Parent,
         CreateTokenType(mdtid_TypeDef) | 2, output, &count));
     EXPECT_EQ(99u, count);
     md_commit_row_add(added);
@@ -381,7 +396,7 @@ TEST_F(CppColumnSearch, TypedKeysIncludeNilAndEndPositions)
     ASSERT_NO_FATAL_FAILURE(ExpectRow(dnmd::md_find_row_from_cursor(first.as(), ClassLayout_Parent, position), 3));
     dnmd::raw_cursor<mdtid_ClassLayout> range;
     uint32_t count;
-    ASSERT_EQ(MD_RANGE_FOUND, dnmd::md_find_range_from_cursor(first.as(), ClassLayout_Parent, target, range, &count));
+    ASSERT_EQ(dnmd::range_result::found, dnmd::md_find_range_from_cursor(first.as(), ClassLayout_Parent, target, range, &count));
     EXPECT_EQ(1u, count);
 }
 

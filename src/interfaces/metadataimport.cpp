@@ -158,13 +158,13 @@ namespace
 
         dnmd::raw_cursor<TableId> begin;
         uint32_t count;
-        md_range_result_t result = dnmd::md_find_range_from_cursor(cursor.as(), keyColumn, token, begin, &count);
+        dnmd::range_result result = dnmd::md_find_range_from_cursor(cursor.as(), keyColumn, token, begin, &count);
 
-        if (result == MD_RANGE_NOT_FOUND)
+        if (result == dnmd::range_result::not_found)
         {
             return HCORENUMImpl::CreateDynamicEnum(pEnumImpl);
         }
-        else if (result == MD_RANGE_FOUND)
+        else if (result == dnmd::range_result::found)
         {
             HCORENUMImpl* enumImpl;
             RETURN_IF_FAILED(HCORENUMImpl::CreateTableEnum(1, &enumImpl));
@@ -342,8 +342,8 @@ namespace
     {
         dnmd::raw_cursor<TableId> curr;
         uint32_t currCount;
-        md_range_result_t result = dnmd::md_find_range_from_cursor(begin, lookupRange, lookupTk, curr, &currCount);
-        if (result == MD_RANGE_FOUND)
+        dnmd::range_result result = dnmd::md_find_range_from_cursor(begin, lookupRange, lookupTk, curr, &currCount);
+        if (result == dnmd::range_result::found)
         {
             // Table is sorted and subset found
             for (uint32_t i = 0; i < currCount; ++i)
@@ -353,7 +353,7 @@ namespace
                 (void)dnmd::md_cursor_next(curr);
             }
         }
-        else if (result == MD_RANGE_NOT_SUPPORTED)
+        else if (result == dnmd::range_result::not_supported)
         {
             // Cannot get a range on this table so we need to search across the entire table
             curr = dnmd::raw_cursor<TableId>{begin};
@@ -1080,7 +1080,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumPermissionSets(
 
         if (!IsNilToken(tk))
         {
-            if (dnmd::md_find_range_from_cursor(cursor.as(), DeclSecurity_Parent, tk, cursor, &count) == MD_RANGE_NOT_FOUND)
+            if (dnmd::md_find_range_from_cursor(cursor.as(), DeclSecurity_Parent, tk, cursor, &count) == dnmd::range_result::not_found)
                 return CLDB_E_RECORD_NOTFOUND;
         }
 
@@ -2235,16 +2235,16 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumCustomAttributes(
         }
         else
         {
-            md_range_result_t result = dnmd::md_find_range_from_cursor(cursor.as(), CustomAttribute_Parent, tk, curr, &currCount);
-            if (IsNilToken(tkType) && result != MD_RANGE_NOT_SUPPORTED)
+            dnmd::range_result result = dnmd::md_find_range_from_cursor(cursor.as(), CustomAttribute_Parent, tk, curr, &currCount);
+            if (IsNilToken(tkType) && result != dnmd::range_result::not_supported)
             {
                 // Caller is looking for all associated attributes and we got a table range.
-                if (result == MD_RANGE_FOUND)
+                if (result == dnmd::range_result::found)
                 {
                     RETURN_IF_FAILED(HCORENUMImpl::CreateTableEnum(1, &enumImpl));
                     HCORENUMImpl::InitTableEnum(*enumImpl, 0, curr, currCount);
                 }
-                else if (result == MD_RANGE_NOT_FOUND)
+                else if (result == dnmd::range_result::not_found)
                 {
                     // If there are no tokens found, create an empty enumeration.
                     RETURN_IF_FAILED(HCORENUMImpl::CreateDynamicEnum(&enumImpl));

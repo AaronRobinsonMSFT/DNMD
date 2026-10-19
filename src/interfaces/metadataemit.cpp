@@ -1245,7 +1245,7 @@ HRESULT MetadataEmit::SetTypeDefProps(
         auto interfaceImplCursor = dnmd::md_create_cursor<mdtid_InterfaceImpl>(MetaData(), &numInterfaceImpls);
         if (interfaceImplCursor
             && dnmd::md_find_range_from_cursor(interfaceImplCursor.as(), InterfaceImpl_Class, td,
-                interfaceImplCursor, &numInterfaceImpls) != MD_RANGE_NOT_FOUND)
+                interfaceImplCursor, &numInterfaceImpls) != dnmd::range_result::not_found)
         {
             for (uint32_t i = 0; i < numInterfaceImpls; ++i)
             {
@@ -1297,8 +1297,8 @@ namespace
         if (!c)
             return CLDB_E_RECORD_NOTFOUND;
 
-        md_range_result_t result = dnmd::md_find_range_from_cursor(c.as(), MethodSemantics_Association, parent, c, &count);
-        if (result == MD_RANGE_NOT_FOUND)
+        dnmd::range_result result = dnmd::md_find_range_from_cursor(c.as(), MethodSemantics_Association, parent, c, &count);
+        if (result == dnmd::range_result::not_found)
             return S_OK;
 
         for (uint32_t i = 0; i < count; ++i, dnmd::md_cursor_next(c))
@@ -2530,7 +2530,7 @@ HRESULT MetadataEmit::SetGenericParamProps(
         auto constraint = dnmd::md_create_cursor<mdtid_GenericParamConstraint>(MetaData(), &count);
         if (constraint
             && dnmd::md_find_range_from_cursor(constraint.as(), GenericParamConstraint_Owner, gp,
-                constraint, &count) != MD_RANGE_NOT_FOUND)
+                constraint, &count) != dnmd::range_result::not_found)
         {
             for (uint32_t i = 0; i < count; ++i, dnmd::md_cursor_next(constraint))
             {

@@ -325,11 +325,11 @@ TEST_F(CppRowSorting, CompositeSortedStateRoundTripsAndDrivesPrimaryRanges)
     EXPECT_TRUE(dnmd::detail::CursorTable(first)->is_sorted);
     dnmd::raw_cursor<mdtid_GenericParam> start;
     uint32_t count;
-    ASSERT_EQ(MD_RANGE_FOUND, dnmd::md_find_range_from_cursor(first.as(), GenericParam_Owner,
+    ASSERT_EQ(dnmd::range_result::found, dnmd::md_find_range_from_cursor(first.as(), GenericParam_Owner,
         CreateTokenType(mdtid_TypeDef) | 1, start, &count));
     EXPECT_EQ(2u, count);
     EXPECT_EQ(1u, dnmd::detail::CursorRow(start));
-    EXPECT_EQ(MD_RANGE_NOT_SUPPORTED, dnmd::md_find_range_from_cursor(first.as(), GenericParam_Number,
+    EXPECT_EQ(dnmd::range_result::not_supported, dnmd::md_find_range_from_cursor(first.as(), GenericParam_Number,
         10, start, &count));
     EXPECT_EQ(2u, count);
 }
