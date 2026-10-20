@@ -8,6 +8,26 @@
 #include <dnmd_write.hpp>
 #include "fixture.hpp"
 
+#if !defined(NDEBUG) && GTEST_HAS_DEATH_TEST
+TEST(CppGuardDeathTest, RejectsNullTableConstruction)
+{
+    mdcursor_t empty{};
+    EXPECT_DEATH((dnmd::added_row_t{empty}), "CursorTable");
+}
+#endif
+
+TEST_F(CppHeader, ExplicitRowGuardCommits)
+{
+    mdcursor_t added;
+    ASSERT_TRUE(md_append_row(handle, mdtid_ClassLayout, &added));
+    {
+        dnmd::added_row_t guard{added};
+        auto row = dnmd::raw_cursor<mdtid_ClassLayout>{added}.as();
+        ASSERT_TRUE(row.set_column_value(dnmd::columns::ClassLayout_ClassSize, 32));
+    }
+    EXPECT_FALSE(dnmd::detail::CursorTable(added)->is_adding_new_row);
+}
+
 TEST_F(CppHeader, MixedIncludeOrderAndUmbrellaLifetimeWrappers)
 {
     dnmd::handle_ptr owned{std::exchange(handle, nullptr)};

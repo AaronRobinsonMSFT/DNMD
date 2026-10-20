@@ -234,7 +234,6 @@ public:
 
     value_type operator*() const noexcept
     {
-        assert(_reader._table != nullptr);
         assert(_reader._data >= _reader._table->data.ptr);
         assert(_reader._data < _reader._table->data.ptr
             + size_t{_reader._table->row_count} * _reader._table->row_size_bytes);
@@ -259,7 +258,6 @@ public:
 
     column_iterator& operator+=(difference_type delta) noexcept
     {
-        assert(_reader._table != nullptr);
 #ifndef NDEBUG
         auto index = (_reader._data - _reader._table->data.ptr) / _reader._table->row_size_bytes;
         assert(delta >= -index && delta <= static_cast<difference_type>(_reader._table->row_count) - index);
@@ -295,7 +293,6 @@ public:
 
     column_iterator end() const noexcept
     {
-        assert(_reader._table != nullptr);
         auto result = *this;
         result._reader._data = _reader._table->data.ptr
             + size_t{_reader._table->row_count} * _reader._table->row_size_bytes;
@@ -304,7 +301,6 @@ public:
 
     raw_cursor<TableId> position() const noexcept
     {
-        assert(_reader._table != nullptr);
         auto row = static_cast<uint32_t>((_reader._data - _reader._table->data.ptr)
             / _reader._table->row_size_bytes) + 1;
         return raw_cursor<TableId>{detail::CreateCursor(_reader._table, row)};

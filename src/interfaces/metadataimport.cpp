@@ -91,7 +91,7 @@ namespace
         _In_opt_ TokenRangeFilter<TargetTableId> const* filter = nullptr)
     {
         HRESULT hr;
-        auto cursor = dnmd::md_token_to_cursor<TableId>(mdhandle, token);
+        auto cursor = dnmd::raw_cursor<TableId>{mdhandle, token};
         if (!cursor)
             return CLDB_E_INDEX_NOTFOUND;
 
@@ -215,7 +215,7 @@ namespace
     HRESULT ReadName(mdhandle_t handle, mdToken token,
         dnmd::column<TableId, dnmd::column_type_string> column, char const** name)
     {
-        auto cursor = dnmd::md_token_to_cursor<TableId>(handle, token);
+        auto cursor = dnmd::raw_cursor<TableId>{handle, token};
         if (!cursor)
             return CLDB_E_RECORD_NOTFOUND;
         return cursor.as().get_column_value(column, name) ? S_OK : CLDB_E_FILE_CORRUPT;
@@ -466,7 +466,7 @@ namespace
         // a TypeDef scope we can use to look up the inner definition.
         if (TypeFromToken(tkEnclosingClass) == mdtTypeRef)
         {
-            auto typeRefCursor = dnmd::md_token_to_cursor<mdtid_TypeRef>(importer->MetaData(), tkEnclosingClass);
+            auto typeRefCursor = dnmd::raw_cursor<mdtid_TypeRef>{importer->MetaData(), tkEnclosingClass};
             if (!typeRefCursor)
                 return CLDB_E_RECORD_NOTFOUND;
 
@@ -594,7 +594,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetScopeProps(
     ULONG* pchName,
     GUID* pmvid)
 {
-    auto cursor = dnmd::md_token_to_cursor<mdtid_Module>(_md_ptr.get(), MD_MODULE_TOKEN);
+    auto cursor = dnmd::raw_cursor<mdtid_Module>{_md_ptr.get(), MD_MODULE_TOKEN};
     if (!cursor)
         return CLDB_E_INDEX_NOTFOUND;
 
@@ -632,7 +632,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetTypeDefProps(
     if (TypeFromToken(td) != mdtTypeDef)
         return E_INVALIDARG;
 
-    auto cursor = dnmd::md_token_to_cursor<mdtid_TypeDef>(_md_ptr.get(), td);
+    auto cursor = dnmd::raw_cursor<mdtid_TypeDef>{_md_ptr.get(), td};
     if (!cursor)
         return CLDB_E_RECORD_NOTFOUND;
 
@@ -671,7 +671,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetInterfaceImplProps(
     if (TypeFromToken(iiImpl) != mdtInterfaceImpl)
         return E_INVALIDARG;
 
-    auto cursor = dnmd::md_token_to_cursor<mdtid_InterfaceImpl>(_md_ptr.get(), iiImpl);
+    auto cursor = dnmd::raw_cursor<mdtid_InterfaceImpl>{_md_ptr.get(), iiImpl};
     if (!cursor)
         return CLDB_E_INDEX_NOTFOUND;
 
@@ -700,7 +700,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetTypeRefProps(
     if (TypeFromToken(tr) != mdtTypeRef)
         return E_INVALIDARG;
 
-    auto cursor = dnmd::md_token_to_cursor<mdtid_TypeRef>(_md_ptr.get(), tr);
+    auto cursor = dnmd::raw_cursor<mdtid_TypeRef>{_md_ptr.get(), tr};
     if (!cursor)
         return CLDB_E_RECORD_NOTFOUND;
 
@@ -749,7 +749,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumMembers(
         if (TypeFromToken(cl) != mdtTypeDef)
             return E_INVALIDARG;
 
-        auto cursor = dnmd::md_token_to_cursor<mdtid_TypeDef>(_md_ptr.get(), cl);
+        auto cursor = dnmd::raw_cursor<mdtid_TypeDef>{_md_ptr.get(), cl};
         if (!cursor)
             return CLDB_E_INDEX_NOTFOUND;
 
@@ -791,7 +791,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumMembersWithName(
         if (TypeFromToken(cl) != mdtTypeDef)
             return E_INVALIDARG;
 
-        auto position = dnmd::md_token_to_cursor<mdtid_TypeDef>(_md_ptr.get(), cl);
+        auto position = dnmd::raw_cursor<mdtid_TypeDef>{_md_ptr.get(), cl};
         if (!position)
             return CLDB_E_INDEX_NOTFOUND;
         auto cursor = position.as();
@@ -1147,7 +1147,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::FindMethod(
     if (td == mdTypeDefNil || td == mdTokenNil)
         td = MD_GLOBAL_PARENT_TOKEN;
 
-    auto typedefCursor = dnmd::md_token_to_cursor<mdtid_TypeDef>(_md_ptr.get(), td);
+    auto typedefCursor = dnmd::raw_cursor<mdtid_TypeDef>{_md_ptr.get(), td};
     if (!typedefCursor)
         return CLDB_E_INDEX_NOTFOUND;
 
@@ -1223,7 +1223,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::FindField(
     if (td == mdTypeDefNil || td == mdTokenNil)
         td = MD_GLOBAL_PARENT_TOKEN;
 
-    auto typedefCursor = dnmd::md_token_to_cursor<mdtid_TypeDef>(_md_ptr.get(), td);
+    auto typedefCursor = dnmd::raw_cursor<mdtid_TypeDef>{_md_ptr.get(), td};
     if (!typedefCursor)
         return CLDB_E_INDEX_NOTFOUND;
 
@@ -1360,7 +1360,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetMethodProps(
     if (TypeFromToken(mb) != mdtMethodDef)
         return E_INVALIDARG;
 
-    auto cursor = dnmd::md_token_to_cursor<mdtid_MethodDef>(_md_ptr.get(), mb);
+    auto cursor = dnmd::raw_cursor<mdtid_MethodDef>{_md_ptr.get(), mb};
     if (!cursor)
         return CLDB_E_INDEX_NOTFOUND;
 
@@ -1411,7 +1411,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetMemberRefProps(
     if (TypeFromToken(mr) != mdtMemberRef)
         return E_INVALIDARG;
 
-    auto cursor = dnmd::md_token_to_cursor<mdtid_MemberRef>(_md_ptr.get(), mr);
+    auto cursor = dnmd::raw_cursor<mdtid_MemberRef>{_md_ptr.get(), mr};
     if (!cursor)
         return CLDB_E_INDEX_NOTFOUND;
 
@@ -1529,7 +1529,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetEventProps(
     if (TypeFromToken(ev) != mdtEvent)
         return E_INVALIDARG;
 
-    auto cursor = dnmd::md_token_to_cursor<mdtid_Event>(_md_ptr.get(), ev);
+    auto cursor = dnmd::raw_cursor<mdtid_Event>{_md_ptr.get(), ev};
     if (!cursor)
         return CLDB_E_RECORD_NOTFOUND;
 
@@ -1746,7 +1746,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetClassLayout(
         *pulClassSize = classSize;
     }
 
-    auto typeEntry = dnmd::md_token_to_cursor<mdtid_TypeDef>(_md_ptr.get(), td);
+    auto typeEntry = dnmd::raw_cursor<mdtid_TypeDef>{_md_ptr.get(), td};
     if (!typeEntry)
         return CLDB_E_RECORD_NOTFOUND;
 
@@ -1831,7 +1831,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetRVA(
 
     if (TypeFromToken(tk) == mdtMethodDef)
     {
-        auto cursor = dnmd::md_token_to_cursor<mdtid_MethodDef>(_md_ptr.get(), tk);
+        auto cursor = dnmd::raw_cursor<mdtid_MethodDef>{_md_ptr.get(), tk};
         if (!cursor)
             return CLDB_E_RECORD_NOTFOUND;
 
@@ -1878,7 +1878,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetPermissionSetProps(
     if (TypeFromToken(pm) != mdtPermission)
         return E_INVALIDARG;
 
-    auto cursor = dnmd::md_token_to_cursor<mdtid_DeclSecurity>(_md_ptr.get(), pm);
+    auto cursor = dnmd::raw_cursor<mdtid_DeclSecurity>{_md_ptr.get(), pm};
     if (!cursor)
         return CLDB_E_RECORD_NOTFOUND;
 
@@ -1906,7 +1906,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetSigFromToken(
     if (TypeFromToken(mdSig) != mdtSignature || ppvSig == nullptr || pcbSig == nullptr)
         return E_INVALIDARG;
 
-    auto cursor = dnmd::md_token_to_cursor<mdtid_StandAloneSig>(_md_ptr.get(), mdSig);
+    auto cursor = dnmd::raw_cursor<mdtid_StandAloneSig>{_md_ptr.get(), mdSig};
     if (!cursor)
         return CLDB_E_INDEX_NOTFOUND;
 
@@ -1930,7 +1930,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetModuleRefProps(
     if (TypeFromToken(mur) != mdtModuleRef)
         return E_INVALIDARG;
 
-    auto cursor = dnmd::md_token_to_cursor<mdtid_ModuleRef>(_md_ptr.get(), mur);
+    auto cursor = dnmd::raw_cursor<mdtid_ModuleRef>{_md_ptr.get(), mur};
     if (!cursor)
         return CLDB_E_INDEX_NOTFOUND;
 
@@ -1964,7 +1964,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetTypeSpecFromToken(
     if (TypeFromToken(typespec) != mdtTypeSpec)
         return E_INVALIDARG;
 
-    auto cursor = dnmd::md_token_to_cursor<mdtid_TypeSpec>(_md_ptr.get(), typespec);
+    auto cursor = dnmd::raw_cursor<mdtid_TypeSpec>{_md_ptr.get(), typespec};
     if (!cursor
         || !cursor.as().get_column_value(TypeSpec_Signature, ppvSig, (uint32_t*)pcbSig))
     {
@@ -2172,7 +2172,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetParamForMethodIndex(
     if (TypeFromToken(md) != mdtMethodDef || ulParamSeq == UINT32_MAX || ppd == nullptr)
         return E_INVALIDARG;
 
-    auto cursor = dnmd::md_token_to_cursor<mdtid_MethodDef>(_md_ptr.get(), md);
+    auto cursor = dnmd::raw_cursor<mdtid_MethodDef>{_md_ptr.get(), md};
     if (!cursor)
         return CLDB_E_RECORD_NOTFOUND;
 
@@ -2301,7 +2301,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetCustomAttributeProps(
     if (TypeFromToken(cv) != mdtCustomAttribute)
         return E_INVALIDARG;
 
-    auto cursor = dnmd::md_token_to_cursor<mdtid_CustomAttribute>(_md_ptr.get(), cv);
+    auto cursor = dnmd::raw_cursor<mdtid_CustomAttribute>{_md_ptr.get(), cv};
     if (!cursor)
         return CLDB_E_RECORD_NOTFOUND;
 
@@ -2488,7 +2488,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetFieldProps(
     if (TypeFromToken(mb) != mdtFieldDef)
         return E_INVALIDARG;
 
-    auto cursor = dnmd::md_token_to_cursor<mdtid_Field>(_md_ptr.get(), mb);
+    auto cursor = dnmd::raw_cursor<mdtid_Field>{_md_ptr.get(), mb};
     if (!cursor)
         return CLDB_E_RECORD_NOTFOUND;
 
@@ -2541,7 +2541,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetPropertyProps(
     if (TypeFromToken(prop) != mdtProperty)
         return E_INVALIDARG;
 
-    auto cursor = dnmd::md_token_to_cursor<mdtid_Property>(_md_ptr.get(), prop);
+    auto cursor = dnmd::raw_cursor<mdtid_Property>{_md_ptr.get(), prop};
     if (!cursor)
         return CLDB_E_RECORD_NOTFOUND;
 
@@ -2642,7 +2642,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetParamProps(
     if (TypeFromToken(tk) != mdtParamDef)
         return E_INVALIDARG;
 
-    auto cursor = dnmd::md_token_to_cursor<mdtid_Param>(_md_ptr.get(), tk);
+    auto cursor = dnmd::raw_cursor<mdtid_Param>{_md_ptr.get(), tk};
     if (!cursor)
         return CLDB_E_RECORD_NOTFOUND;
 
@@ -2719,7 +2719,7 @@ namespace
                 assert(!"Unexpected token in ResolveTypeDefRefSpecToName");
                 return E_FAIL;
             }
-            auto cursor = dnmd::md_token_to_cursor<mdtid_TypeDef, mdtid_TypeRef, mdtid_TypeSpec>(handle, typeTk);
+            auto cursor = dnmd::raw_cursor<mdtid_TypeDef, mdtid_TypeRef, mdtid_TypeSpec>{handle, typeTk};
             HRESULT hr = S_OK;
             bool isSpec = false;
             if (!cursor.visit([&](auto row) {
@@ -2927,7 +2927,7 @@ namespace
         if (tkType != mdtTypeRef && tkType != mdtTypeDef)
             return readIn;
 
-        auto cursor = dnmd::md_token_to_cursor<mdtid_TypeRef, mdtid_TypeDef>(cxt.Handle, tk);
+        auto cursor = dnmd::raw_cursor<mdtid_TypeRef, mdtid_TypeDef>{cxt.Handle, tk};
         uint32_t result = readIn;
         if (!cursor.visit([&](auto row) {
             dnmd::row_reader reader{row};
@@ -3173,7 +3173,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::IsGlobal(
     case mdtEvent:
     case mdtProperty:
     {
-        auto cursor = dnmd::md_token_to_cursor<mdtid_Field, mdtid_MethodDef, mdtid_Event, mdtid_Property>(_md_ptr.get(), pd);
+        auto cursor = dnmd::raw_cursor<mdtid_Field, mdtid_MethodDef, mdtid_Event, mdtid_Property>{_md_ptr.get(), pd};
         if (!cursor)
             return CLDB_E_RECORD_NOTFOUND;
         bool found = false;
@@ -3250,7 +3250,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetGenericParamProps(
 {
     UNREFERENCED_PARAMETER(reserved);
 
-    auto cursor = dnmd::md_token_to_cursor<mdtid_GenericParam>(_md_ptr.get(), gp);
+    auto cursor = dnmd::raw_cursor<mdtid_GenericParam>{_md_ptr.get(), gp};
     if (!cursor)
         return CLDB_E_RECORD_NOTFOUND;
 
@@ -3281,7 +3281,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetMethodSpecProps(
     PCCOR_SIGNATURE* ppvSigBlob,
     ULONG* pcbSigBlob)
 {
-    auto cursor = dnmd::md_token_to_cursor<mdtid_MethodSpec>(_md_ptr.get(), mi);
+    auto cursor = dnmd::raw_cursor<mdtid_MethodSpec>{_md_ptr.get(), mi};
     if (!cursor)
         return CLDB_E_RECORD_NOTFOUND;
 
@@ -3351,7 +3351,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetGenericParamConstraintProps(
     mdGenericParam* ptGenericParam,
     mdToken* ptkConstraintType)
 {
-    auto cursor = dnmd::md_token_to_cursor<mdtid_GenericParamConstraint>(_md_ptr.get(), gpc);
+    auto cursor = dnmd::raw_cursor<mdtid_GenericParamConstraint>{_md_ptr.get(), gpc};
     if (!cursor)
         return CLDB_E_RECORD_NOTFOUND;
 
@@ -3450,7 +3450,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetAssemblyProps(
     DWORD       *pdwAssemblyFlags)
 {
 
-    auto cursor = dnmd::md_token_to_cursor<mdtid_Assembly>(_md_ptr.get(), mda);
+    auto cursor = dnmd::raw_cursor<mdtid_Assembly>{_md_ptr.get(), mda};
     if (!cursor)
         return CLDB_E_RECORD_NOTFOUND;
 
@@ -3550,7 +3550,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetAssemblyRefProps(
     DWORD       *pdwAssemblyRefFlags)
 {
 
-    auto cursor = dnmd::md_token_to_cursor<mdtid_AssemblyRef>(_md_ptr.get(), mdar);
+    auto cursor = dnmd::raw_cursor<mdtid_AssemblyRef>{_md_ptr.get(), mdar};
     if (!cursor)
         return CLDB_E_RECORD_NOTFOUND;
 
@@ -3642,7 +3642,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetFileProps(
     DWORD       *pdwFileFlags)
 {
 
-    auto cursor = dnmd::md_token_to_cursor<mdtid_File>(_md_ptr.get(), mdf);
+    auto cursor = dnmd::raw_cursor<mdtid_File>{_md_ptr.get(), mdf};
     if (!cursor)
         return CLDB_E_RECORD_NOTFOUND;
 
@@ -3688,7 +3688,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetExportedTypeProps(
     DWORD       *pdwExportedTypeFlags)
 {
 
-    auto cursor = dnmd::md_token_to_cursor<mdtid_ExportedType>(_md_ptr.get(), mdct);
+    auto cursor = dnmd::raw_cursor<mdtid_ExportedType>{_md_ptr.get(), mdct};
     if (!cursor)
         return CLDB_E_RECORD_NOTFOUND;
 
@@ -3746,7 +3746,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetManifestResourceProps(
     DWORD       *pdwResourceFlags)
 {
 
-    auto cursor = dnmd::md_token_to_cursor<mdtid_ManifestResource>(_md_ptr.get(), mdmr);
+    auto cursor = dnmd::raw_cursor<mdtid_ManifestResource>{_md_ptr.get(), mdmr};
     if (!cursor)
         return CLDB_E_RECORD_NOTFOUND;
 

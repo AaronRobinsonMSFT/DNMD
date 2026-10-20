@@ -123,7 +123,7 @@ inline uint32_t CursorRow(mdcursor_t const& c) noexcept
 
 inline mdcursor_t CreateCursor(mdtable_t const* table, uint32_t row) noexcept
 {
-    assert(table != nullptr && row <= table->row_count + 1);
+    assert(row <= table->row_count + 1);
     return {reinterpret_cast<intptr_t>(table), static_cast<intptr_t>(row)};
 }
 

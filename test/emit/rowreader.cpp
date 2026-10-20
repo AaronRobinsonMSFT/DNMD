@@ -295,9 +295,6 @@ namespace
             EXPECT_EQ(expected_source, actual_source);
 
             mdcursor_t unchanged = direct;
-            EXPECT_FALSE((dnmd::detail::resolve_indirect_cursor<DirectTableId, IndirectTableId>({}, unchanged)));
-            EXPECT_EQ(direct._reserved1, unchanged._reserved1);
-            EXPECT_EQ(direct._reserved2, unchanged._reserved2);
             source._reserved2 = source_end + 1;
             EXPECT_FALSE((dnmd::detail::resolve_indirect_cursor<DirectTableId, IndirectTableId>(source, unchanged)));
             EXPECT_EQ(direct._reserved1, unchanged._reserved1);

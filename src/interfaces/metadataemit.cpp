@@ -581,7 +581,7 @@ namespace
         dnmd::column<TableId, dnmd::column_type_constant> flagsColumn, uint32_t flagToRemove)
     {
         // TODO: Update EncLog
-        auto position = dnmd::md_token_to_cursor<TableId>(md, tk);
+        auto position = dnmd::raw_cursor<TableId>{md, tk};
         if (!position)
             return CLDB_E_FILE_CORRUPT;
         auto row = position.as();
@@ -619,7 +619,7 @@ namespace
     HRESULT AddFlag(mdhandle_t md, mdToken tk,
         dnmd::column<TableId, dnmd::column_type_constant> flagsColumn, uint32_t flagToAdd)
     {
-        auto position = dnmd::md_token_to_cursor<TableId>(md, tk);
+        auto position = dnmd::raw_cursor<TableId>{md, tk};
         if (!position)
             return CLDB_E_FILE_CORRUPT;
         return AddFlag(position.as(), flagsColumn, flagToAdd);
@@ -816,7 +816,7 @@ HRESULT MetadataEmit::SetFieldMarshal(
         PCCOR_SIGNATURE pvNativeType,
         ULONG       cbNativeType)
 {
-    auto parent = dnmd::md_token_to_cursor<mdtid_Field, mdtid_Param>(MetaData(), tk);
+    auto parent = dnmd::raw_cursor<mdtid_Field, mdtid_Param>{MetaData(), tk};
     if (!parent)
         return CLDB_E_FILE_CORRUPT;
 
@@ -880,7 +880,7 @@ HRESULT MetadataEmit::DefinePermissionSet(
     if (TypeFromToken(tk) == mdtTypeDef
         || TypeFromToken(tk) == mdtMethodDef)
     {
-        auto parent = dnmd::md_token_to_cursor<mdtid_TypeDef, mdtid_MethodDef>(MetaData(), tk);
+        auto parent = dnmd::raw_cursor<mdtid_TypeDef, mdtid_MethodDef>{MetaData(), tk};
         HRESULT result = E_FAIL;
         parent.visit([&](auto row) {
             if constexpr (dnmd::cursor_tableid_v<decltype(row)> == mdtid_TypeDef)
@@ -913,7 +913,7 @@ HRESULT MetadataEmit::SetRVA(
         mdMethodDef md,
         ULONG       ulRVA)
 {
-    auto method = dnmd::md_token_to_cursor<mdtid_MethodDef>(MetaData(), md);
+    auto method = dnmd::raw_cursor<mdtid_MethodDef>{MetaData(), md};
     if (!method)
         return CLDB_E_FILE_CORRUPT;
 
@@ -974,7 +974,7 @@ HRESULT MetadataEmit::SetParent(
         mdMemberRef mr,
         mdToken     tk)
 {
-    auto c = dnmd::md_token_to_cursor<mdtid_MemberRef>(MetaData(), mr);
+    auto c = dnmd::raw_cursor<mdtid_MemberRef>{MetaData(), mr};
     if (!c)
         return CLDB_E_FILE_CORRUPT;
 
@@ -1175,7 +1175,7 @@ HRESULT MetadataEmit::SetMethodProps(
         ULONG       ulCodeRVA,
         DWORD       dwImplFlags)
 {
-    auto c = dnmd::md_token_to_cursor<mdtid_MethodDef>(MetaData(), md);
+    auto c = dnmd::raw_cursor<mdtid_MethodDef>{MetaData(), md};
     if (!c)
         return CLDB_E_FILE_CORRUPT;
 
@@ -1212,7 +1212,7 @@ HRESULT MetadataEmit::SetTypeDefProps(
         mdToken     tkExtends,
         mdToken     rtkImplements[])
 {
-    auto c = dnmd::md_token_to_cursor<mdtid_TypeDef>(MetaData(), td);
+    auto c = dnmd::raw_cursor<mdtid_TypeDef>{MetaData(), td};
     if (!c)
         return CLDB_E_FILE_CORRUPT;
 
@@ -1335,7 +1335,7 @@ HRESULT MetadataEmit::SetEventProps(
         mdMethodDef rmdOtherMethods[])
 {
     HRESULT hr;
-    auto c = dnmd::md_token_to_cursor<mdtid_Event>(MetaData(), ev);
+    auto c = dnmd::raw_cursor<mdtid_Event>{MetaData(), ev};
     if (!c)
         return CLDB_E_FILE_CORRUPT;
 
@@ -1598,7 +1598,7 @@ HRESULT MetadataEmit::SetCustomAttributeValue(
     if (TypeFromToken(pcv) != mdtCustomAttribute)
         return E_INVALIDARG;
 
-    auto c = dnmd::md_token_to_cursor<mdtid_CustomAttribute>(MetaData(), pcv);
+    auto c = dnmd::raw_cursor<mdtid_CustomAttribute>{MetaData(), pcv};
     if (!c)
         return CLDB_E_FILE_CORRUPT;
 
@@ -1994,7 +1994,7 @@ HRESULT MetadataEmit::SetFieldProps(
         void const  *pValue,
         ULONG       cchValue)
 {
-    auto c = dnmd::md_token_to_cursor<mdtid_Field>(MetaData(), fd);
+    auto c = dnmd::raw_cursor<mdtid_Field>{MetaData(), fd};
     if (!c)
         return CLDB_E_FILE_CORRUPT;
 
@@ -2053,7 +2053,7 @@ HRESULT MetadataEmit::SetPropertyProps(
         mdMethodDef rmdOtherMethods[])
 {
     HRESULT hr;
-    auto c = dnmd::md_token_to_cursor<mdtid_Property>(MetaData(), pr);
+    auto c = dnmd::raw_cursor<mdtid_Property>{MetaData(), pr};
     if (!c)
         return CLDB_E_FILE_CORRUPT;
 
@@ -2141,7 +2141,7 @@ HRESULT MetadataEmit::SetParamProps(
         void const  *pValue,
         ULONG       cchValue)
 {
-    auto c = dnmd::md_token_to_cursor<mdtid_Param>(MetaData(), pd);
+    auto c = dnmd::raw_cursor<mdtid_Param>{MetaData(), pd};
     if (!c)
         return CLDB_E_FILE_CORRUPT;
 
@@ -2280,7 +2280,7 @@ HRESULT MetadataEmit::SetMethodImplFlags(
         mdMethodDef md,
         DWORD       dwImplFlags)
 {
-    auto c = dnmd::md_token_to_cursor<mdtid_MethodDef>(MetaData(), md);
+    auto c = dnmd::raw_cursor<mdtid_MethodDef>{MetaData(), md};
     if (!c)
         return E_INVALIDARG;
 
@@ -2309,7 +2309,7 @@ HRESULT MetadataEmit::SetFieldRVA(
 
     RETURN_IF_FAILED(hr);
 
-    auto field = dnmd::md_token_to_cursor<mdtid_Field>(MetaData(), fd);
+    auto field = dnmd::raw_cursor<mdtid_Field>{MetaData(), fd};
     if (!field)
         return E_INVALIDARG;
 
@@ -2502,7 +2502,7 @@ HRESULT MetadataEmit::SetGenericParamProps(
     if (reserved != 0)
         return META_E_BAD_INPUT_PARAMETER;
 
-    auto c = dnmd::md_token_to_cursor<mdtid_GenericParam>(MetaData(), gp);
+    auto c = dnmd::raw_cursor<mdtid_GenericParam>{MetaData(), gp};
     if (!c)
         return E_INVALIDARG;
 
@@ -2949,7 +2949,7 @@ HRESULT MetadataEmit::SetAssemblyProps(
         ASSEMBLYMETADATA const *pMetaData,
         DWORD       dwAssemblyFlags)
 {
-    auto c = dnmd::md_token_to_cursor<mdtid_Assembly>(MetaData(), pma);
+    auto c = dnmd::raw_cursor<mdtid_Assembly>{MetaData(), pma};
     if (!c)
         return E_INVALIDARG;
 
@@ -3043,7 +3043,7 @@ HRESULT MetadataEmit::SetAssemblyRefProps(
         ULONG       cbHashValue,
         DWORD       dwAssemblyRefFlags)
 {
-    auto c = dnmd::md_token_to_cursor<mdtid_AssemblyRef>(MetaData(), ar);
+    auto c = dnmd::raw_cursor<mdtid_AssemblyRef>{MetaData(), ar};
     if (!c)
         return E_INVALIDARG;
 
@@ -3134,7 +3134,7 @@ HRESULT MetadataEmit::SetFileProps(
         ULONG       cbHashValue,
         DWORD       dwFileFlags)
 {
-    auto c = dnmd::md_token_to_cursor<mdtid_File>(MetaData(), file);
+    auto c = dnmd::raw_cursor<mdtid_File>{MetaData(), file};
     if (!c)
         return E_INVALIDARG;
 
@@ -3165,7 +3165,7 @@ HRESULT MetadataEmit::SetExportedTypeProps(
         mdTypeDef   tkTypeDef,
         DWORD       dwExportedTypeFlags)
 {
-    auto c = dnmd::md_token_to_cursor<mdtid_ExportedType>(MetaData(), ct);
+    auto c = dnmd::raw_cursor<mdtid_ExportedType>{MetaData(), ct};
     if (!c)
         return E_INVALIDARG;
 
@@ -3200,7 +3200,7 @@ HRESULT MetadataEmit::SetManifestResourceProps(
         DWORD       dwOffset,
         DWORD       dwResourceFlags)
 {
-    auto c = dnmd::md_token_to_cursor<mdtid_ManifestResource>(MetaData(), mr);
+    auto c = dnmd::raw_cursor<mdtid_ManifestResource>{MetaData(), mr};
     if (!c)
         return E_INVALIDARG;
 

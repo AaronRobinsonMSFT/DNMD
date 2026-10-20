@@ -49,6 +49,13 @@ default-constructed or constructed directly from a C cursor.
 represent positions, including nil and one-past-the-end positions. Test a position
 before calling `as()` to obtain a row; calling `as()` on a non-dereferenceable
 position violates its precondition.
+Positions check dereferenceability inline using their table and RID bounds,
+without calling a C API predicate.
+Constructors accepting `mdcursor_t` require a non-null table and assert this
+precondition. Default-constructed raw/indirect positions and row-add guards remain
+empty zero-RID sentinels; their checks short-circuit on the RID rather than test
+the table pointer. Narrowing a raw position preserves both default-empty and
+table-bound nil positions.
 
 ```cpp
 dnmd::handle_ptr handle{md_create_new_handle()};
@@ -72,8 +79,17 @@ Only single-table raw cursors expose `as()`. Narrow a multi-table position with
 dispatch to the matching row type. `visit()` returns false without invoking the
 callable for nil or end positions.
 
-`dnmd::md_token_to_cursor<TableIds...>` also accepts multiple possible table IDs.
-Use `dnmd::md_is_valid_token` when only validation is needed. Rows provide
+Construct a raw position directly with `dnmd::raw_cursor<TableIds...>{handle, token}`.
+The handle must be valid; this precondition is asserted. Valid tokens must identify
+an existing row in one of the permitted tables. Invalid tokens, including nil,
+end, and wrong-table tokens, produce a nil position in the first non-reserved
+table in the parameter pack. The nil position retains its table even if that table
+is empty, without allocating or fully initializing the table.
+
+`dnmd::md_token_to_cursor<TableIds...>` uses the same lookup and nil fallback for
+valid handles; invalid handles still return a default-empty position.
+Use `dnmd::md_is_valid_token` when only validation is needed. Both helpers use
+the C++ token bounds checks rather than the C token-lookup API. Rows provide
 `get_column_values` for bulk token reads and `get_parent_token` for list owners.
 Typed range searches use column descriptors and return a raw cursor in the
 searched table along with the range status and count. Their status type is

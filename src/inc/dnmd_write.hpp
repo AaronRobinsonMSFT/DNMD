@@ -319,10 +319,10 @@ namespace detail
 {
 inline void commit_row_add(mdcursor_t row) noexcept
 {
-    auto table = CursorTable(row);
-    if (table == nullptr)
+    if (CursorRow(row) == 0)
         return;
 
+    auto table = CursorTable(row);
     switch (table->table_id)
     {
     case mdtid_ClassLayout: return dnmd::md_commit_row_add(raw_cursor<mdtid_ClassLayout>{row}.as());

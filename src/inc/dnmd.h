@@ -253,9 +253,6 @@ bool md_cursor_move(mdcursor_t* c, int32_t delta);
 // Move to the next row.
 bool md_cursor_next(mdcursor_t* c);
 
-// Return whether the cursor points to an existing row, rather than nil or one past the end.
-bool md_cursor_is_dereferenceable(mdcursor_t c);
-
 // Convert between a token and location in metadata tables.
 bool md_token_to_cursor(mdhandle_t handle, mdToken tk, mdcursor_t* c);
 bool md_cursor_to_token(mdcursor_t c, mdToken* tk);

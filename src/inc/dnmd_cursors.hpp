@@ -9,6 +9,21 @@ namespace dnmd
 
 namespace detail
 {
+extern "C" mdcxt_t* extract_mdcxt(mdhandle_t handle);
+
+inline bool is_valid_token(mdcxt_t const& context, mdToken token) noexcept
+{
+    uint32_t table = ExtractTokenType(token);
+    uint32_t row = (RidFromToken)(token);
+    return table < static_cast<uint32_t>(mdtid_End) && row != 0 && row <= context.tables[table].row_count;
+}
+
+inline bool is_dereferenceable(mdcursor_t const& cursor) noexcept
+{
+    uint32_t row = CursorRow(cursor);
+    return row != 0 && row <= CursorTable(cursor)->row_count;
+}
+
 template<mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
 inline bool resolve_indirect_cursor(mdcursor_t source, mdcursor_t& target) noexcept;
 }
@@ -30,9 +45,10 @@ struct cursor final
 
         explicit cursor(mdcursor_t c) noexcept : _cursor{ c }
         {
+            assert(detail::CursorTable(_cursor) != nullptr);
 #ifndef NDEBUG
             mdToken tk;
-            assert(::md_cursor_is_dereferenceable(_cursor));
+            assert(detail::is_dereferenceable(_cursor));
             assert(::md_cursor_to_token(_cursor, &tk));
             assert(ExtractTokenType(tk) == TableId);
 #endif
@@ -177,13 +193,14 @@ struct indirect_cursor final
         indirect_cursor() = default;
         explicit indirect_cursor(mdcursor_t c) noexcept : _cursor{ c }
         {
+            assert(detail::CursorTable(_cursor) != nullptr);
 #ifndef NDEBUG
             mdToken tk;
             assert(::md_cursor_to_token(_cursor, &tk));
             assert(ExtractTokenType(tk) == DirectTableId || ExtractTokenType(tk) == IndirectTableId);
 #endif
             target_resolved = detail::resolve_indirect_cursor<DirectTableId, IndirectTableId>(_cursor, target);
-            has_row = target_resolved && ::md_cursor_is_dereferenceable(target);
+            has_row = target_resolved && detail::is_dereferenceable(target);
         }
 
         operator mdcursor_t() const noexcept
@@ -219,13 +236,61 @@ struct raw_cursor final
     static_assert(sizeof...(TableIds) != 0, "A raw cursor must specify at least one table.");
 
     private:
+        template<mdtable_id_t...>
+        friend struct raw_cursor;
+        template<mdtable_id_t... TargetTableIds>
+        friend raw_cursor<TargetTableIds...> md_token_to_cursor(mdhandle_t handle, mdToken token) noexcept;
+
         mdcursor_t _cursor{};
+
+        static constexpr mdtable_id_t first_table_id = [] {
+            constexpr mdtable_id_t tables[] = {TableIds...};
+            for (auto table : tables)
+            {
+                if (table != mdtid_Unused)
+                    return table;
+            }
+            return mdtid_Unused;
+        }();
+
+        static mdcxt_t& context_from_handle(mdhandle_t handle) noexcept
+        {
+            auto context = detail::extract_mdcxt(handle);
+            assert(context != nullptr);
+            return *context;
+        }
+
+        raw_cursor(mdcxt_t& context, mdToken token) noexcept
+        {
+            static_assert(first_table_id >= mdtid_First && first_table_id < mdtid_End,
+                "A token position must specify at least one concrete table.");
+            auto table_id = first_table_id;
+            uint32_t row = 0;
+            uint32_t token_table = ExtractTokenType(token);
+            if (((token_table == static_cast<uint32_t>(TableIds)) || ...) && detail::is_valid_token(context, token))
+            {
+                table_id = static_cast<mdtable_id_t>(token_table);
+                row = (detail::RidFromToken)(token);
+            }
+
+            auto table = &context.tables[table_id];
+            // Preserve empty-table initialization state while giving nil tokens their table identity.
+            if (row == 0 && table->table_id == 0 && table_id != mdtid_Module)
+                table->table_id = static_cast<uint8_t>(table_id);
+            _cursor = detail::CreateCursor(table, row);
+        }
 
     public:
         raw_cursor() = default;
+        raw_cursor(mdhandle_t handle, mdToken token) noexcept
+            : raw_cursor{context_from_handle(handle), token}
+        {
+        }
+
         explicit raw_cursor(mdcursor_t c) noexcept
             : _cursor{ c }
         {
+            assert(detail::CursorTable(_cursor) != nullptr);
 #ifndef NDEBUG
             mdToken tk;
             assert(::md_cursor_to_token(_cursor, &tk));
@@ -240,7 +305,7 @@ struct raw_cursor final
 
         explicit operator bool() const noexcept
         {
-            return ::md_cursor_is_dereferenceable(_cursor);
+            return detail::is_dereferenceable(_cursor);
         }
 
         bool get_token(mdToken& tk) const noexcept
@@ -263,7 +328,10 @@ struct raw_cursor final
             mdToken tk;
             if (!get_token(tk) || ExtractTokenType(tk) != CodedTableId)
                 return {};
-            return raw_cursor<CodedTableId>{_cursor};
+            // Narrowing preserves default-empty positions without a C-cursor conversion.
+            raw_cursor<CodedTableId> result;
+            result._cursor = _cursor;
+            return result;
         }
 
         template<typename TCallable>
@@ -299,8 +367,6 @@ template<mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
 inline bool resolve_indirect_cursor(mdcursor_t source, mdcursor_t& target) noexcept
 {
     auto table = CursorTable(source);
-    if (table == nullptr)
-        return false;
     if (table->table_id == DirectTableId)
     {
         target = source;
@@ -396,16 +462,16 @@ inline raw_cursor<TableId> md_create_cursor(mdhandle_t handle) noexcept
 template<mdtable_id_t... TableIds>
 inline raw_cursor<TableIds...> md_token_to_cursor(mdhandle_t handle, mdToken tk) noexcept
 {
-    mdcursor_t c;
-    if (!((ExtractTokenType(tk) == TableIds) || ...) || !::md_token_to_cursor(handle, tk, &c))
+    auto context = detail::extract_mdcxt(handle);
+    if (context == nullptr)
         return {};
-    return raw_cursor<TableIds...>{c};
+    return raw_cursor<TableIds...>{*context, tk};
 }
 
 inline bool md_is_valid_token(mdhandle_t handle, mdToken tk) noexcept
 {
-    mdcursor_t c;
-    return ::md_token_to_cursor(handle, tk, &c);
+    auto context = detail::extract_mdcxt(handle);
+    return context != nullptr && detail::is_valid_token(*context, tk);
 }
 
 } // namespace dnmd

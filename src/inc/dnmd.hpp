@@ -7,6 +7,7 @@
 #include "dnmd_read.hpp"
 #include "dnmd_write.hpp"
 #include "dnmd_search.hpp"
+#include <cassert>
 #include <memory>
 #include <utility>
 
@@ -31,7 +32,10 @@ private:
     mdcursor_t new_row{};
 public:
     added_row_t() = default;
-    explicit added_row_t(mdcursor_t row) : new_row{ row } {}
+    explicit added_row_t(mdcursor_t row) : new_row{ row }
+    {
+        assert(detail::CursorTable(new_row) != nullptr);
+    }
     added_row_t(added_row_t const& other) = delete;
     added_row_t(added_row_t&& other)
     {

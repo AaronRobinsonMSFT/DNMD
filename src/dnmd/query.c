@@ -59,13 +59,6 @@ bool md_cursor_next(mdcursor_t* c)
     return md_cursor_move(c, 1);
 }
 
-bool md_cursor_is_dereferenceable(mdcursor_t c)
-{
-    mdtable_t* table = CursorTable(&c);
-    uint32_t row = CursorRow(&c);
-    return table != NULL && row != 0 && row <= table->row_count;
-}
-
 bool md_token_to_cursor(mdhandle_t handle, mdToken tk, mdcursor_t* c)
 {
     assert(c != NULL);

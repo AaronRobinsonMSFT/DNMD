@@ -136,7 +136,7 @@ TEST_F(CppCursor, EmptyPositions)
     EXPECT_FALSE(indirect);
     EXPECT_FALSE(dnmd::md_cursor_next(position));
     EXPECT_FALSE(dnmd::md_cursor_next(indirect));
-    EXPECT_FALSE(md_cursor_is_dereferenceable(mdcursor_t{}));
+    EXPECT_FALSE(dnmd::detail::is_dereferenceable(mdcursor_t{}));
 
     mdToken token = 0x12345678;
     EXPECT_FALSE(indirect.get_target_token(token));
