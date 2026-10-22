@@ -1,6 +1,7 @@
 set(SOURCES
   access.c
   bytes.c
+  cppapi.c
   deltas.c
   editor.c
   entry.c
@@ -12,6 +13,7 @@ set(SOURCES
 
 set(PUBLIC_HEADERS
   ../inc/dnmd.h
+  ../inc/dnmd_edit.h
   ../inc/dnmd.hpp
   ../inc/dnmd_columns.hpp
   ../inc/dnmd_cursors.hpp

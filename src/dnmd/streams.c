@@ -285,8 +285,7 @@ bool initialize_tables(mdcxt_t* cxt)
             if (!consume_table_rows(table, &curr, &curr_len))
                 return false;
 
-            // Store the context on the table as an indication of fully initialized.
-            table->cxt = cxt;
+            table->is_initialized = true;
         }
         sorted_tables = sorted_tables >> 1;
         valid = valid >> 1;

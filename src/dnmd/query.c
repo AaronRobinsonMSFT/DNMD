@@ -136,13 +136,6 @@ bool resolve_column_reference(mdtable_t const* source, mdtable_id_t table_id, ui
     if (table_row > table->row_count + 1)
         return false;
 
-    // Empty tables still need an identity for nil/end tokens.
-    if (table->table_id == 0 && table_id != 0)
-    {
-        assert(table_row == 0 || table_row == 1);
-        table->table_id = table_id;
-    }
-
     *cursor = create_cursor(table, table_row);
     return true;
 }

@@ -32,7 +32,7 @@ private:
     mdtable_t const* _table;
     uint8_t const* _data;
 
-    row_reader(mdtable_t const* table, uint8_t const* data) noexcept : _table{table}, _data{data} {}
+    row_reader(mdtable_t const& table, uint8_t const* data) noexcept : _table{&table}, _data{data} {}
 
     template<typename ColumnType>
     mdtcol_t column_details(column<TableId, ColumnType> col) const noexcept
@@ -65,19 +65,24 @@ private:
     }
 
     template<mdtable_id_t... TargetTableIds>
-    bool read_position(column<TableId, raw_cursor<TargetTableIds...>> col, mdcursor_t& value) const noexcept
+    bool read_position(column<TableId, raw_cursor<TargetTableIds...>> col,
+        mdtable_t const*& target, uint32_t& row) const noexcept
     {
         mdtable_id_t table;
-        uint32_t row;
-        return detail::column_reference_codec<TargetTableIds...>::decode(read_raw(col), table, row)
-            && detail::resolve_column_reference(_table, table, row, &value);
+        if (!detail::column_reference_codec<TargetTableIds...>::decode(read_raw(col), table, row))
+            return false;
+        target = &_table->cxt->tables[table];
+        return uint64_t{row} <= uint64_t{target->row_count} + 1;
     }
 
-    template<mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
-    bool read_position(column<TableId, indirect_cursor<DirectTableId, IndirectTableId>> col, mdcursor_t& value) const noexcept
+    template<mdtable_id_t Direct, mdtable_id_t Ptr>
+    bool read_position(column<TableId, indirect_cursor<Direct, Ptr>> col,
+        mdtable_t const*& target, uint32_t& row) const noexcept
     {
-        auto target = detail::list_target_table<DirectTableId, IndirectTableId>(_table);
-        return detail::resolve_column_reference(_table, target, (detail::RidFromToken)(read_raw(col)), &value);
+        auto table = detail::list_target_table<Direct, Ptr>(_table);
+        target = &_table->cxt->tables[table];
+        row = (detail::RidFromToken)(read_raw(col));
+        return uint64_t{row} <= uint64_t{target->row_count} + 1;
     }
 
     void advance() noexcept
@@ -87,9 +92,9 @@ private:
 
 public:
     explicit row_reader(cursor<TableId> const& row) noexcept
-        : _table{detail::CursorTable(row._cursor)}
+        : _table{detail::CursorTable(row)}
         , _data{_table->data.ptr
-            + size_t{detail::CursorRow(row._cursor) - 1} * _table->row_size_bytes}
+            + size_t{detail::CursorRow(row) - 1} * _table->row_size_bytes}
     {
     }
 
@@ -113,10 +118,11 @@ public:
     template<mdtable_id_t... TargetTableIds>
     bool read(column<TableId, raw_cursor<TargetTableIds...>> col, raw_cursor<TargetTableIds...>& value) const noexcept
     {
-        mdcursor_t position;
-        if (!read_position(col, position))
+        mdtable_t const* table;
+        uint32_t row;
+        if (!read_position(col, table, row))
             return false;
-        value = raw_cursor<TargetTableIds...>{position};
+        value = raw_cursor<TargetTableIds...>::at(_table->cxt, row, static_cast<mdtable_id_t>(table->table_id));
         return true;
     }
 
@@ -131,10 +137,12 @@ public:
     template<mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
     bool read(column<TableId, indirect_cursor<DirectTableId, IndirectTableId>> col, indirect_cursor<DirectTableId, IndirectTableId>& value) const noexcept
     {
-        mdcursor_t position;
-        if (!read_position(col, position))
+        mdtable_t const* table;
+        uint32_t row;
+        if (!read_position(col, table, row))
             return false;
-        value = indirect_cursor<DirectTableId, IndirectTableId>{position};
+        value = indirect_cursor<DirectTableId, IndirectTableId>::at(
+            _table->cxt, row, static_cast<mdtable_id_t>(table->table_id));
         return true;
     }
 
@@ -143,11 +151,10 @@ public:
         indirect_cursor<DirectTableId, IndirectTableId>& value, uint32_t* count) const noexcept
     {
         assert(count != nullptr);
-        mdcursor_t position;
-        if (!read_position(col, position))
+        mdtable_t const* target;
+        uint32_t first;
+        if (!read_position(col, target, first))
             return false;
-        auto target = detail::CursorTable(position);
-        uint32_t first = detail::CursorRow(position);
         uint32_t length = 0;
         if (first != 0 && first != target->row_count + 1)
         {
@@ -156,11 +163,11 @@ public:
             auto end = _table->data.ptr + size_t{_table->row_count} * _table->row_size_bytes;
             for (next.advance(); next._data < end; next.advance())
             {
-                mdcursor_t next_position;
-                if (!next.read_position(col, next_position))
+                mdtable_t const* next_table;
+                uint32_t last;
+                if (!next.read_position(col, next_table, last))
                     return false;
-                assert(detail::CursorTable(next_position) == target);
-                uint32_t last = detail::CursorRow(next_position);
+                assert(next_table == target);
                 if (last == 0)
                     continue;
                 if (last < first)
@@ -169,7 +176,39 @@ public:
                 break;
             }
         }
-        value = indirect_cursor<DirectTableId, IndirectTableId>{position};
+        value = indirect_cursor<DirectTableId, IndirectTableId>::at(_table->cxt, first, static_cast<mdtable_id_t>(target->table_id));
+        *count = length;
+        return true;
+    }
+
+    template<mdtable_id_t Target>
+    bool read(column<TableId, raw_cursor<Target>> col, raw_cursor<Target>& value, uint32_t* count) const noexcept
+    {
+        mdtable_t const* target;
+        uint32_t first;
+        if (!read_position(col, target, first))
+            return false;
+        uint32_t length = 0;
+        if (first != 0 && first != target->row_count + 1)
+        {
+            length = target->row_count - first + 1;
+            auto next = *this;
+            auto end = _table->data.ptr + size_t{_table->row_count} * _table->row_size_bytes;
+            for (next.advance(); next._data < end; next.advance())
+            {
+                mdtable_t const* next_table;
+                uint32_t last;
+                if (!next.read_position(col, next_table, last))
+                    return false;
+                if (last == 0)
+                    continue;
+                if (last < first)
+                    return false;
+                length = last - first;
+                break;
+            }
+        }
+        value = raw_cursor<Target>::at(_table->cxt, first);
         *count = length;
         return true;
     }
@@ -208,15 +247,16 @@ private:
     template<mdtable_id_t, typename, typename>
     friend struct column_iterator;
 
-    row_reader<TableId> _reader;
+    mdtable_t const* _table;
+    uint8_t const* _data;
     column<TableId, ColumnType> _column;
 
-    column_iterator(row_reader<TableId> reader, column<TableId, ColumnType> col) noexcept
-        : _reader{reader}, _column{col} {}
+    column_iterator(mdtable_t const* table, uint8_t const* data, column<TableId, ColumnType> col) noexcept
+        : _table{table}, _data{data}, _column{col} {}
 
     void assert_same_column(column_iterator const& other) const noexcept
     {
-        assert(_reader._table == other._reader._table && _column.column_index == other._column.column_index);
+        assert(_table == other._table && _column.column_index == other._column.column_index);
         (void)other;
     }
 
@@ -227,25 +267,26 @@ public:
     using reference = value_type;
     using pointer = void;
 
-    column_iterator() noexcept : _reader{nullptr, nullptr}, _column{static_cast<col_index_t>(0)} {}
+    column_iterator() noexcept : _table{nullptr}, _data{nullptr}, _column{static_cast<col_index_t>(0)} {}
 
     column_iterator(cursor<TableId> const& row, column<TableId, ColumnType> col) noexcept
-        : _reader{row}, _column{col} {}
+        : _table{detail::CursorTable(row)},
+          _data{_table->data.ptr + size_t{detail::CursorRow(row) - 1} * _table->row_size_bytes}, _column{col} {}
 
     value_type operator*() const noexcept
     {
-        assert(_reader._data >= _reader._table->data.ptr);
-        assert(_reader._data < _reader._table->data.ptr
-            + size_t{_reader._table->row_count} * _reader._table->row_size_bytes);
-        uint32_t value = _reader.read_raw(_column);
+        assert(_data >= _table->data.ptr);
+        assert(_data < _table->data.ptr
+            + size_t{_table->row_count} * _table->row_size_bytes);
+        uint32_t value = row_reader<TableId>{*_table, _data}.read_raw(_column);
         if constexpr (std::is_same_v<ValuePolicy, detail::list_boundary_value>)
         {
             if (value == 0)
             {
-                column_iterator<TableId, ColumnType> probe{_reader, _column};
+                column_iterator<TableId, ColumnType> probe{_table, _data, _column};
                 auto last = probe.end();
                 auto next = std::find_if(++probe, last, [](uint32_t start) { return start != 0; });
-                return next == last ? detail::list_end_row(_reader._table, _column) : *next;
+                return next == last ? detail::list_end_row(_table, _column) : *next;
             }
         }
         return value;
@@ -259,10 +300,10 @@ public:
     column_iterator& operator+=(difference_type delta) noexcept
     {
 #ifndef NDEBUG
-        auto index = (_reader._data - _reader._table->data.ptr) / _reader._table->row_size_bytes;
-        assert(delta >= -index && delta <= static_cast<difference_type>(_reader._table->row_count) - index);
+        auto index = (_data - _table->data.ptr) / _table->row_size_bytes;
+        assert(delta >= -index && delta <= static_cast<difference_type>(_table->row_count) - index);
 #endif
-        _reader._data += delta * _reader._table->row_size_bytes;
+        _data += delta * _table->row_size_bytes;
         return *this;
     }
 
@@ -274,19 +315,19 @@ public:
     difference_type operator-(column_iterator const& other) const noexcept
     {
         assert_same_column(other);
-        if (_reader._data == other._reader._data)
+        if (_data == other._data)
             return 0;
-        return (_reader._data - other._reader._data) / _reader._table->row_size_bytes;
+        return (_data - other._data) / _table->row_size_bytes;
     }
 
     reference operator[](difference_type delta) const noexcept { return *(*this + delta); }
     bool operator==(column_iterator const& other) const noexcept
     {
-        return _reader._table == other._reader._table && _reader._data == other._reader._data
+        return _table == other._table && _data == other._data
             && _column.column_index == other._column.column_index;
     }
     bool operator!=(column_iterator const& other) const noexcept { return !(*this == other); }
-    bool operator<(column_iterator const& other) const noexcept { assert_same_column(other); return _reader._data < other._reader._data; }
+    bool operator<(column_iterator const& other) const noexcept { assert_same_column(other); return _data < other._data; }
     bool operator>(column_iterator const& other) const noexcept { return other < *this; }
     bool operator<=(column_iterator const& other) const noexcept { return !(other < *this); }
     bool operator>=(column_iterator const& other) const noexcept { return !(*this < other); }
@@ -294,16 +335,16 @@ public:
     column_iterator end() const noexcept
     {
         auto result = *this;
-        result._reader._data = _reader._table->data.ptr
-            + size_t{_reader._table->row_count} * _reader._table->row_size_bytes;
+        result._data = _table->data.ptr
+            + size_t{_table->row_count} * _table->row_size_bytes;
         return result;
     }
 
     raw_cursor<TableId> position() const noexcept
     {
-        auto row = static_cast<uint32_t>((_reader._data - _reader._table->data.ptr)
-            / _reader._table->row_size_bytes) + 1;
-        return raw_cursor<TableId>{detail::CreateCursor(_reader._table, row)};
+        auto row = static_cast<uint32_t>((_data - _table->data.ptr)
+            / _table->row_size_bytes) + 1;
+        return raw_cursor<TableId>::at(_table->cxt, row);
     }
 };
 

@@ -1,4 +1,5 @@
 #include <dnmd.hpp>
+#include "native.hpp"
 #include <gtest/gtest.h>
 #include <array>
 #include <vector>
@@ -29,7 +30,6 @@ namespace
     static_assert(!can_read_v<type_reader, decltype(dnmd::columns::Module_Name), char const**>);
     static_assert(!can_read_v<type_reader, decltype(dnmd::columns::TypeDef_Flags), char const**>);
     static_assert(!can_read_v<type_reader, decltype(dnmd::columns::TypeDef_TypeName), uint32_t*>);
-    static_assert(!can_read_v<type_reader, decltype(dnmd::columns::TypeDef_Extends), mdcursor_t&>);
     static_assert(!can_read_v<type_reader, decltype(dnmd::columns::TypeDef_Extends), dnmd::raw_cursor<mdtid_TypeDef>&>);
     static_assert(!can_read_v<type_reader, decltype(dnmd::columns::TypeDef_MethodList),
         dnmd::indirect_cursor<mdtid_Field, mdtid_FieldPtr>&>);
@@ -60,18 +60,15 @@ namespace
         template<mdtable_id_t TableId>
         dnmd::cursor<TableId> AppendRow()
         {
-            mdcursor_t raw{};
             if constexpr (TableId == mdtid_MethodDef)
             {
                 auto type = GetRow<mdtid_TypeDef>();
-                EXPECT_TRUE(md_add_new_row_to_list(type, dnmd::columns::TypeDef_MethodList.column_index, &raw));
+                return dnmd_test::AddListRow(type, dnmd::columns::TypeDef_MethodList);
             }
             else
             {
-                EXPECT_TRUE(md_append_row(handle.get(), TableId, &raw));
+                return dnmd_test::AppendRow<TableId>(handle.get());
             }
-            md_commit_row_add(raw);
-            return dnmd::raw_cursor<TableId>{raw}.as();
         }
 
         template<mdtable_id_t TableId>
@@ -84,11 +81,10 @@ namespace
         template<mdtable_id_t TableId, typename ColumnType>
         void SetRaw(dnmd::cursor<TableId> row, dnmd::column<TableId, ColumnType> column, uint32_t value)
         {
-            mdcursor_t raw = row;
-            auto table = dnmd::detail::CursorTable(raw);
+            auto table = dnmd::detail::CursorTable(row);
             auto details = table->column_details[static_cast<uint8_t>(column.column_index)];
             auto data = const_cast<uint8_t*>(table->data.ptr)
-                + size_t{dnmd::detail::CursorRow(raw) - 1} * table->row_size_bytes
+                + size_t{dnmd::detail::CursorRow(row) - 1} * table->row_size_bytes
                 + ((static_cast<uint32_t>(details) & mdtc_comask) >> 8);
             for (uint32_t i = 0; i < ((details & mdtc_b4) ? 4u : 2u); ++i)
                 data[i] = static_cast<uint8_t>(value >> (8 * i));
@@ -110,22 +106,21 @@ namespace
                     mdToken c_value = 0x12345678;
                     bool valid = tag < Size && expected[tag] != mdtid_Unused;
                     EXPECT_EQ(valid, reader.read(column, value));
-                    EXPECT_EQ(valid, md_get_column_value_as_token(row, column.column_index, &c_value));
+                    EXPECT_EQ(valid, test_c_column_token(handle.get(), dnmd_test::Token(row), column.column_index, &c_value));
                     EXPECT_EQ(c_value, value);
                     if (valid)
                         EXPECT_EQ(CreateTokenType(expected[tag]) | index, value);
                     else
                         EXPECT_EQ(0x12345678u, value);
 
-                    dnmd::raw_cursor<Targets...> position;
-                    mdcursor_t c_position{};
-                    bool c_success = md_get_column_value_as_cursor(row, column.column_index, &c_position);
+                    dnmd::raw_cursor<Targets...> position = dnmd::raw_cursor<Targets...>::nil(handle.get());
+                    mdToken c_position = 0x12345678;
+                    bool c_success = test_c_column_cursor(handle.get(), dnmd_test::Token(row), column.column_index, &c_position);
                     ASSERT_EQ(c_success, reader.read(column, position));
                     if (c_success)
                     {
-                        mdcursor_t raw = position;
-                        EXPECT_EQ(c_position._reserved1, raw._reserved1);
-                        EXPECT_EQ(c_position._reserved2, raw._reserved2);
+                        EXPECT_EQ(handle.get(), position.get_handle());
+                        EXPECT_EQ(c_position, dnmd_test::Token(position));
                         EXPECT_TRUE(position.get_token(value));
                         EXPECT_EQ(c_value, value);
                         bool visited = position.visit([&](auto target) {
@@ -149,62 +144,65 @@ namespace
                 static_cast<uint8_t>(encoded >> 16), static_cast<uint8_t>(encoded >> 24)};
             std::array<mdtcol_t, 9> columns;
             columns.fill(mdtc_b4);
-            mdtable_t table{};
-            table.data = {data, sizeof(data)};
-            table.row_count = 1;
-            table.row_size_bytes = sizeof(data);
-            table.column_count = static_cast<uint8_t>(columns.size());
-            table.table_id = static_cast<uint8_t>(TableId);
-            table.column_details = columns.data();
-            auto row = dnmd::raw_cursor<TableId>{mdcursor_t{reinterpret_cast<intptr_t>(&table), 1}}.as();
+            auto row = GetRow<TableId>();
+            auto table = dnmd::detail::CursorTable(row);
+            auto saved = *table;
+            table->data = {data, sizeof(data)};
+            table->row_size_bytes = sizeof(data);
+            table->column_count = static_cast<uint8_t>(columns.size());
+            table->column_details = columns.data();
             dnmd::row_reader<TableId> reader{row};
             mdToken actual = 0;
-            ASSERT_TRUE(reader.read(column, actual));
+            EXPECT_TRUE(reader.read(column, actual));
             EXPECT_EQ(expected, actual);
+            *table = saved;
         }
 
         template<mdtable_id_t OwnerTableId, mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
         void CheckIndirection(dnmd::column<OwnerTableId, dnmd::indirect_cursor<DirectTableId, IndirectTableId>> list)
         {
             using position_type = dnmd::indirect_cursor<DirectTableId, IndirectTableId>;
+            SCOPED_TRACE(DirectTableId);
+            ASSERT_NO_FATAL_FAILURE(dnmd_test::AssertTableOwnership(handle.get()));
             auto owner = GetRow<OwnerTableId>();
-            mdcursor_t direct{};
-            ASSERT_TRUE(md_add_new_row_to_list(owner, list.column_index, &direct));
-            md_commit_row_add(direct);
+            auto direct = dnmd_test::AddListRow(owner, list);
             EXPECT_FALSE(dnmd::detail::CursorTable(direct)->has_indirect_table);
-            position_type initial;
+            position_type initial = position_type::nil(handle.get());
             ASSERT_TRUE(owner.get_column_value(list, initial));
             mdToken initial_token;
             ASSERT_TRUE(initial.get_token(initial_token));
             EXPECT_EQ(CreateTokenType(DirectTableId) | dnmd::detail::CursorRow(direct), initial_token);
             auto other_owner = AppendRow<OwnerTableId>();
-            mdcursor_t other{};
-            ASSERT_TRUE(md_add_new_row_to_list(other_owner, list.column_index, &other));
-            md_commit_row_add(other);
-            ASSERT_TRUE(md_add_new_row_to_list(owner, list.column_index, &other));
-            md_commit_row_add(other);
+            (void)dnmd_test::AddListRow(other_owner, list);
+            (void)dnmd_test::AddListRow(owner, list);
             auto pointer = GetRow<IndirectTableId>();
+            ASSERT_NO_FATAL_FAILURE(dnmd_test::AssertTableOwnership(handle.get()));
             EXPECT_TRUE(dnmd::detail::CursorTable(direct)->has_indirect_table);
             constexpr auto target_column = dnmd::detail::pointer_column<IndirectTableId>();
             ASSERT_TRUE(pointer.set_column_value(target_column, dnmd::raw_cursor<DirectTableId>{direct}));
 
-            auto check = [&](mdcursor_t source, bool expected_row) {
+            auto check = [&](auto source, bool expected_row) {
                 position_type position{source};
                 EXPECT_EQ(expected_row, static_cast<bool>(position));
+                EXPECT_EQ(handle.get(), position.get_handle());
+                EXPECT_EQ(dnmd_test::Token(source), dnmd_test::Token(position));
+                dnmd::raw_cursor<DirectTableId, IndirectTableId> widened{position};
+                EXPECT_EQ(dnmd_test::Token(source), dnmd_test::Token(widened));
+                dnmd::raw_cursor<DirectTableId> narrowed{position};
+                EXPECT_EQ(handle.get(), narrowed.get_handle());
+                EXPECT_EQ(ExtractTokenType(dnmd_test::Token(source)) == DirectTableId
+                    ? dnmd_test::Token(source) : CreateTokenType(DirectTableId), dnmd_test::Token(narrowed));
                 mdToken actual = 0x12345678;
-                mdcursor_t expected{};
-                bool resolved = md_resolve_indirect_cursor(source, &expected);
+                mdToken expected = 0x12345678;
+                bool resolved = test_c_resolve(handle.get(), dnmd_test::Token(source), &expected);
                 ASSERT_EQ(resolved, position.get_target_token(actual));
                 if (resolved)
                 {
-                    mdToken token;
-                    ASSERT_TRUE(md_cursor_to_token(expected, &token));
-                    EXPECT_EQ(token, actual);
+                    EXPECT_EQ(expected, actual);
                     if (position)
                     {
-                        mdcursor_t row = position.as();
-                        EXPECT_EQ(expected._reserved1, row._reserved1);
-                        EXPECT_EQ(expected._reserved2, row._reserved2);
+                        EXPECT_EQ(handle.get(), position.as().get_handle());
+                        EXPECT_EQ(expected, dnmd_test::Token(position.as()));
                     }
                 }
                 else
@@ -213,7 +211,7 @@ namespace
                 }
             };
             ASSERT_NO_FATAL_FAILURE(check(direct, true));
-            mdcursor_t source = pointer;
+            auto source = dnmd::raw_cursor<IndirectTableId>{pointer};
             uint32_t target_end = dnmd::detail::CursorTable(direct)->row_count + 1;
             uint32_t source_end = dnmd::detail::CursorTable(source)->row_count + 1;
             ASSERT_NO_FATAL_FAILURE(check(source, true));
@@ -224,30 +222,58 @@ namespace
             }
             for (bool is_end : {false, true})
             {
-                mdcursor_t sentinel = source;
-                sentinel._reserved2 = is_end ? source_end : 0;
-                ASSERT_NO_FATAL_FAILURE(check(sentinel, false));
-                sentinel = direct;
-                sentinel._reserved2 = is_end ? target_end : 0;
-                ASSERT_NO_FATAL_FAILURE(check(sentinel, false));
+                ASSERT_NO_FATAL_FAILURE(check(dnmd::raw_cursor<IndirectTableId>::at(
+                    handle.get(), is_end ? source_end : 0), false));
+                ASSERT_NO_FATAL_FAILURE(check(dnmd::raw_cursor<DirectTableId>::at(
+                    handle.get(), is_end ? target_end : 0), false));
             }
 
             mdToken direct_token;
-            ASSERT_TRUE(md_cursor_to_token(direct, &direct_token));
+            ASSERT_TRUE(direct.get_token(direct_token));
             ASSERT_TRUE(pointer.set_column_value(target_column, direct_token));
+            position_type from_token{handle.get(), dnmd_test::Token(source)};
+            ASSERT_TRUE(from_token);
+            EXPECT_EQ(dnmd_test::Token(source), dnmd_test::Token(from_token));
+            mdToken target_token;
+            ASSERT_TRUE(from_token.get_target_token(target_token));
+            EXPECT_EQ(direct_token, target_token);
+            for (auto source_table : {DirectTableId, IndirectTableId})
+            {
+                auto rows = dnmd::detail::context(handle.get()).tables[source_table].row_count;
+                auto position = position_type::at(handle.get(), 0, source_table);
+                for (uint32_t index = 0; index <= rows + 1; ++index)
+                {
+                    EXPECT_EQ(CreateTokenType(source_table) | index, dnmd_test::Token(position));
+                    EXPECT_EQ(handle.get(), position.get_handle());
+                    mdToken expected_target;
+                    mdToken actual_target;
+                    ASSERT_TRUE(test_c_resolve(handle.get(), dnmd_test::Token(position), &expected_target));
+                    ASSERT_TRUE(position.get_target_token(actual_target));
+                    EXPECT_EQ(expected_target, actual_target);
+                    if (index <= rows)
+                        ASSERT_TRUE(dnmd::md_cursor_next(position));
+                }
+                auto end_token = dnmd_test::Token(position);
+                EXPECT_FALSE(dnmd::md_cursor_next(position));
+                EXPECT_FALSE(dnmd::md_cursor_move(position, INT32_MAX));
+                EXPECT_FALSE(dnmd::md_cursor_move(position, INT32_MIN));
+                EXPECT_EQ(end_token, dnmd_test::Token(position));
+                ASSERT_TRUE(dnmd::md_cursor_move(position, -1));
+                EXPECT_EQ(CreateTokenType(source_table) | rows, dnmd_test::Token(position));
+            }
             auto table = dnmd::detail::CursorTable(source);
             auto saved = table->column_details[0];
             table->column_details[0] = static_cast<mdtcol_t>(saved & (mdtc_widthmask | mdtc_comask));
             position_type typed{source};
-            mdcursor_t c_target{};
-            EXPECT_FALSE(md_resolve_indirect_cursor(source, &c_target));
+            mdToken c_target;
+            EXPECT_FALSE(test_c_resolve(handle.get(), dnmd_test::Token(source), &c_target));
             EXPECT_TRUE(typed);
             mdToken token;
             EXPECT_TRUE(typed.get_target_token(token));
             EXPECT_EQ(direct_token, token);
             table->column_details[0] = saved;
 
-            position_type expected_list;
+            position_type expected_list = position_type::nil(handle.get());
             uint32_t expected_count;
             ASSERT_TRUE(owner.get_column_value_as_range(list, expected_list, &expected_count));
             mdToken expected_source;
@@ -260,7 +286,7 @@ namespace
             mdToken actual_source;
             EXPECT_TRUE(reader.read(list, actual_source));
             EXPECT_EQ(expected_source, actual_source);
-            position_type actual_list;
+            position_type actual_list = position_type::nil(handle.get());
             EXPECT_TRUE(reader.read(list, actual_list));
             EXPECT_TRUE(actual_list.get_token(actual_source));
             EXPECT_EQ(expected_source, actual_source);
@@ -283,6 +309,7 @@ namespace
             mdhandle_t raw;
             ASSERT_TRUE(md_create_handle(image.data(), image.size(), &raw));
             dnmd::handle_ptr loaded{raw};
+            ASSERT_NO_FATAL_FAILURE(dnmd_test::AssertTableOwnership(loaded.get()));
             auto loaded_direct = dnmd::md_create_cursor<DirectTableId>(loaded.get());
             ASSERT_TRUE(loaded_direct);
             EXPECT_TRUE(dnmd::detail::CursorTable(loaded_direct)->has_indirect_table);
@@ -294,52 +321,86 @@ namespace
             EXPECT_TRUE(loaded_reader.read(list, actual_source));
             EXPECT_EQ(expected_source, actual_source);
 
-            mdcursor_t unchanged = direct;
-            source._reserved2 = source_end + 1;
-            EXPECT_FALSE((dnmd::detail::resolve_indirect_cursor<DirectTableId, IndirectTableId>(source, unchanged)));
-            EXPECT_EQ(direct._reserved1, unchanged._reserved1);
-            EXPECT_EQ(direct._reserved2, unchanged._reserved2);
+            position_type unchanged{source};
+            auto before_source = dnmd_test::Token(unchanged);
+            mdToken before_target;
+            ASSERT_TRUE(unchanged.get_target_token(before_target));
+            EXPECT_FALSE(dnmd::md_cursor_move(unchanged, static_cast<int32_t>(source_end)));
+            EXPECT_EQ(before_source, dnmd_test::Token(unchanged));
+            ASSERT_TRUE(unchanged.get_target_token(token));
+            EXPECT_EQ(before_target, token);
         }
 
         template<mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
         void CheckEmptyTarget()
         {
+            using indirect = dnmd::indirect_cursor<DirectTableId, IndirectTableId>;
+            auto& context = dnmd::detail::context(handle.get());
+            auto& pointer = context.tables[IndirectTableId];
+            ASSERT_EQ(0u, context.tables[DirectTableId].row_count);
+            ASSERT_FALSE(pointer.is_initialized);
+            for (uint32_t row : {0u, 1u})
+            {
+                auto position = indirect::at(handle.get(), row, IndirectTableId);
+                EXPECT_FALSE(position);
+                EXPECT_EQ(CreateTokenType(IndirectTableId) | row, dnmd_test::Token(position));
+                mdToken target;
+                ASSERT_TRUE(position.get_target_token(target));
+                EXPECT_EQ(CreateTokenType(DirectTableId) | row, target);
+                EXPECT_EQ(handle.get(), position.get_handle());
+            }
+            auto saved = pointer;
             mdtcol_t details = static_cast<mdtcol_t>(mdtc_idx_table | mdtc_b2 | (DirectTableId << 16));
-            mdtable_t pointer{};
+            uint8_t data[2]{};
             pointer.row_count = 1;
-            pointer.table_id = static_cast<uint8_t>(IndirectTableId);
-            pointer.cxt = dnmd::detail::CursorTable(GetRow<mdtid_Module>())->cxt;
+            pointer.row_size_bytes = sizeof(data);
+            pointer.column_count = 1;
+            pointer.is_initialized = true;
+            pointer.data = {data, sizeof(data)};
             pointer.column_details = &details;
             for (uint32_t row : {0u, 2u})
             {
-                mdcursor_t source{reinterpret_cast<intptr_t>(&pointer), static_cast<intptr_t>(row)};
-                dnmd::indirect_cursor<DirectTableId, IndirectTableId> position{source};
+                auto position = indirect::at(handle.get(), row, IndirectTableId);
                 EXPECT_FALSE(position);
                 mdToken token;
-                ASSERT_TRUE(position.get_token(token));
+                EXPECT_TRUE(position.get_token(token));
                 EXPECT_EQ(CreateTokenType(IndirectTableId) | row, token);
-                ASSERT_TRUE(position.get_target_token(token));
+                EXPECT_TRUE(position.get_target_token(token));
                 EXPECT_EQ(CreateTokenType(DirectTableId) | (row == 0 ? 0 : 1), token);
             }
+            for (uint32_t target : {0u, 1u, 2u})
+            {
+                data[0] = static_cast<uint8_t>(target);
+                auto position = indirect::at(handle.get(), 1, IndirectTableId);
+                EXPECT_FALSE(position);
+                mdToken token = 0x12345678;
+                EXPECT_EQ(target <= 1, position.get_target_token(token));
+                EXPECT_EQ(target <= 1 ? CreateTokenType(DirectTableId) | target : 0x12345678u, token);
+            }
+            pointer = saved;
         }
     };
 }
 
 using namespace dnmd::columns;
 
-TEST(CursorAccessors, TableIdentityAndRowMask)
+TEST_F(CppRowReader, NativeTableIdentityAndTokenRowMask)
 {
-    mdtable_t table{};
-    mdcursor_t const raw{reinterpret_cast<intptr_t>(&table), 0x12345678};
-    static_assert(noexcept(dnmd::detail::CursorTable(raw)));
-    static_assert(noexcept(dnmd::detail::CursorRow(raw)));
-    EXPECT_EQ(&table, dnmd::detail::CursorTable(raw));
-    EXPECT_EQ(0x00345678u, dnmd::detail::CursorRow(raw));
-    EXPECT_EQ(nullptr, dnmd::detail::CursorTable(mdcursor_t{}));
-    EXPECT_EQ(0u, dnmd::detail::CursorRow(mdcursor_t{}));
-    EXPECT_EQ(0x00ffffffu, dnmd::detail::CursorRow(mdcursor_t{0, -1}));
+    auto row = GetRow<mdtid_TypeDef>();
+    static_assert(noexcept(dnmd::detail::CursorTable(row)));
+    static_assert(noexcept(dnmd::detail::CursorRow(row)));
+    auto expected = &dnmd::detail::context(handle.get()).tables[mdtid_TypeDef];
+    EXPECT_EQ(expected, dnmd::detail::CursorTable(row));
+    EXPECT_EQ(1u, dnmd::detail::CursorRow(row));
+    auto nil = dnmd::raw_cursor<mdtid_TypeDef>::nil(handle.get());
+    auto end = dnmd::raw_cursor<mdtid_TypeDef>::end(handle.get());
+    EXPECT_EQ(expected, dnmd::detail::CursorTable(nil));
+    EXPECT_EQ(expected, dnmd::detail::CursorTable(end));
+    EXPECT_EQ(0u, dnmd::detail::CursorRow(nil));
+    EXPECT_EQ(expected->row_count + 1, dnmd::detail::CursorRow(end));
     EXPECT_EQ(0x00345678u, (dnmd::detail::RidFromToken)(0x12345678u));
     EXPECT_EQ(0x00345678u, (dnmd::detail::RidFromToken)(uint64_t{0xabcdef0012345678}));
+    EXPECT_EQ(0x00ffffffu, (dnmd::detail::RidFromToken)(uint32_t(-1)));
 }
 
 TEST_F(CppRowReader, AllCodedIndexTags)
@@ -382,37 +443,33 @@ TEST_F(CppRowReader, ReferenceFailuresPreserveOutputs)
     auto row = GetRow<mdtid_TypeDef>();
     dnmd::row_reader<mdtid_TypeDef> reader{row};
     ASSERT_TRUE(row.set_column_value(TypeDef_Extends, row));
-    decltype(TypeDef_Extends)::value_type target;
+    decltype(TypeDef_Extends)::value_type target = decltype(TypeDef_Extends)::value_type::nil(handle.get());
     ASSERT_TRUE(reader.read(TypeDef_Extends, target));
-    mdcursor_t before = target;
+    auto before = target;
     SetRaw(row, TypeDef_Extends, 3);
     EXPECT_FALSE(reader.read(TypeDef_Extends, target));
-    EXPECT_EQ(before._reserved1, static_cast<mdcursor_t>(target)._reserved1);
-    EXPECT_EQ(before._reserved2, static_cast<mdcursor_t>(target)._reserved2);
+    EXPECT_EQ(dnmd::detail::CursorTable(before), dnmd::detail::CursorTable(target));
+    EXPECT_EQ(dnmd::detail::CursorRow(before), dnmd::detail::CursorRow(target));
     SetRaw(row, TypeDef_Extends, 3u << 2);
     EXPECT_FALSE(reader.read(TypeDef_Extends, target));
-    EXPECT_EQ(before._reserved1, static_cast<mdcursor_t>(target)._reserved1);
-    EXPECT_EQ(before._reserved2, static_cast<mdcursor_t>(target)._reserved2);
+    EXPECT_EQ(dnmd::detail::CursorTable(before), dnmd::detail::CursorTable(target));
+    EXPECT_EQ(dnmd::detail::CursorRow(before), dnmd::detail::CursorRow(target));
 }
 
 TEST_F(CppRowReader, ReusesReaderAcrossListRanges)
 {
     auto owner = GetRow<mdtid_TypeDef>();
-    mdcursor_t child;
     for (uint32_t i = 0; i < 3; ++i)
     {
-        ASSERT_TRUE(md_add_new_row_to_list(owner, TypeDef_MethodList.column_index, &child));
-        md_commit_row_add(child);
+        (void)dnmd_test::AddListRow(owner, TypeDef_MethodList);
     }
-    ASSERT_TRUE(md_add_new_row_to_list(owner, TypeDef_FieldList.column_index, &child));
-    md_commit_row_add(child);
+    (void)dnmd_test::AddListRow(owner, TypeDef_FieldList);
     auto next_owner = AppendRow<mdtid_TypeDef>();
-    ASSERT_TRUE(md_add_new_row_to_list(next_owner, TypeDef_MethodList.column_index, &child));
-    md_commit_row_add(child);
+    (void)dnmd_test::AddListRow(next_owner, TypeDef_MethodList);
 
     dnmd::row_reader reader{owner};
-    dnmd::indirect_cursor<mdtid_MethodDef, mdtid_MethodPtr> methods;
-    dnmd::indirect_cursor<mdtid_Field, mdtid_FieldPtr> fields;
+    dnmd::indirect_cursor<mdtid_MethodDef, mdtid_MethodPtr> methods = dnmd::indirect_cursor<mdtid_MethodDef, mdtid_MethodPtr>::nil(handle.get());
+    dnmd::indirect_cursor<mdtid_Field, mdtid_FieldPtr> fields = dnmd::indirect_cursor<mdtid_Field, mdtid_FieldPtr>::nil(handle.get());
     uint32_t method_count;
     uint32_t field_count;
     ASSERT_TRUE(reader.read(TypeDef_MethodList, methods, &method_count));
@@ -456,8 +513,7 @@ TEST_F(CppRowReader, ReferenceDecodingUsesColumnTypesNotMetadataMaps)
     auto row = GetRow<mdtid_TypeDef>();
     dnmd::row_reader<mdtid_TypeDef> reader{row};
     SetRaw(row, TypeDef_Extends, (2u << 2) | 1);
-    mdcursor_t raw = row;
-    auto table = dnmd::detail::CursorTable(raw);
+    auto table = dnmd::detail::CursorTable(row);
     auto& details = table->column_details[static_cast<uint8_t>(mdtTypeDef_Extends)];
     auto saved = details;
     details = static_cast<mdtcol_t>((static_cast<uint32_t>(details) & ~(mdtc_categorymask | mdtc_cimask))
@@ -489,24 +545,17 @@ TEST_F(CppRowReader, EmptyIndirectTargetsKeepSentinelTokens)
 TEST_F(CppRowReader, TypeDefListsSelectIndirectionIndependently)
 {
     auto owner = GetRow<mdtid_TypeDef>();
-    mdcursor_t field;
-    ASSERT_TRUE(md_add_new_row_to_list(owner, TypeDef_FieldList.column_index, &field));
-    md_commit_row_add(field);
-    mdcursor_t method;
-    ASSERT_TRUE(md_add_new_row_to_list(owner, TypeDef_MethodList.column_index, &method));
-    md_commit_row_add(method);
+    auto field = dnmd_test::AddListRow(owner, TypeDef_FieldList);
+    auto method = dnmd_test::AddListRow(owner, TypeDef_MethodList);
     auto other = AppendRow<mdtid_TypeDef>();
-    mdcursor_t child;
-    ASSERT_TRUE(md_add_new_row_to_list(other, TypeDef_FieldList.column_index, &child));
-    md_commit_row_add(child);
-    ASSERT_TRUE(md_add_new_row_to_list(owner, TypeDef_FieldList.column_index, &child));
-    md_commit_row_add(child);
+    (void)dnmd_test::AddListRow(other, TypeDef_FieldList);
+    (void)dnmd_test::AddListRow(owner, TypeDef_FieldList);
     EXPECT_TRUE(dnmd::detail::CursorTable(field)->has_indirect_table);
     EXPECT_FALSE(dnmd::detail::CursorTable(method)->has_indirect_table);
     dnmd::row_reader reader{owner};
     mdToken token;
     ASSERT_TRUE(reader.read(TypeDef_FieldList, token));
-    EXPECT_EQ(mdtid_FieldPtr, ExtractTokenType(token));
+    EXPECT_EQ(static_cast<uint32_t>(mdtid_FieldPtr), ExtractTokenType(token));
     ASSERT_TRUE(reader.read(TypeDef_MethodList, token));
     EXPECT_EQ(CreateTokenType(mdtid_MethodDef) | 1, token);
 }
@@ -538,7 +587,7 @@ TEST_F(CppRowReader, LoadingFlagsIndirectionWithAnEmptyElementTable)
     EXPECT_EQ(0u, context->tables[mdtid_Field].row_count);
     EXPECT_TRUE(context->tables[mdtid_Field].has_indirect_table);
     dnmd::row_reader reader{owner.as()};
-    dnmd::indirect_cursor<mdtid_Field, mdtid_FieldPtr> field;
+    dnmd::indirect_cursor<mdtid_Field, mdtid_FieldPtr> field = dnmd::indirect_cursor<mdtid_Field, mdtid_FieldPtr>::nil(loaded.get());
     ASSERT_TRUE(reader.read(TypeDef_FieldList, field));
     EXPECT_FALSE(field);
     mdToken token;

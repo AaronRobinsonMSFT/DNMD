@@ -69,7 +69,7 @@ namespace
             return CLDB_E_RECORD_NOTFOUND;
 
         HCORENUMImpl* enumImpl;
-        RETURN_IF_FAILED(HCORENUMImpl::CreateTableEnum(1, &enumImpl));
+        RETURN_IF_FAILED(HCORENUMImpl::CreateTableEnum(mdhandle, 1, &enumImpl));
         HCORENUMImpl::InitTableEnum(*enumImpl, 0, cursor, rows);
         *pEnumImpl = enumImpl;
         return S_OK;
@@ -95,7 +95,7 @@ namespace
         if (!cursor)
             return CLDB_E_INDEX_NOTFOUND;
 
-        dnmd::indirect_cursor<TargetTableId, IndirectTableId> begin;
+        dnmd::indirect_cursor<TargetTableId, IndirectTableId> begin{mdhandle, 0};
         uint32_t count;
         if (!cursor.as().get_column_value_as_range(column, begin, &count))
             return CLDB_E_FILE_CORRUPT;
@@ -103,7 +103,7 @@ namespace
         HCORENUMImpl* enumImpl;
         if (filter == nullptr || filter->Value == nullptr)
         {
-            RETURN_IF_FAILED(HCORENUMImpl::CreateTableEnum(1, &enumImpl));
+            RETURN_IF_FAILED(HCORENUMImpl::CreateTableEnum(mdhandle, 1, &enumImpl));
             HCORENUMImpl::InitTableEnum(*enumImpl, 0, begin, count);
         }
         else
@@ -156,7 +156,7 @@ namespace
         if (!cursor)
             return CLDB_E_RECORD_NOTFOUND;
 
-        dnmd::raw_cursor<TableId> begin;
+        dnmd::raw_cursor<TableId> begin{mdhandle, 0};
         uint32_t count;
         dnmd::range_result result = dnmd::md_find_range_from_cursor(cursor.as(), keyColumn, token, begin, &count);
 
@@ -167,7 +167,7 @@ namespace
         else if (result == dnmd::range_result::found)
         {
             HCORENUMImpl* enumImpl;
-            RETURN_IF_FAILED(HCORENUMImpl::CreateTableEnum(1, &enumImpl));
+            RETURN_IF_FAILED(HCORENUMImpl::CreateTableEnum(mdhandle, 1, &enumImpl));
             HCORENUMImpl::InitTableEnum(*enumImpl, 0, begin, count);
             *pEnumImpl = enumImpl;
             return S_OK;
@@ -340,7 +340,7 @@ namespace
         mdToken lookupTk,
         T& op)
     {
-        dnmd::raw_cursor<TableId> curr;
+        dnmd::raw_cursor<TableId> curr{begin.get_handle(), 0};
         uint32_t currCount;
         dnmd::range_result result = dnmd::md_find_range_from_cursor(begin, lookupRange, lookupTk, curr, &currCount);
         if (result == dnmd::range_result::found)
@@ -408,7 +408,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumTypeDefs(
         rows--;
         (void)dnmd::md_cursor_next(cursor);
 
-        RETURN_IF_FAILED(HCORENUMImpl::CreateTableEnum(1, &enumImpl));
+        RETURN_IF_FAILED(HCORENUMImpl::CreateTableEnum(_md_ptr.get(), 1, &enumImpl));
         HCORENUMImpl::InitTableEnum(*enumImpl, 0, cursor, rows);
         *phEnum = enumImpl;
     }
@@ -753,9 +753,9 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumMembers(
         if (!cursor)
             return CLDB_E_INDEX_NOTFOUND;
 
-        dnmd::indirect_cursor<mdtid_MethodDef, mdtid_MethodPtr> methodList;
+        dnmd::indirect_cursor<mdtid_MethodDef, mdtid_MethodPtr> methodList{_md_ptr.get(), 0};
         uint32_t methodListCount;
-        dnmd::indirect_cursor<mdtid_Field, mdtid_FieldPtr> fieldList;
+        dnmd::indirect_cursor<mdtid_Field, mdtid_FieldPtr> fieldList{_md_ptr.get(), 0};
         uint32_t fieldListCount;
         dnmd::row_reader reader{cursor.as()};
         if (!reader.read(TypeDef_FieldList, fieldList, &fieldListCount)
@@ -764,7 +764,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumMembers(
             return CLDB_E_FILE_CORRUPT;
         }
 
-        RETURN_IF_FAILED(HCORENUMImpl::CreateTableEnum(2, &enumImpl));
+        RETURN_IF_FAILED(HCORENUMImpl::CreateTableEnum(_md_ptr.get(), 2, &enumImpl));
         HCORENUMImpl::InitTableEnum(*enumImpl, 0, methodList, methodListCount);
         HCORENUMImpl::InitTableEnum(*enumImpl, 1, fieldList, fieldListCount);
         *phEnum = enumImpl;
@@ -796,9 +796,9 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumMembersWithName(
             return CLDB_E_INDEX_NOTFOUND;
         auto cursor = position.as();
 
-        dnmd::indirect_cursor<mdtid_MethodDef, mdtid_MethodPtr> methodList;
+        dnmd::indirect_cursor<mdtid_MethodDef, mdtid_MethodPtr> methodList{_md_ptr.get(), 0};
         uint32_t methodListCount;
-        dnmd::indirect_cursor<mdtid_Field, mdtid_FieldPtr> fieldList;
+        dnmd::indirect_cursor<mdtid_Field, mdtid_FieldPtr> fieldList{_md_ptr.get(), 0};
         uint32_t fieldListCount;
 
         dnmd::row_reader reader{cursor};
@@ -1086,7 +1086,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumPermissionSets(
 
         if (IsNilToken(tk) && IsDclActionNil(dwActions))
         {
-            RETURN_IF_FAILED(HCORENUMImpl::CreateTableEnum(1, &enumImpl));
+            RETURN_IF_FAILED(HCORENUMImpl::CreateTableEnum(_md_ptr.get(), 1, &enumImpl));
             HCORENUMImpl::InitTableEnum(*enumImpl, 0, cursor, count);
         }
         else
@@ -1151,7 +1151,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::FindMethod(
     if (!typedefCursor)
         return CLDB_E_INDEX_NOTFOUND;
 
-    dnmd::indirect_cursor<mdtid_MethodDef, mdtid_MethodPtr> methodCursor;
+    dnmd::indirect_cursor<mdtid_MethodDef, mdtid_MethodPtr> methodCursor{_md_ptr.get(), 0};
     uint32_t count;
     if (!typedefCursor.as().get_column_value_as_range(TypeDef_MethodList, methodCursor, &count))
         return CLDB_E_FILE_CORRUPT;
@@ -1227,7 +1227,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::FindField(
     if (!typedefCursor)
         return CLDB_E_INDEX_NOTFOUND;
 
-    dnmd::indirect_cursor<mdtid_Field, mdtid_FieldPtr> fieldCursor;
+    dnmd::indirect_cursor<mdtid_Field, mdtid_FieldPtr> fieldCursor{_md_ptr.get(), 0};
     uint32_t count;
     if (!typedefCursor.as().get_column_value_as_range(TypeDef_FieldList, fieldCursor, &count))
         return CLDB_E_FILE_CORRUPT;
@@ -1457,8 +1457,8 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumProperties(
 
         // Find the entry in the PropertyMap table and then
         // resolve the column to the range in the Property table.
-        dnmd::raw_cursor<mdtid_PropertyMap> typedefPropMap;
-        dnmd::indirect_cursor<mdtid_Property, mdtid_PropertyPtr> propertyList;
+        dnmd::raw_cursor<mdtid_PropertyMap> typedefPropMap{_md_ptr.get(), 0};
+        dnmd::indirect_cursor<mdtid_Property, mdtid_PropertyPtr> propertyList{_md_ptr.get(), 0};
         uint32_t propertyListCount;
         if (!(typedefPropMap = dnmd::md_find_row_from_cursor(propertyMap.as(), PropertyMap_Parent, td))
             || !typedefPropMap.as().get_column_value_as_range(PropertyMap_PropertyList, propertyList, &propertyListCount))
@@ -1466,7 +1466,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumProperties(
             return CLDB_E_FILE_CORRUPT;
         }
 
-        RETURN_IF_FAILED(HCORENUMImpl::CreateTableEnum(1, &enumImpl));
+        RETURN_IF_FAILED(HCORENUMImpl::CreateTableEnum(_md_ptr.get(), 1, &enumImpl));
         HCORENUMImpl::InitTableEnum(*enumImpl, 0, propertyList, propertyListCount);
         *phEnum = enumImpl;
     }
@@ -1494,8 +1494,8 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumEvents(
 
         // Find the entry in the EventMap table and then
         // resolve the column to the range in the Event table.
-        dnmd::raw_cursor<mdtid_EventMap> typedefEventMap;
-        dnmd::indirect_cursor<mdtid_Event, mdtid_EventPtr> eventList;
+        dnmd::raw_cursor<mdtid_EventMap> typedefEventMap{_md_ptr.get(), 0};
+        dnmd::indirect_cursor<mdtid_Event, mdtid_EventPtr> eventList{_md_ptr.get(), 0};
         uint32_t eventListCount;
         if (!(typedefEventMap = dnmd::md_find_row_from_cursor(eventMap.as(), EventMap_Parent, td))
             || !typedefEventMap.as().get_column_value_as_range(EventMap_EventList, eventList, &eventListCount))
@@ -1503,7 +1503,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumEvents(
             return CLDB_E_FILE_CORRUPT;
         }
 
-        RETURN_IF_FAILED(HCORENUMImpl::CreateTableEnum(1, &enumImpl));
+        RETURN_IF_FAILED(HCORENUMImpl::CreateTableEnum(_md_ptr.get(), 1, &enumImpl));
         HCORENUMImpl::InitTableEnum(*enumImpl, 0, eventList, eventListCount);
         *phEnum = enumImpl;
     }
@@ -1719,7 +1719,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetClassLayout(
     if (TypeFromToken(td) != mdtTypeDef)
         return E_INVALIDARG;
 
-    dnmd::raw_cursor<mdtid_ClassLayout> entry;
+    dnmd::raw_cursor<mdtid_ClassLayout> entry{_md_ptr.get(), 0};
     bool foundLayout = false;
     auto begin = dnmd::md_create_cursor<mdtid_ClassLayout>(_md_ptr.get());
     if (!begin
@@ -1751,7 +1751,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetClassLayout(
         return CLDB_E_RECORD_NOTFOUND;
 
     // Get the list of field data
-    dnmd::indirect_cursor<mdtid_Field, mdtid_FieldPtr> fieldList;
+    dnmd::indirect_cursor<mdtid_Field, mdtid_FieldPtr> fieldList{_md_ptr.get(), 0};
     uint32_t fieldListCount;
     if (!typeEntry.as().get_column_value_as_range(TypeDef_FieldList, fieldList, &fieldListCount))
         return CLDB_E_FILE_CORRUPT;
@@ -1772,7 +1772,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetClassLayout(
 
             // See above comment about empty FieldLayout table.
             offset.ulOffset = (ULONG)-1;
-            dnmd::raw_cursor<mdtid_FieldLayout> fieldLayoutRow;
+            dnmd::raw_cursor<mdtid_FieldLayout> fieldLayoutRow{_md_ptr.get(), 0};
             if (fieldLayoutBegin
                 && (fieldLayoutRow = dnmd::md_find_row_from_cursor(fieldLayoutBegin.as(), FieldLayout_Field, offset.ridOfField)))
             {
@@ -1803,7 +1803,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetFieldMarshal(
     if (TypeFromToken(tk) != mdtParamDef && TypeFromToken(tk) != mdtFieldDef)
         return E_INVALIDARG;
 
-    dnmd::raw_cursor<mdtid_FieldMarshal> fieldMarshalRow;
+    dnmd::raw_cursor<mdtid_FieldMarshal> fieldMarshalRow{_md_ptr.get(), 0};
     auto cursor = dnmd::md_create_cursor<mdtid_FieldMarshal>(_md_ptr.get());
     if (!cursor
         || !(fieldMarshalRow = dnmd::md_find_row_from_cursor(cursor.as(), FieldMarshal_Parent, tk)))
@@ -2073,7 +2073,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetPinvokeMap(
     if (TypeFromToken(tk) != mdtMethodDef && TypeFromToken(tk) != mdtFieldDef)
         return E_INVALIDARG;
 
-    dnmd::raw_cursor<mdtid_ImplMap> implRow;
+    dnmd::raw_cursor<mdtid_ImplMap> implRow{_md_ptr.get(), 0};
     auto cursor = dnmd::md_create_cursor<mdtid_ImplMap>(_md_ptr.get());
     if (!cursor
         || !(implRow = dnmd::md_find_row_from_cursor(cursor.as(), ImplMap_MemberForwarded, tk)))
@@ -2176,7 +2176,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetParamForMethodIndex(
     if (!cursor)
         return CLDB_E_RECORD_NOTFOUND;
 
-    dnmd::indirect_cursor<mdtid_Param, mdtid_ParamPtr> curr;
+    dnmd::indirect_cursor<mdtid_Param, mdtid_ParamPtr> curr{_md_ptr.get(), 0};
     uint32_t count;
     if (!cursor.as().get_column_value_as_range(MethodDef_ParamList, curr, &count))
         return CLDB_E_FILE_CORRUPT;
@@ -2224,13 +2224,13 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumCustomAttributes(
         if (!cursor)
             return CLDB_E_RECORD_NOTFOUND;
 
-        dnmd::raw_cursor<mdtid_CustomAttribute> curr;
+        dnmd::raw_cursor<mdtid_CustomAttribute> curr{_md_ptr.get(), 0};
         uint32_t currCount;
         if (IsNilToken(tk))
         {
             // Caller is looking across all attributes
             assert(IsNilToken(tkType)); // Ignoring type filter
-            RETURN_IF_FAILED(HCORENUMImpl::CreateTableEnum(1, &enumImpl));
+            RETURN_IF_FAILED(HCORENUMImpl::CreateTableEnum(_md_ptr.get(), 1, &enumImpl));
             HCORENUMImpl::InitTableEnum(*enumImpl, 0, cursor, count);
         }
         else
@@ -2241,7 +2241,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumCustomAttributes(
                 // Caller is looking for all associated attributes and we got a table range.
                 if (result == dnmd::range_result::found)
                 {
-                    RETURN_IF_FAILED(HCORENUMImpl::CreateTableEnum(1, &enumImpl));
+                    RETURN_IF_FAILED(HCORENUMImpl::CreateTableEnum(_md_ptr.get(), 1, &enumImpl));
                     HCORENUMImpl::InitTableEnum(*enumImpl, 0, curr, currCount);
                 }
                 else if (result == dnmd::range_result::not_found)
@@ -2441,7 +2441,7 @@ namespace
     {
         assert(ptr != nullptr);
 
-        dnmd::raw_cursor<mdtid_Constant> constantPropCursor;
+        dnmd::raw_cursor<mdtid_Constant> constantPropCursor{ptr.get(), 0};
         uint32_t corType;
         uint8_t const* defaultValue;
         uint32_t defaultValueLen;
@@ -2782,7 +2782,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetCustomAttributeByName(
             size_t len;
             char const* curr;
 
-            decltype(CustomAttribute_Type)::value_type type;
+            decltype(CustomAttribute_Type)::value_type type{Handle, 0};
             dnmd::row_reader custAttr_reader{custAttr};
             if (!custAttr_reader.read(CustomAttribute_Type, type))
             {
@@ -2894,7 +2894,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetNestedClassProps(
         return CLDB_E_RECORD_NOTFOUND;
     }
 
-    dnmd::raw_cursor<mdtid_TypeDef> enclosingClass;
+    dnmd::raw_cursor<mdtid_TypeDef> enclosingClass{_md_ptr.get(), 0};
     if (!nestedClassRow.as().get_column_value(NestedClass_EnclosingClass, enclosingClass))
         return CLDB_E_FILE_CORRUPT;
 

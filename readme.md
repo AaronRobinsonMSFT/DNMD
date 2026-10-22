@@ -28,15 +28,16 @@ The primary goal of DNMD is to explore the benefits of a rewrite of the metadata
 
 `dnmd.hpp` provides typed cursors and column descriptors in the `dnmd` namespace.
 The C API names and types in `dnmd.h` remain global.
-It includes the complete C++ API and retains the `handle_ptr` and `added_row_t`
-lifetime wrappers. The typed API is organized into these headers:
+It includes the complete C++ API, `dnmd::handle_ptr`, and the global
+`md_added_row_t` compatibility wrapper for C row additions. The typed API is
+organized into these headers:
 
 | Header | Contents |
 | --- | --- |
 | `dnmd_columns.hpp` | Column types, descriptors, and shared schema metadata |
 | `dnmd_cursors.hpp` | Row/position cursors, conversions, navigation, and factories |
 | `dnmd_read.hpp` | Row readers and read-only column iterators |
-| `dnmd_write.hpp` | Row writers, cursor write methods, and row-add commits |
+| `dnmd_write.hpp` | Row writers, cursor write methods, and typed row-add guards |
 | `dnmd_search.hpp` | Typed searches and cursor parent lookup |
 
 Each header includes its dependencies. When using individual headers instead of
@@ -51,11 +52,36 @@ before calling `as()` to obtain a row; calling `as()` on a non-dereferenceable
 position violates its precondition.
 Positions check dereferenceability inline using their table and RID bounds,
 without calling a C API predicate.
-Constructors accepting `mdcursor_t` require a non-null table and assert this
-precondition. Default-constructed raw/indirect positions and row-add guards remain
-empty zero-RID sentinels; their checks short-circuit on the RID rather than test
-the table pointer. Narrowing a raw position preserves both default-empty and
-table-bound nil positions.
+Row, raw, and indirect cursors contain private table-pointer/RID state, not C
+cursors. They cannot be default-constructed or converted to/from `mdcursor_t`.
+Use `raw_cursor<TableIds...>::nil(handle)` or `end(handle)` for explicit
+table-bound sentinels. `position.is<TableId>()` tests the bound table independently
+of dereferenceability, including for nil and end positions. `position.is_nil()`
+tests for RID zero; it is false for end positions even though they are not
+dereferenceable. Narrowing to a different table returns that table's nil in the
+same image. Checked `at(handle, row, table)` construction also validates the
+table set and nil/live/end bounds; it does not expose an unchecked pointer/RID
+constructor. Metadata handles must remain valid for the lifetime of these
+borrowed positions.
+
+Converting a row or raw position to a `raw_cursor` whose table targets are a
+superset is implicit and nonthrowing; the conversion preserves its table, RID,
+image, and nil/end state. Reserved `mdtid_Unused` tag slots do not count as
+possible source tables. This lets typed rows be passed directly to heterogeneous
+callbacks taking `dnmd::any_cursor`. Indirect-to-raw widening preserves the
+source position, not the resolved target. Narrowing remains explicit and checked.
+Prefer fixed-table or bounded-target cursors in helpers; `any_cursor` is for
+genuinely heterogeneous callback and enumeration boundaries.
+
+Indirect positions support nil/live/end source and target RIDs. `get_token`
+describes the source; `get_target_token` describes a successfully resolved target,
+including its nil/end sentinels. A malformed pointer reference fails resolution
+without creating an invalid row cursor. Indirect positions can be constructed
+from native raw positions; no C-cursor escape conversion is needed.
+
+Every table slot retains its owning context, including empty tables.
+`mdtable_t::is_initialized`, not a null context, distinguishes materialized table
+storage from an absent/empty table. Binding nil does not initialize storage.
 
 ```cpp
 dnmd::handle_ptr handle{md_create_new_handle()};
@@ -87,7 +113,8 @@ table in the parameter pack. The nil position retains its table even if that tab
 is empty, without allocating or fully initializing the table.
 
 `dnmd::md_token_to_cursor<TableIds...>` uses the same lookup and nil fallback for
-valid handles; invalid handles still return a default-empty position.
+valid handles. Like cursor constructors and factories, it requires a valid handle;
+there is no unbound default position to return for an invalid handle.
 Use `dnmd::md_is_valid_token` when only validation is needed. Both helpers use
 the C++ token bounds checks rather than the C token-lookup API. Rows provide
 `get_column_values` for bulk token reads and `get_parent_token` for list owners.
@@ -104,6 +131,8 @@ cursors, not bare RIDs. `column_iterator<TableId, ColumnType>` is a read-only
 random-access iterator bound to a row and column. It yields stored `uint32_t`
 values so coded indices retain encoded RID/tag order rather than token-type order.
 Iterators borrow metadata storage and are invalidated by edits like row readers.
+Default-constructed column iterators have the standard singular state for
+comparison/assignment; they do not contain a null-table cursor or row reader.
 
 Row searches return the first match at or after the supplied row, using
 `std::lower_bound` for sorted primary keys and `std::find` otherwise. Range
@@ -126,6 +155,8 @@ path. Heap offsets, encoded tags, and referenced row bounds are still validated.
 For list columns, `reader.read(column, position, &count)` returns the range
 without rebinding the reader.
 Recreate readers after metadata edits that can invalidate their borrowed storage.
+This includes writes to other rows in the same image when heap growth widens
+columns.
 
 For reference columns, a single table ID denotes a direct row index. Multiple
 table IDs specify a coded index in encoded tag order, including `mdtid_Unused`
@@ -158,9 +189,32 @@ C++ sorted-state maintenance uses complete typed, ordered key sequences, includi
 GenericParam's Owner/Number keys and LocalScope's descending Length tie-breaker.
 Key writes compare the row lexicographically against both neighbors; non-key
 writes do not affect sortedness, and an unsorted table is not marked sorted again.
-Validation is deferred while initializing a new row. Finish with
-`dnmd::md_commit_row_add(row)` or let `dnmd::added_row_t` commit it on destruction;
-both use the C++ full-key validation. Binary searches use only an ascending first
+Validation is deferred while initializing a new row. Acquire a noncopyable
+`dnmd::added_row<TableId>` using `append(handle)`, `insert(relative, after)`, or
+typed list-add factories, access the pending row with asserted `as()`, and commit
+on destruction or explicitly with `commit()`. Explicit commit consumes the guard
+to a bound nil; a previously saved row cursor remains a normal borrowed row.
+Moves transfer ownership and leave the source bound nil. A failed acquisition
+returns a nil guard and finishes any partial row it acquired; metadata edits are
+not rolled back.
+
+```cpp
+auto added = dnmd::added_row<mdtid_TypeRef>::append(handle.get());
+if (!added)
+    return false;
+auto row = added.as();
+if (!row.set_column_value(dnmd::columns::TypeRef_TypeName, "Example"))
+    return false;
+added.commit();
+```
+
+List additions infer the child table from the typed list column; sorted list
+additions also require a constant sort column from that child table.
+Only the global `md_added_row_t` retains C-cursor construction/conversion and the
+C output-pointer hook, delegating its cleanup to the legacy C commit API.
+Native typed guards never expose C output pointers.
+
+Binary searches use only an ascending first
 key from these same sequences, never a secondary key in isolation.
 Legacy C validation and delta-only physical list sorting remain in the C core.
 

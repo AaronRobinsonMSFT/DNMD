@@ -80,12 +80,11 @@ bool create_and_fill_indirect_table(mdcxt_t* cxt, mdtable_id_t original_table, m
 
     // We should only call into here if we don't already have an indirection table.
     mdtable_t* target_table = editor->tables[indirect_table].table;
-    assert(target_table->cxt == NULL);
+    assert(!target_table->is_initialized);
 
     if (!initialize_new_table_details(cxt, indirect_table, target_table))
         return false;
 
-    target_table->cxt = editor->cxt;
     // Assert that the indirection table has exactly one column that points back at the original table.
     // The width can be either a short or wide column.
     assert(target_table->column_count == 1 && (target_table->column_details[0] & ~mdtc_widthmask) == (InsertTable(original_table) | mdtc_idx_table));
@@ -102,31 +101,36 @@ bool create_and_fill_indirect_table(mdcxt_t* cxt, mdtable_id_t original_table, m
     if (mem == NULL)
         return false;
 
-    editor->tables[indirect_table].data.ptr = mem;
-    editor->tables[indirect_table].data.size = allocation_space;
-    target_table->data.ptr = editor->tables[indirect_table].data.ptr;
-    target_table->data.size = target_table->row_size_bytes * editor->tables[original_table].table->row_count;
-
     // The indirection table will initially have each row pointing to the matching row in the original table.
-    uint8_t* table_data = editor->tables[indirect_table].data.ptr;
-    size_t table_len = editor->tables[indirect_table].data.size;
+    uint8_t* table_data = mem;
+    size_t table_len = allocation_space;
     for (uint32_t i = 0; i < editor->tables[original_table].table->row_count; i++)
     {
+        bool written;
         if (target_table->column_details[0] & mdtc_b2)
         {
             assert(i + 1 <= UINT16_MAX);
-            write_u16(&table_data, &table_len, (uint16_t)i + 1);
+            written = write_u16(&table_data, &table_len, (uint16_t)(i + 1));
         }
         else
-            write_u32(&table_data, &table_len, i + 1);
+            written = write_u32(&table_data, &table_len, i + 1);
+        if (!written)
+        {
+            free_mdmem(cxt, mem);
+            return false;
+        }
     }
 
+    editor->tables[indirect_table].data.ptr = mem;
+    editor->tables[indirect_table].data.size = allocation_space;
+    target_table->data.ptr = mem;
+    target_table->data.size = target_table->row_size_bytes * (size_t)editor->tables[original_table].table->row_count;
     target_table->row_count = editor->tables[original_table].table->row_count;
-    target_table->cxt = editor->cxt;
 
     // Introducing a Ptr table means the table heap is now uncompressed.
     cxt->context_flags |= mdc_uncompressed_table_heap;
     editor->tables[original_table].table->has_indirect_table = true;
+    target_table->is_initialized = true;
     return true;
 }
 
@@ -335,7 +339,7 @@ static bool update_table_references_for_shifted_rows(mdeditor_t* editor, mdtable
     for (mdtable_id_t table_id = mdtid_First; table_id < mdtid_End; table_id++)
     {
         mdtable_t* table = &editor->cxt->tables[table_id];
-        if (table->cxt == NULL) // This table is not used in the current image
+        if (!table->is_initialized) // This table is not used in the current image
             continue;
 
         // Update all columns in the table that can refer to the updated table
@@ -396,13 +400,12 @@ bool allocate_new_table(mdcxt_t* cxt, mdtable_id_t table_id)
         return false;
 
     mdtable_t* table = &cxt->tables[table_id];
-    // We should not be allocating for a newly-initialized table.
-    assert(table->cxt == NULL);
+    // We should not be allocating for an already-initialized table.
+    assert(!table->is_initialized);
 
     if (!initialize_new_table_details(cxt, table_id, table))
         return false;
 
-    table->cxt = cxt;
     // Allocate some memory for the table.
     // The number of rows in this allocation is arbitrary.
     // It may be interesting to change the default depending on the target table.
@@ -411,12 +414,10 @@ bool allocate_new_table(mdcxt_t* cxt, mdtable_id_t table_id)
     table->data.size = 0;
     uint8_t* table_data = alloc_mdmem(cxt, initial_allocation_size);
     if (table_data == NULL)
-    {
-        table->cxt = NULL;
         return false;
-    }
     table->data.ptr = cxt->editor->tables[table_id].data.ptr = table_data;
     cxt->editor->tables[table_id].data.size = initial_allocation_size;
+    table->is_initialized = true;
     return true;
 }
 
@@ -428,7 +429,7 @@ bool insert_row_into_table(mdcxt_t* cxt, mdtable_id_t table_id, uint32_t row_ind
         return false;
 
     mdtable_editor_t* target_table_editor = &editor->tables[table_id];
-    assert(target_table_editor->table->cxt != NULL); // The table should exist in the image before a row is added to it.
+    assert(target_table_editor->table->is_initialized); // The table should exist in the image before a row is added to it.
 
     // We do not support adding multiple rows to a table at once. One row must be fully added before another is added.
     if (target_table_editor->table->is_adding_new_row)
@@ -495,7 +496,7 @@ bool update_referenced_type_system_table_row_count(mdcxt_t* cxt, mdtable_id_t up
     for (mdtable_id_t table_id = mdtid_FirstPdb; table_id < mdtid_End; ++table_id)
     {
         mdtable_t* table = &editor->cxt->tables[table_id];
-        if (table->cxt == NULL) // This table is not used in the current image
+        if (!table->is_initialized) // This table is not used in the current image
             continue;
 
         // Update all columns in the table that can refer to the updated table
@@ -623,7 +624,7 @@ static bool reserve_heap_space(mdeditor_t* editor, uint32_t space_size, mdtcol_t
     for (mdtable_id_t i = mdtid_First; i < mdtid_End; i++)
     {
         mdtable_t* table = &editor->cxt->tables[i];
-        if (table->cxt == NULL) // This table is not used in the current image
+        if (!table->is_initialized) // This table is not used in the current image
             continue;
 
         // Update all columns in the table that can refer to the updated heap

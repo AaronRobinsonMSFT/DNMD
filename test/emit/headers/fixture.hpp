@@ -1,8 +1,9 @@
 #ifndef DNMD_TEST_EMIT_HEADERS_FIXTURE_HPP
 #define DNMD_TEST_EMIT_HEADERS_FIXTURE_HPP
 
-#include <dnmd.h>
+#include <dnmd_write.hpp>
 #include <gtest/gtest.h>
+#include "../native.hpp"
 
 class CppHeader : public testing::Test
 {
@@ -26,16 +27,10 @@ protected:
     }
 
     template<mdtable_id_t TableId>
-    mdcursor_t Row()
+    dnmd::cursor<TableId> Row()
     {
-        mdcursor_t row{};
-        uint32_t count;
-        if (!md_create_cursor(handle, TableId, &row, &count))
-        {
-            EXPECT_TRUE(md_append_row(handle, TableId, &row));
-            md_commit_row_add(row);
-        }
-        return row;
+        auto row = dnmd::md_create_cursor<TableId>(handle);
+        return row ? row.as() : dnmd_test::AppendRow<TableId>(handle);
     }
 };
 

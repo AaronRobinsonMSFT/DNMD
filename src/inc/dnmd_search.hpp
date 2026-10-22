@@ -108,7 +108,7 @@ inline raw_cursor<TableId> find_row(cursor<TableId> begin, column<TableId, Colum
     auto found = sorted_search(CursorTable(begin), col)
         ? std::lower_bound(first, last, value) : std::find(first, last, value);
     if (found == last || *found != value)
-        return {};
+        return raw_cursor<TableId>::nil(begin.get_handle());
     return found.position();
 }
 }
@@ -119,7 +119,7 @@ inline raw_cursor<TableId> md_find_row_from_cursor(cursor<TableId> begin, column
 {
     uint32_t encoded;
     if (!detail::search_value(detail::CursorTable(begin), col, value, encoded))
-        return {};
+        return raw_cursor<TableId>::nil(begin.get_handle());
     return detail::find_row(begin, col, encoded);
 }
 
@@ -130,7 +130,7 @@ inline raw_cursor<TableId> md_find_row_from_cursor(cursor<TableId> begin, column
 {
     mdToken token;
     if (!detail::search_token(col, value, token))
-        return {};
+        return raw_cursor<TableId>::nil(begin.get_handle());
     return md_find_row_from_cursor(begin, col, token);
 }
 
@@ -192,7 +192,7 @@ inline raw_cursor<OwnerTableId> find_list_owner(cursor<ElementTableId> element,
     auto element_table = CursorTable(element);
     auto owner_table = &element_table->cxt->tables[OwnerTableId];
     if (owner_table->row_count == 0)
-        return {};
+        return raw_cursor<OwnerTableId>::nil(element.get_handle());
 
     uint32_t index = CursorRow(element);
     constexpr auto pointer_id = pointer_table_id<ElementTableId>();
@@ -202,16 +202,16 @@ inline raw_cursor<OwnerTableId> find_list_owner(cursor<ElementTableId> element,
         {
             auto pointer_table = &element_table->cxt->tables[pointer_id];
             if (pointer_table->row_count == 0)
-                return {};
-            auto pointer_begin = raw_cursor<pointer_id>{CreateCursor(pointer_table, 1)}.as();
+                return raw_cursor<OwnerTableId>::nil(element.get_handle());
+            auto pointer_begin = raw_cursor<pointer_id>::at(element.get_handle(), 1).as();
             auto pointer = md_find_row_from_cursor(pointer_begin, pointer_column<pointer_id>(), element);
             if (!pointer)
-                return {};
+                return raw_cursor<OwnerTableId>::nil(element.get_handle());
             index = CursorRow(pointer);
         }
     }
 
-    auto owner_begin = raw_cursor<OwnerTableId>{CreateCursor(owner_table, 1)}.as();
+    auto owner_begin = raw_cursor<OwnerTableId>::at(element.get_handle(), 1).as();
     column_iterator first{owner_begin, col};
     auto last = first.end();
     auto found = last;
@@ -221,7 +221,7 @@ inline raw_cursor<OwnerTableId> find_list_owner(cursor<ElementTableId> element,
         auto reverse = std::find_if(std::make_reverse_iterator(last), std::make_reverse_iterator(first),
             [index](uint32_t start) { return start != 0 && start <= index; });
         if (reverse == std::make_reverse_iterator(first))
-            return {};
+            return raw_cursor<OwnerTableId>::nil(element.get_handle());
         found = reverse.base() - 1;
     }
     else
@@ -229,7 +229,7 @@ inline raw_cursor<OwnerTableId> find_list_owner(cursor<ElementTableId> element,
         column_iterator<OwnerTableId, ColumnType, list_boundary_value> ordered{owner_begin, col};
         auto after = std::upper_bound(ordered, ordered.end(), index);
         if (after == ordered)
-            return {};
+            return raw_cursor<OwnerTableId>::nil(element.get_handle());
         found = column_iterator{(--after).position().as(), col};
     }
 
@@ -237,7 +237,7 @@ inline raw_cursor<OwnerTableId> find_list_owner(cursor<ElementTableId> element,
     uint32_t end_row = list_end_row(owner_table, col);
     uint32_t end = next == last ? end_row : *next;
     if (*found == 0 || *found > index || end > end_row || index >= end)
-        return {};
+        return raw_cursor<OwnerTableId>::nil(element.get_handle());
     return found.position();
 }
 }
@@ -265,7 +265,7 @@ template<mdtable_id_t TableId>
 inline bool md_find_token_of_range_element(cursor<TableId> element, mdToken& token) noexcept
 {
     static_assert(detail::parent_table_id<TableId>() != mdtid_Unused, "The row must belong to a list.");
-    raw_cursor<detail::parent_table_id<TableId>()> parent;
+    auto parent = raw_cursor<detail::parent_table_id<TableId>()>::nil(element.get_handle());
     return md_find_cursor_of_range_element(element, parent) && parent.get_token(token);
 }
 

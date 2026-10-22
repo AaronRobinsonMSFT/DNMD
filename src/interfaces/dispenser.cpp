@@ -76,8 +76,8 @@ namespace
                 return E_OUTOFMEMORY;
             
             // Initialize the MVID of the new image.
-            mdcursor_t moduleCursor;
-            if (!md_token_to_cursor(md_ptr.get(), TokenFromRid(1, mdtModule), &moduleCursor))
+            auto moduleCursor = dnmd::raw_cursor<mdtid_Module>{md_ptr.get(), TokenFromRid(1, mdtModule)};
+            if (!moduleCursor)
                 return E_FAIL;
             
             mdguid_t mvid;
@@ -85,7 +85,7 @@ namespace
             if (FAILED(hr))
                 return hr;
             
-            if (!md_set_column_value_as_guid(moduleCursor, mdtModule_Mvid, mvid))
+            if (!moduleCursor.as().set_column_value(dnmd::columns::Module_Mvid, mvid))
                 return E_OUTOFMEMORY;
             
             dncp::com_ptr<ControllingIUnknown> obj;

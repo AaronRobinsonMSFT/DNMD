@@ -2,7 +2,9 @@
 #define _SRC_INC_DNMD_WRITE_HPP_
 
 #include "dnmd_read.hpp"
+#include "dnmd_edit.h"
 #include <cstring>
+#include <memory>
 
 namespace dnmd
 {
@@ -46,13 +48,13 @@ inline bool validate_row_sorted_within_table(cursor<TableId> row) noexcept
 {
     auto table = CursorTable(row);
     uint32_t index = CursorRow(row);
-    if (index > 1 && !rows_sorted(raw_cursor<TableId>{CreateCursor(table, index - 1)}.as(), row))
+    if (index > 1 && !rows_sorted(raw_cursor<TableId>::at(table->cxt, index - 1).as(), row))
         return false;
-    return index == table->row_count || rows_sorted(row, raw_cursor<TableId>{CreateCursor(table, index + 1)}.as());
+    return index == table->row_count || rows_sorted(row, raw_cursor<TableId>::at(table->cxt, index + 1).as());
 }
 
 template<mdtable_id_t TableId, typename ColumnType>
-inline void update_column_sort_order(mdcursor_t row, column<TableId, ColumnType> col) noexcept
+inline void update_column_sort_order(cursor<TableId> row, column<TableId, ColumnType> col) noexcept
 {
     auto table = CursorTable(row);
     if (!table->is_sorted || table->is_adding_new_row)
@@ -69,7 +71,7 @@ template<mdtable_id_t TableId>
 struct row_writer final
 {
 private:
-    mdcursor_t _cursor;
+    cursor<TableId> _cursor;
 
     template<bool TrackOrder, typename ColumnType>
     bool write_raw(column<TableId, ColumnType> col, uint32_t value) const noexcept
@@ -121,7 +123,7 @@ private:
     }
 
 public:
-    explicit row_writer(cursor<TableId> const& row) noexcept : _cursor{row._cursor} {}
+    explicit row_writer(cursor<TableId> const& row) noexcept : _cursor{row} {}
 
     bool write(column<TableId, column_type_constant> col, uint32_t value) const noexcept
     {
@@ -165,7 +167,8 @@ public:
         std::enable_if_t<detail::contains_table_id_v<ValueTableId, TargetTableIds...>, int> = 0>
     bool write(column<TableId, raw_cursor<TargetTableIds...>> col, cursor<ValueTableId> value) const noexcept
     {
-        return write(col, CreateTokenType(ValueTableId) | detail::CursorRow(value));
+        mdToken token;
+        return value.get_token(token) && write(col, token);
     }
 
     template<mdtable_id_t... TargetTableIds, mdtable_id_t... ValueTableIds,
@@ -305,52 +308,125 @@ inline bool cursor<TableId>::set_column_value(column<TableId, indirect_cursor<Di
     return row_writer<TableId>{*this}.write(column, value);
 }
 
-template<mdtable_id_t TableId>
-inline void md_commit_row_add(cursor<TableId> row) noexcept
-{
-    auto table = detail::CursorTable(row);
-    assert(table->is_adding_new_row);
-    if (table->is_sorted)
-        table->is_sorted = detail::validate_row_sorted_within_table(row);
-    table->is_adding_new_row = false;
-}
-
 namespace detail
 {
-inline void commit_row_add(mdcursor_t row) noexcept
+template<mdtable_id_t Owner, mdtable_id_t Child>
+constexpr bool list_column_matches(col_index_t col) noexcept
 {
-    if (CursorRow(row) == 0)
-        return;
-
-    auto table = CursorTable(row);
-    switch (table->table_id)
-    {
-    case mdtid_ClassLayout: return dnmd::md_commit_row_add(raw_cursor<mdtid_ClassLayout>{row}.as());
-    case mdtid_Constant: return dnmd::md_commit_row_add(raw_cursor<mdtid_Constant>{row}.as());
-    case mdtid_CustomAttribute: return dnmd::md_commit_row_add(raw_cursor<mdtid_CustomAttribute>{row}.as());
-    case mdtid_DeclSecurity: return dnmd::md_commit_row_add(raw_cursor<mdtid_DeclSecurity>{row}.as());
-    case mdtid_FieldLayout: return dnmd::md_commit_row_add(raw_cursor<mdtid_FieldLayout>{row}.as());
-    case mdtid_FieldMarshal: return dnmd::md_commit_row_add(raw_cursor<mdtid_FieldMarshal>{row}.as());
-    case mdtid_FieldRva: return dnmd::md_commit_row_add(raw_cursor<mdtid_FieldRva>{row}.as());
-    case mdtid_GenericParam: return dnmd::md_commit_row_add(raw_cursor<mdtid_GenericParam>{row}.as());
-    case mdtid_GenericParamConstraint: return dnmd::md_commit_row_add(raw_cursor<mdtid_GenericParamConstraint>{row}.as());
-    case mdtid_ImplMap: return dnmd::md_commit_row_add(raw_cursor<mdtid_ImplMap>{row}.as());
-    case mdtid_InterfaceImpl: return dnmd::md_commit_row_add(raw_cursor<mdtid_InterfaceImpl>{row}.as());
-    case mdtid_MethodImpl: return dnmd::md_commit_row_add(raw_cursor<mdtid_MethodImpl>{row}.as());
-    case mdtid_MethodSemantics: return dnmd::md_commit_row_add(raw_cursor<mdtid_MethodSemantics>{row}.as());
-    case mdtid_NestedClass: return dnmd::md_commit_row_add(raw_cursor<mdtid_NestedClass>{row}.as());
+    if constexpr (Owner == mdtid_TypeDef && Child == mdtid_Field) return col == mdtTypeDef_FieldList;
+    else if constexpr (Owner == mdtid_TypeDef && Child == mdtid_MethodDef) return col == mdtTypeDef_MethodList;
+    else if constexpr (Owner == mdtid_MethodDef && Child == mdtid_Param) return col == mdtMethodDef_ParamList;
+    else if constexpr (Owner == mdtid_EventMap && Child == mdtid_Event) return col == mdtEventMap_EventList;
+    else if constexpr (Owner == mdtid_PropertyMap && Child == mdtid_Property) return col == mdtPropertyMap_PropertyList;
 #ifdef DNMD_PORTABLE_PDB
-    case mdtid_LocalScope: return dnmd::md_commit_row_add(raw_cursor<mdtid_LocalScope>{row}.as());
-    case mdtid_StateMachineMethod: return dnmd::md_commit_row_add(raw_cursor<mdtid_StateMachineMethod>{row}.as());
-    case mdtid_CustomDebugInformation: return dnmd::md_commit_row_add(raw_cursor<mdtid_CustomDebugInformation>{row}.as());
+    else if constexpr (Owner == mdtid_LocalScope && Child == mdtid_LocalVariable) return col == mdtLocalScope_VariableList;
+    else if constexpr (Owner == mdtid_LocalScope && Child == mdtid_LocalConstant) return col == mdtLocalScope_ConstantList;
 #endif
-    default:
-        assert(table->is_adding_new_row);
-        table->is_adding_new_row = false;
+    else { (void)col; return false; }
+}
+}
+
+template<mdtable_id_t TableId>
+struct added_row final
+{
+private:
+    friend struct detail::cursor_access;
+    mdtable_t* _table;
+    uint32_t _row;
+
+    added_row(mdtable_t& table, uint32_t row) noexcept : _table{&table}, _row{row}
+    {
+        assert(table.table_id == TableId);
+        assert(row == 0 || (row <= table.row_count && table.is_adding_new_row));
     }
-}
-}
 
+    static added_row finish_acquisition(mdhandle_t handle, bool success, uint32_t row) noexcept
+    {
+        added_row result{detail::context(handle).tables[TableId], row};
+        if (!success)
+            result.commit();
+        return result;
+    }
+
+public:
+    added_row() = delete;
+    added_row(added_row const&) = delete;
+    added_row& operator=(added_row const&) = delete;
+    added_row(added_row&& other) noexcept : _table{other._table}, _row{other._row} { other._row = 0; }
+    added_row& operator=(added_row&& other) noexcept
+    {
+        if (this != std::addressof(other))
+        {
+            commit();
+            _table = other._table;
+            _row = other._row;
+            other._row = 0;
+        }
+        return *this;
+    }
+    ~added_row() { commit(); }
+
+    mdhandle_t get_handle() const noexcept { return _table->cxt; }
+    raw_cursor<TableId> position() const noexcept { return raw_cursor<TableId>::at(get_handle(), _row); }
+    explicit operator bool() const noexcept { return _row != 0; }
+    cursor<TableId> as() const noexcept { assert(_row != 0); return position().as(); }
+    bool get_token(mdToken& token) const noexcept { return position().get_token(token); }
+
+    void commit() noexcept
+    {
+        if (_row == 0)
+            return;
+        assert(_table->is_adding_new_row);
+        if (_table->is_sorted)
+            _table->is_sorted = detail::validate_row_sorted_within_table(as());
+        _table->is_adding_new_row = false;
+        _row = 0;
+    }
+
+    static added_row append(mdhandle_t handle) noexcept
+    {
+        static_assert(TableId >= mdtid_First && TableId < mdtid_End);
+        uint32_t row = 0;
+        bool success = md_cpp_append_row(handle, TableId, &row);
+        return finish_acquisition(handle, success, row);
+    }
+
+    static added_row insert(cursor<TableId> relative, bool after) noexcept
+    {
+        uint32_t row = 0;
+        bool success = md_cpp_insert_row(detail::CursorTable(relative), detail::CursorRow(relative), after, &row);
+        return finish_acquisition(relative.get_handle(), success, row);
+    }
+
+    template<mdtable_id_t Owner>
+    static added_row in_list(cursor<Owner> owner, col_index_t list, bool sorted,
+        col_index_t sort_column, uint32_t sort_value) noexcept
+    {
+        if (!detail::list_column_matches<Owner, TableId>(list))
+            return finish_acquisition(owner.get_handle(), false, 0);
+        uint32_t row = 0;
+        mdtable_id_t table = TableId;
+        bool success = md_cpp_add_list_row(detail::CursorTable(owner), detail::CursorRow(owner),
+            list, sorted, sort_column, sort_value, &table, &row);
+        assert(row == 0 || table == TableId);
+        return finish_acquisition(owner.get_handle(), success, row);
+    }
+};
+
+template<mdtable_id_t Owner, mdtable_id_t Direct, mdtable_id_t Ptr>
+inline added_row<Direct> md_add_new_row_to_list(cursor<Owner> owner,
+    column<Owner, indirect_cursor<Direct, Ptr>> list) noexcept
+{
+    static_assert(Ptr == detail::pointer_table_id<Direct>());
+    return added_row<Direct>::in_list(owner, list.column_index, false, list.column_index, 0);
+}
+template<mdtable_id_t Owner, mdtable_id_t Direct, mdtable_id_t Ptr>
+inline added_row<Direct> md_add_new_row_to_sorted_list(cursor<Owner> owner,
+    column<Owner, indirect_cursor<Direct, Ptr>> list,
+    column<Direct, column_type_constant> sort, uint32_t value) noexcept
+{
+    static_assert(Ptr == detail::pointer_table_id<Direct>());
+    return added_row<Direct>::in_list(owner, list.column_index, true, sort.column_index, value);
+}
 } // namespace dnmd
-
 #endif // _SRC_INC_DNMD_WRITE_HPP_

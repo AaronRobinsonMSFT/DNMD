@@ -7,14 +7,14 @@
 
 // Import a reference to a TypeDef row from one module and assembly pair to another.
 HRESULT ImportReferenceToTypeDef(
-    mdcursor_t sourceTypeDef,
+    dnmd::raw_cursor<mdtid_TypeDef> sourceTypeDef,
     mdhandle_t sourceAssembly,
     span<uint8_t const> sourceAssemblyHash,
     mdhandle_t targetAssembly,
     mdhandle_t targetModule,
     bool alwaysImport, // Always import a reference to the TypeDef, even if the source and destination modules are the same.
-    std::function<void(mdcursor_t row)> onRowEdited,
-    mdcursor_t* targetTypeDef);
+    std::function<void(dnmd::any_cursor row)> onRowEdited,
+    dnmd::raw_cursor<mdtid_TypeDef, mdtid_TypeRef>* targetTypeDef);
 
 // Import a reference to a TypeDef, TypeRef, or TypeSpec row from one module and assembly pair to another, and return a TypeDef or TypeRef or TypeSpec token
 // that can be used to refer to the imported type.
@@ -24,7 +24,7 @@ HRESULT ImportReferenceToTypeDefOrRefOrSpec(
     span<uint8_t const> sourceAssemblyHash,
     mdhandle_t targetAssembly,
     mdhandle_t targetModule,
-    std::function<void(mdcursor_t)> onRowAdded,
+    std::function<void(dnmd::any_cursor)> onRowAdded,
     mdToken* importedToken);
 
 // Import a reference to a MemberRef row from one module and assembly pair to another.

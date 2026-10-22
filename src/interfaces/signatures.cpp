@@ -334,7 +334,7 @@ HRESULT ImportSignatureIntoModule(
     mdhandle_t destinationAssembly,
     mdhandle_t destinationModule,
     span<const uint8_t> signature,
-    std::function<void(mdcursor_t)> onRowAdded,
+    std::function<void(dnmd::any_cursor)> onRowAdded,
     inline_span<uint8_t>& importedSignature)
 {
     HRESULT hr;
@@ -455,7 +455,7 @@ HRESULT ImportTypeSpecBlob(
     mdhandle_t destinationAssembly,
     mdhandle_t destinationModule,
     span<const uint8_t> typeSpecBlob,
-    std::function<void(mdcursor_t)> onRowAdded,
+    std::function<void(dnmd::any_cursor)> onRowAdded,
     inline_span<uint8_t>& importedTypeSpecBlob)
 {
     std::vector<uint8_t> importedTypeSpecBlobBuffer;

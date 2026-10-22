@@ -411,7 +411,7 @@ static bool set_column_as_end_of_table_cursor(mdcursor_t c, col_index_t col_idx)
     mdtable_t* target_table = &table->cxt->tables[target_table_id];
 
     mdcursor_t end_of_table;
-    if (target_table->cxt == NULL)
+    if (!target_table->is_initialized)
     {
         if (!initialize_new_table_details(table->cxt, target_table_id, target_table))
         {
@@ -452,7 +452,7 @@ static bool initialize_list_columns(mdcursor_t c)
 static bool insert_row_cursor_relative(mdcursor_t row, int32_t offset, mdcursor_t* new_row)
 {
     mdtable_t* table = CursorTable(&row);
-    if (table->cxt == NULL) // We can't turn an insert into a "create table" operation.
+    if (!table->is_initialized) // We can't turn an insert into a "create table" operation.
         return false;
 
     // We don't allow inserting in the middle of tables that have indirection tables.
@@ -510,7 +510,7 @@ bool md_insert_row_after(mdcursor_t row, mdcursor_t* new_row)
 // The table must already exist.
 static bool append_row(mdtable_t* table, mdcursor_t* new_row)
 {
-    assert(table->cxt != NULL);
+    assert(table->is_initialized);
 
     if (!insert_row_into_table(table->cxt, table->table_id, table->row_count + 1, new_row))
         return false;
@@ -533,7 +533,7 @@ bool md_append_row(mdhandle_t handle, mdtable_id_t table_id, mdcursor_t* new_row
 
     mdtable_t* table = &cxt->tables[table_id];
 
-    if (table->cxt == NULL)
+    if (!table->is_initialized)
     {
         // We should never be allocating a new indirection table through md_append_row.
         // We should be allocating it in md_add_new_row_to_parent_table when necessary.
@@ -572,12 +572,18 @@ static bool add_new_row_to_list(mdcursor_t list_owner, col_index_t list_col, mdc
         if (!append_row(CursorTable(&target_row), new_row))
             return false;
 
-        mdcursor_t new_indirection_row;
+        mdcursor_t new_indirection_row = { 0 };
         if (!md_insert_row_before(row_to_insert_before, &new_indirection_row))
+        {
+            md_commit_row_add(new_indirection_row);
             return false;
+        }
 
         if (!md_set_column_value_as_cursor(new_indirection_row, index_to_col(0, CursorTable(&row_to_insert_before)->table_id), *new_row))
+        {
+            md_commit_row_add(new_indirection_row);
             return false;
+        }
 
         if (count == 0 || CursorRow(&range) == CursorRow(&row_to_insert_before))
         {
@@ -586,7 +592,10 @@ static bool add_new_row_to_list(mdcursor_t list_owner, col_index_t list_col, mdc
             // In both of these cases, we need to update the parent's row column to point to the newly inserted row.
             // Otherwise, this element would be associated with the entry before the parent row.
             if (!md_set_column_value_as_cursor(list_owner, list_col, new_indirection_row))
+            {
+                md_commit_row_add(new_indirection_row);
                 return false;
+            }
         }
 
         md_commit_row_add(new_indirection_row);
@@ -670,7 +679,7 @@ bool md_add_new_row_to_list(mdcursor_t list_owner, col_index_t list_col, mdcurso
     if (!md_get_column_value_as_range(list_owner, list_col, &existing_range, &count))
         return false;
 
-    if (CursorTable(&existing_range)->cxt == NULL)
+    if (!CursorTable(&existing_range)->is_initialized)
     {
         // If we don't have a table to add the row to, create one.
         if (!allocate_new_table(CursorTable(&list_owner)->cxt, CursorTable(&existing_range)->table_id))
@@ -701,7 +710,7 @@ bool md_add_new_row_to_sorted_list(mdcursor_t list_owner, col_index_t list_col, 
     if (!md_get_column_value_as_range(list_owner, list_col, &existing_range, &count))
         return false;
 
-    if (CursorTable(&existing_range)->cxt == NULL)
+    if (!CursorTable(&existing_range)->is_initialized)
     {
         // If we don't have a table to add the row to, create one.
         if (!allocate_new_table(CursorTable(&list_owner)->cxt, CursorTable(&existing_range)->table_id))
@@ -820,7 +829,7 @@ void md_commit_row_add(mdcursor_t row)
     mdtable_t* table = CursorTable(&row);
 
     // If this method is called with a zero-initialized cursor,
-    // no-op. This helps make the C++ helper dnmd::added_row_t function more easily.
+    // no-op. This helps make the legacy C++ helper md_added_row_t function more easily.
     // This also allows users to call this method in all cases, even if the row-add fails.
     if (table == NULL)
         return;

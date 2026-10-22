@@ -182,8 +182,9 @@ typedef struct mdtable__
     bool is_sorted : 1;
     bool is_adding_new_row : 1;
     bool has_indirect_table : 1; // The corresponding Ptr table is in use for this element table.
+    bool is_initialized : 1; // Table schema and loaded or allocated storage are fully initialized.
     uint8_t table_id;
-    struct mdcxt__* cxt; // Non-null indicates complete table initialization.
+    struct mdcxt__* cxt; // Always identifies the owning context, including for absent tables.
     mdtcol_t* column_details;
 } mdtable_t;
 

@@ -59,18 +59,14 @@ HRESULT MetadataEmit::SetModuleProps(
     if (!cvt.Success())
         return E_INVALIDARG;
 
-    mdcursor_t c;
-    uint32_t count;
-    if (!md_create_cursor(MetaData(), mdtid_Module, &c, &count))
+    auto c = dnmd::md_create_cursor<mdtid_Module>(MetaData());
+    if (!c)
     {
-        if (md_append_row(MetaData(), mdtid_Module, &c))
-        {
-            dnmd::md_commit_row_add(dnmd::raw_cursor<mdtid_Module>{c}.as());
-        }
-        else
-        {
+        auto added = dnmd::added_row<mdtid_Module>::append(MetaData());
+        if (!added)
             return E_FAIL;
-        }
+        c = added.position();
+        added.commit();
     }
 
     // Search for a file name in the provided path
@@ -184,8 +180,8 @@ HRESULT MetadataEmit::DefineTypeDef(
         mdToken     rtkImplements[],
         mdTypeDef   *ptd)
 {
-    dnmd::added_row_t c;
-    if (!md_append_row(MetaData(), mdtid_TypeDef, &c))
+    auto c = dnmd::added_row<mdtid_TypeDef>::append(MetaData());
+    if (!c)
         return E_FAIL;
 
     pal::StringConvert<WCHAR, char> cvt(szTypeDef);
@@ -212,35 +208,15 @@ HRESULT MetadataEmit::DefineTypeDef(
     if (!writer.write(TypeDef_Extends, tkExtends))
         return E_FAIL;
 
-    mdcursor_t fieldCursor;
-    uint32_t numFields;
-    if (!md_create_cursor(MetaData(), mdtid_Field, &fieldCursor, &numFields))
-    {
-        mdToken nilField = mdFieldDefNil;
-        if (!writer.write(TypeDef_FieldList, nilField))
-            return E_FAIL;
-    }
-    else
-    {
-        md_cursor_move(&fieldCursor, numFields);
-        if (!writer.write(TypeDef_FieldList, dnmd::raw_cursor<mdtid_Field>{fieldCursor}))
-            return E_FAIL;
-    }
+    using field_list = dnmd::indirect_cursor<mdtid_Field, mdtid_FieldPtr>;
+    auto fields = field_list::end(MetaData());
+    if (!writer.write(TypeDef_FieldList, fields))
+        return E_FAIL;
 
-    mdcursor_t methodCursor;
-    uint32_t numMethods;
-    if (!md_create_cursor(MetaData(), mdtid_MethodDef, &methodCursor, &numMethods))
-    {
-        mdToken nilMethod = mdMethodDefNil;
-        if (!writer.write(TypeDef_MethodList, nilMethod))
-            return E_FAIL;
-    }
-    else
-    {
-        md_cursor_move(&methodCursor, numMethods);
-        if (!writer.write(TypeDef_MethodList, dnmd::raw_cursor<mdtid_MethodDef>{methodCursor}))
-            return E_FAIL;
-    }
+    using method_list = dnmd::indirect_cursor<mdtid_MethodDef, mdtid_MethodPtr>;
+    auto methods = method_list::end(MetaData());
+    if (!writer.write(TypeDef_MethodList, methods))
+        return E_FAIL;
 
     size_t i = 0;
 
@@ -248,8 +224,8 @@ HRESULT MetadataEmit::DefineTypeDef(
     {
         for (mdToken currentImplementation = rtkImplements[i]; currentImplementation != mdTokenNil; currentImplementation = rtkImplements[++i])
         {
-            dnmd::added_row_t interfaceImpl;
-            if (!md_append_row(MetaData(), mdtid_InterfaceImpl, &interfaceImpl))
+            auto interfaceImpl = dnmd::added_row<mdtid_InterfaceImpl>::append(MetaData());
+            if (!interfaceImpl)
                 return E_FAIL;
 
             dnmd::row_writer interfaceImpl_writer{dnmd::raw_cursor<mdtid_InterfaceImpl>{interfaceImpl}.as()};
@@ -263,7 +239,7 @@ HRESULT MetadataEmit::DefineTypeDef(
 
     // TODO: Update Enc Log
 
-    if (!md_cursor_to_token(c, ptd))
+    if (!c.get_token(*ptd))
         return E_FAIL;
 
     return S_OK;
@@ -287,8 +263,8 @@ HRESULT MetadataEmit::DefineNestedType(
 
     RETURN_IF_FAILED(DefineTypeDef(szTypeDef, dwTypeDefFlags, tkExtends, rtkImplements, ptd));
 
-    dnmd::added_row_t c;
-    if (!md_append_row(MetaData(), mdtid_NestedClass, &c))
+    auto c = dnmd::added_row<mdtid_NestedClass>::append(MetaData());
+    if (!c)
         return E_FAIL;
 
     dnmd::row_writer writer{dnmd::raw_cursor<mdtid_NestedClass>{c}.as()};
@@ -325,12 +301,12 @@ HRESULT MetadataEmit::DefineMethod(
     if (TypeFromToken(td) != mdtTypeDef)
         return E_INVALIDARG;
 
-    mdcursor_t type;
-    if (!md_token_to_cursor(MetaData(), td, &type))
+    auto type = dnmd::raw_cursor<mdtid_TypeDef>{MetaData(), td};
+    if (!type)
         return CLDB_E_FILE_CORRUPT;
 
-    dnmd::added_row_t newMethod;
-    if (!md_add_new_row_to_list(type, mdtTypeDef_MethodList, &newMethod))
+    auto newMethod = dnmd::md_add_new_row_to_list(type.as(), TypeDef_MethodList);
+    if (!newMethod)
         return E_FAIL;
 
     pal::StringConvert<WCHAR, char> cvt(szName);
@@ -356,7 +332,7 @@ HRESULT MetadataEmit::DefineMethod(
     if (!newMethod_writer.write(MethodDef_Rva, rva))
         return E_FAIL;
 
-    if (!md_cursor_to_token(newMethod, pmd))
+    if (!newMethod.get_token(*pmd))
         return CLDB_E_FILE_CORRUPT;
 
     // TODO: Update ENC log
@@ -368,8 +344,8 @@ HRESULT MetadataEmit::DefineMethodImpl(
         mdToken     tkBody,
         mdToken     tkDecl)
 {
-    dnmd::added_row_t c;
-    if (!md_append_row(MetaData(), mdtid_MethodImpl, &c))
+    auto c = dnmd::added_row<mdtid_MethodImpl>::append(MetaData());
+    if (!c)
         return E_FAIL;
 
     dnmd::row_writer writer{dnmd::raw_cursor<mdtid_MethodImpl>{c}.as()};
@@ -391,8 +367,8 @@ HRESULT MetadataEmit::DefineTypeRefByName(
         LPCWSTR     szName,
         mdTypeRef   *ptr)
 {
-    dnmd::added_row_t c;
-    if (!md_append_row(MetaData(), mdtid_TypeRef, &c))
+    auto c = dnmd::added_row<mdtid_TypeRef>::append(MetaData());
+    if (!c)
         return E_FAIL;
 
     dnmd::row_writer writer{dnmd::raw_cursor<mdtid_TypeRef>{c}.as()};
@@ -413,7 +389,7 @@ HRESULT MetadataEmit::DefineTypeRefByName(
     if (!writer.write(TypeRef_TypeName, name))
         return E_FAIL;
 
-    if (!md_cursor_to_token(c, ptr))
+    if (!c.get_token(*ptr))
         return E_FAIL;
 
     // TODO: Update ENC log
@@ -445,11 +421,11 @@ HRESULT MetadataEmit::DefineImportType(
     dncp::com_ptr<IDNMDOwner> import{};
     RETURN_IF_FAILED(pImport->QueryInterface(IID_IDNMDOwner, (void**)&import));
 
-    mdcursor_t originalTypeDef;
-    if (!md_token_to_cursor(import->MetaData(), tdImport, &originalTypeDef))
+    auto originalTypeDef = dnmd::raw_cursor<mdtid_TypeDef>{import->MetaData(), tdImport};
+    if (!originalTypeDef)
         return CLDB_E_FILE_CORRUPT;
 
-    mdcursor_t importedTypeDef;
+    dnmd::raw_cursor<mdtid_TypeDef, mdtid_TypeRef> importedTypeDef{MetaData(), 0};
 
     RETURN_IF_FAILED(ImportReferenceToTypeDef(
         originalTypeDef,
@@ -458,11 +434,11 @@ HRESULT MetadataEmit::DefineImportType(
         assemEmit->MetaData(),
         MetaData(),
         false,
-        [](mdcursor_t){},
+        [](dnmd::any_cursor){},
         &importedTypeDef
     ));
 
-    if (!md_cursor_to_token(importedTypeDef, ptr))
+    if (!importedTypeDef.get_token(*ptr))
         return E_FAIL;
 
     return S_OK;
@@ -485,8 +461,8 @@ HRESULT MetadataEmit::DefineMemberRef(
 
     // TODO: Check for duplicates
 
-    dnmd::added_row_t c;
-    if (!md_append_row(MetaData(), mdtid_MemberRef, &c))
+    auto c = dnmd::added_row<mdtid_MemberRef>::append(MetaData());
+    if (!c)
         return E_FAIL;
 
     dnmd::row_writer writer{dnmd::raw_cursor<mdtid_MemberRef>{c}.as()};
@@ -501,7 +477,7 @@ HRESULT MetadataEmit::DefineMemberRef(
     if (!writer.write(MemberRef_Signature, sig, sigLength))
         return E_FAIL;
 
-    if (!md_cursor_to_token(c, pmr))
+    if (!c.get_token(*pmr))
         return E_FAIL;
 
     // TODO: Update EncLog
@@ -535,8 +511,8 @@ namespace
     template<mdtable_id_t TableId>
     HRESULT AddMethodSemantic(mdhandle_t md, dnmd::cursor<TableId> parent, CorMethodSemanticsAttr semantic, mdMethodDef method)
     {
-        dnmd::added_row_t addMethodSemantic;
-        if (!md_append_row(md, mdtid_MethodSemantics, &addMethodSemantic))
+        auto addMethodSemantic = dnmd::added_row<mdtid_MethodSemantics>::append(md);
+        if (!addMethodSemantic)
             return E_FAIL;
 
         dnmd::row_writer writer{dnmd::raw_cursor<mdtid_MethodSemantics>{addMethodSemantic}.as()};
@@ -629,25 +605,22 @@ namespace
     HRESULT FindOrCreateParentedRow(mdhandle_t md, mdToken parent,
         dnmd::column<TableId, dnmd::raw_cursor<ParentTableIds...>> parentCol, T const& setTableData)
     {
-        HRESULT hr;
-        dnmd::added_row_t addedRow;
         auto begin = dnmd::md_create_cursor<TableId>(md);
-        dnmd::raw_cursor<TableId> position;
+        auto position = dnmd::raw_cursor<TableId>::nil(md);
         if (begin)
             position = dnmd::md_find_row_from_cursor(begin.as(), parentCol, parent);
         if (!position)
         {
             // TODO: Update EncLog
-            if (!md_append_row(md, TableId, &addedRow))
+            auto addedRow = dnmd::added_row<TableId>::append(md);
+            if (!addedRow)
                 return E_FAIL;
 
-            position = dnmd::raw_cursor<TableId>{addedRow};
-            if (!position.as().set_column_value(parentCol, parent))
+            if (!addedRow.as().set_column_value(parentCol, parent))
                 return E_FAIL;
+            return setTableData(addedRow.as());
         }
-        RETURN_IF_FAILED(setTableData(position.as()));
-
-        return S_OK;
+        return setTableData(position.as());
     }
 }
 
@@ -680,8 +653,8 @@ HRESULT MetadataEmit::DefineEvent(
     {
         HRESULT hr;
         // TODO: Check for duplicates
-        dnmd::added_row_t addedEvent;
-        if (!md_add_new_row_to_list(c, mdtEventMap_EventList, &addedEvent))
+        auto addedEvent = dnmd::md_add_new_row_to_list(c, EventMap_EventList);
+        if (!addedEvent)
             return E_FAIL;
 
         dnmd::row_writer addedEvent_writer{dnmd::raw_cursor<mdtid_Event>{addedEvent}.as()};
@@ -718,7 +691,7 @@ HRESULT MetadataEmit::DefineEvent(
             }
         }
 
-        if (!md_cursor_to_token(addedEvent, pmdEvent))
+        if (!addedEvent.get_token(*pmdEvent))
             return E_FAIL;
 
         // TODO: Update EncLog
@@ -780,23 +753,19 @@ HRESULT MetadataEmit::DeleteClassLayout(
 
     // Now that we've deleted the class layout entry,
     // we need to delete the field layout entries for the fields of the type.
-    mdcursor_t type;
-    if (!md_token_to_cursor(MetaData(), td, &type))
+    auto type = dnmd::raw_cursor<mdtid_TypeDef>{MetaData(), td};
+    if (!type)
         return CLDB_E_FILE_CORRUPT;
 
-    mdcursor_t field;
+    auto field = dnmd::indirect_cursor<mdtid_Field, mdtid_FieldPtr>::nil(MetaData());
     uint32_t fieldCount;
-    if (!md_get_column_value_as_range(type, mdtTypeDef_FieldList, &field, &fieldCount))
+    if (!type.as().get_column_value_as_range(TypeDef_FieldList, field, &fieldCount))
         return S_OK;
 
-    for (uint32_t i = 0; i < fieldCount; ++i, md_cursor_next(&field))
+    for (uint32_t i = 0; i < fieldCount; ++i, dnmd::md_cursor_next(field))
     {
-        mdcursor_t resolvedField;
-        if (!md_resolve_indirect_cursor(field, &resolvedField))
-            return E_FAIL;
-
         mdToken fieldToken;
-        if (!md_cursor_to_token(resolvedField, &fieldToken))
+        if (!field.get_target_token(fieldToken))
             return E_FAIL;
 
         hr = DeleteParentedToken(MetaData(), fieldToken, FieldLayout_Field);
@@ -869,8 +838,8 @@ HRESULT MetadataEmit::DefinePermissionSet(
     assert(TypeFromToken(tk) == mdtTypeDef || TypeFromToken(tk) == mdtMethodDef ||
              TypeFromToken(tk) == mdtAssembly);
 
-    dnmd::added_row_t c;
-    if (!md_append_row(MetaData(), mdtid_DeclSecurity, &c))
+    auto c = dnmd::added_row<mdtid_DeclSecurity>::append(MetaData());
+    if (!c)
         return E_FAIL;
 
     dnmd::row_writer writer{dnmd::raw_cursor<mdtid_DeclSecurity>{c}.as()};
@@ -902,7 +871,7 @@ HRESULT MetadataEmit::DefinePermissionSet(
     if (!writer.write(DeclSecurity_PermissionSet, permission, permissionLength))
         return E_FAIL;
 
-    if (!md_cursor_to_token(c, ppm))
+    if (!c.get_token(*ppm))
         return E_FAIL;
 
     // TODO: Update EncLog
@@ -931,8 +900,8 @@ HRESULT MetadataEmit::GetTokenFromSig(
         ULONG       cbSig,
         mdSignature *pmsig)
 {
-    dnmd::added_row_t c;
-    if (!md_append_row(MetaData(), mdtid_StandAloneSig, &c))
+    auto c = dnmd::added_row<mdtid_StandAloneSig>::append(MetaData());
+    if (!c)
         return E_FAIL;
 
     uint32_t sigLength = cbSig;
@@ -940,7 +909,7 @@ HRESULT MetadataEmit::GetTokenFromSig(
     if (!c_row.set_column_value(StandAloneSig_Signature, pvSig, sigLength))
         return E_FAIL;
 
-    if (!md_cursor_to_token(c, pmsig))
+    if (!c.get_token(*pmsig))
         return CLDB_E_FILE_CORRUPT;
 
     // TODO: Update EncLog
@@ -951,8 +920,8 @@ HRESULT MetadataEmit::DefineModuleRef(
         LPCWSTR     szName,
         mdModuleRef *pmur)
 {
-    dnmd::added_row_t c;
-    if (!md_append_row(MetaData(), mdtid_ModuleRef, &c))
+    auto c = dnmd::added_row<mdtid_ModuleRef>::append(MetaData());
+    if (!c)
         return E_FAIL;
 
     pal::StringConvert<WCHAR, char> cvt(szName);
@@ -962,7 +931,7 @@ HRESULT MetadataEmit::DefineModuleRef(
     if (!c_row.set_column_value(ModuleRef_Name, name))
         return E_FAIL;
 
-    if (!md_cursor_to_token(c, pmur))
+    if (!c.get_token(*pmur))
         return CLDB_E_FILE_CORRUPT;
 
     // TODO: Update EncLog
@@ -991,8 +960,8 @@ HRESULT MetadataEmit::GetTokenFromTypeSpec(
         ULONG       cbSig,
         mdTypeSpec *ptypespec)
 {
-    dnmd::added_row_t c;
-    if (!md_append_row(MetaData(), mdtid_TypeSpec, &c))
+    auto c = dnmd::added_row<mdtid_TypeSpec>::append(MetaData());
+    if (!c)
         return E_FAIL;
 
     uint32_t sigLength = cbSig;
@@ -1000,7 +969,7 @@ HRESULT MetadataEmit::GetTokenFromTypeSpec(
     if (!c_row.set_column_value(TypeSpec_Signature, pvSig, sigLength))
         return E_FAIL;
 
-    if (!md_cursor_to_token(c, ptypespec))
+    if (!c.get_token(*ptypespec))
         return CLDB_E_FILE_CORRUPT;
 
     // TODO: Update EncLog
@@ -1039,8 +1008,7 @@ HRESULT MetadataEmit::DefineUserString(
 HRESULT MetadataEmit::DeleteToken(
         mdToken     tkObj)
 {
-    mdcursor_t c;
-    if (!md_token_to_cursor(MetaData(), tkObj, &c))
+    if (!dnmd::md_is_valid_token(MetaData(), tkObj))
         return E_INVALIDARG;
 
     char const* deletedName = COR_DELETED_NAME_A;
@@ -1048,56 +1016,56 @@ HRESULT MetadataEmit::DeleteToken(
     {
         case mdtTypeDef:
         {
-            auto c_row = dnmd::raw_cursor<mdtid_TypeDef>{c}.as();
+            auto c_row = dnmd::raw_cursor<mdtid_TypeDef>{MetaData(), tkObj}.as();
             if (!c_row.set_column_value(TypeDef_TypeName, deletedName))
                 return E_FAIL;
             return AddFlag(MetaData(), tkObj, TypeDef_Flags, tdSpecialName | tdRTSpecialName);
         }
         case mdtMethodDef:
         {
-            auto c_row = dnmd::raw_cursor<mdtid_MethodDef>{c}.as();
+            auto c_row = dnmd::raw_cursor<mdtid_MethodDef>{MetaData(), tkObj}.as();
             if (!c_row.set_column_value(MethodDef_Name, deletedName))
                 return E_FAIL;
             return AddFlag(MetaData(), tkObj, MethodDef_Flags, mdSpecialName | mdRTSpecialName);
         }
         case mdtFieldDef:
         {
-            auto c_row = dnmd::raw_cursor<mdtid_Field>{c}.as();
+            auto c_row = dnmd::raw_cursor<mdtid_Field>{MetaData(), tkObj}.as();
             if (!c_row.set_column_value(Field_Name, deletedName))
                 return E_FAIL;
             return AddFlag(MetaData(), tkObj, Field_Flags, fdSpecialName | fdRTSpecialName);
         }
         case mdtEvent:
         {
-            auto c_row = dnmd::raw_cursor<mdtid_Event>{c}.as();
+            auto c_row = dnmd::raw_cursor<mdtid_Event>{MetaData(), tkObj}.as();
             if (!c_row.set_column_value(Event_Name, deletedName))
                 return E_FAIL;
             return AddFlag(MetaData(), tkObj, Event_EventFlags, evSpecialName | evRTSpecialName);
         }
         case mdtProperty:
         {
-            auto c_row = dnmd::raw_cursor<mdtid_Property>{c}.as();
+            auto c_row = dnmd::raw_cursor<mdtid_Property>{MetaData(), tkObj}.as();
             if (!c_row.set_column_value(Property_Name, deletedName))
                 return E_FAIL;
             return AddFlag(MetaData(), tkObj, Property_Flags, prSpecialName | prRTSpecialName);
         }
         case mdtExportedType:
         {
-            auto c_row = dnmd::raw_cursor<mdtid_ExportedType>{c}.as();
+            auto c_row = dnmd::raw_cursor<mdtid_ExportedType>{MetaData(), tkObj}.as();
             if (!c_row.set_column_value(ExportedType_TypeName, deletedName))
                 return E_FAIL;
             return S_OK;
         }
         case mdtCustomAttribute:
         {
+            auto c_row = dnmd::raw_cursor<mdtid_CustomAttribute>{MetaData(), tkObj}.as();
             mdToken parent;
-            if (!md_get_column_value_as_token(c, mdtCustomAttribute_Parent, &parent))
+            if (!c_row.get_column_value(CustomAttribute_Parent, parent))
                 return E_FAIL;
 
             // Change the parent to the nil token.
             parent = TokenFromRid(mdTokenNil, TypeFromToken(parent));
 
-            auto c_row = dnmd::raw_cursor<mdtid_CustomAttribute>{c}.as();
             if (!c_row.set_column_value(CustomAttribute_Parent, parent))
                 return E_FAIL;
 
@@ -1105,14 +1073,14 @@ HRESULT MetadataEmit::DeleteToken(
         }
         case mdtGenericParam:
         {
+            auto c_row = dnmd::raw_cursor<mdtid_GenericParam>{MetaData(), tkObj}.as();
             mdToken parent;
-            if (!md_get_column_value_as_token(c, mdtGenericParam_Owner, &parent))
+            if (!c_row.get_column_value(GenericParam_Owner, parent))
                 return E_FAIL;
 
             // Change the parent to the nil token.
             parent = TokenFromRid(mdTokenNil, TypeFromToken(parent));
 
-            auto c_row = dnmd::raw_cursor<mdtid_GenericParam>{c}.as();
             if (!c_row.set_column_value(GenericParam_Owner, parent))
                 return E_FAIL;
 
@@ -1121,7 +1089,7 @@ HRESULT MetadataEmit::DeleteToken(
         case mdtGenericParamConstraint:
         {
             mdToken parent = mdGenericParamNil;
-            auto c_row = dnmd::raw_cursor<mdtid_GenericParamConstraint>{c}.as();
+            auto c_row = dnmd::raw_cursor<mdtid_GenericParamConstraint>{MetaData(), tkObj}.as();
             if (!c_row.set_column_value(GenericParamConstraint_Owner, parent))
                 return E_FAIL;
 
@@ -1129,15 +1097,15 @@ HRESULT MetadataEmit::DeleteToken(
         }
         case mdtPermission:
         {
+            auto c_row = dnmd::raw_cursor<mdtid_DeclSecurity>{MetaData(), tkObj}.as();
             mdToken parent;
-            if (!md_get_column_value_as_token(c, mdtDeclSecurity_Parent, &parent))
+            if (!c_row.get_column_value(DeclSecurity_Parent, parent))
                 return E_FAIL;
 
             // Change the parent to the nil token.
             mdToken originalParent = parent;
             parent = TokenFromRid(mdTokenNil, TypeFromToken(parent));
 
-            auto c_row = dnmd::raw_cursor<mdtid_DeclSecurity>{c}.as();
             if (!c_row.set_column_value(DeclSecurity_Parent, parent))
                 return E_FAIL;
 
@@ -1249,8 +1217,9 @@ HRESULT MetadataEmit::SetTypeDefProps(
         {
             for (uint32_t i = 0; i < numInterfaceImpls; ++i)
             {
+                auto interfaceImplRow = interfaceImplCursor.as();
                 mdToken parent;
-                if (!md_get_column_value_as_token(interfaceImplCursor, mdtInterfaceImpl_Class, &parent))
+                if (!interfaceImplRow.get_column_value(InterfaceImpl_Class, parent))
                     return E_FAIL;
 
                 // If getting a range was unsupported, then we're doing a whole table scan here.
@@ -1259,8 +1228,7 @@ HRESULT MetadataEmit::SetTypeDefProps(
                 if (parent == td)
                 {
                     mdToken newParent = mdTypeDefNil;
-                    auto interfaceImplCursor_row = dnmd::raw_cursor<mdtid_InterfaceImpl>{interfaceImplCursor}.as();
-                    if (!interfaceImplCursor_row.set_column_value(InterfaceImpl_Class, newParent))
+                    if (!interfaceImplRow.set_column_value(InterfaceImpl_Class, newParent))
                         return E_FAIL;
                 }
             }
@@ -1270,8 +1238,8 @@ HRESULT MetadataEmit::SetTypeDefProps(
         mdToken currentImplementation = rtkImplements[implIndex];
         do
         {
-            dnmd::added_row_t interfaceImpl;
-            if (!md_append_row(MetaData(), mdtid_InterfaceImpl, &interfaceImpl))
+            auto interfaceImpl = dnmd::added_row<mdtid_InterfaceImpl>::append(MetaData());
+            if (!interfaceImpl)
                 return E_FAIL;
 
             dnmd::row_writer interfaceImpl_writer{dnmd::raw_cursor<mdtid_InterfaceImpl>{interfaceImpl}.as()};
@@ -1416,7 +1384,7 @@ HRESULT MetadataEmit::SetPermissionSetProps(
     if (!writer.write(DeclSecurity_PermissionSet, permission, permissionLength))
         return E_FAIL;
 
-    if (!md_cursor_to_token(c, ppm))
+    if (!c.get_token(*ppm))
         return CLDB_E_FILE_CORRUPT;
 
     // TODO: Update EncLog
@@ -1430,8 +1398,7 @@ HRESULT MetadataEmit::DefinePinvokeMap(
         mdModuleRef mrImportDLL)
 {
     HRESULT hr;
-    mdcursor_t c;
-    if (!md_token_to_cursor(MetaData(), tk, &c))
+    if (!dnmd::md_is_valid_token(MetaData(), tk))
         return CLDB_E_FILE_CORRUPT;
 
     if (TypeFromToken(tk) == mdtMethodDef)
@@ -1447,14 +1414,11 @@ HRESULT MetadataEmit::DefinePinvokeMap(
     // If we found a duplicate and ENC is on, update.
     // If we found a duplicate and ENC is off, fail.
     // Otherwise, we need to make a new row
-    mdcursor_t row_to_edit;
-    dnmd::added_row_t added_row_wrapper;
-
     // TODO: We don't expose tokens for the ImplMap table, so as long as we aren't generating ENC deltas
     // we can insert in-place.
-    if (!md_append_row(MetaData(), mdtid_ImplMap, &row_to_edit))
+    auto row_to_edit = dnmd::added_row<mdtid_ImplMap>::append(MetaData());
+    if (!row_to_edit)
         return E_FAIL;
-    added_row_wrapper = dnmd::added_row_t(row_to_edit);
 
     dnmd::row_writer row_to_edit_writer{dnmd::raw_cursor<mdtid_ImplMap>{row_to_edit}.as()};
     if (!row_to_edit_writer.write(ImplMap_MemberForwarded, tk))
@@ -1493,8 +1457,7 @@ HRESULT MetadataEmit::SetPinvokeMap(
         LPCWSTR     szImportName,
         mdModuleRef mrImportDLL)
 {
-    mdcursor_t c;
-    if (!md_token_to_cursor(MetaData(), tk, &c))
+    if (!dnmd::md_is_valid_token(MetaData(), tk))
         return CLDB_E_FILE_CORRUPT;
 
     auto implMapCursor = dnmd::md_create_cursor<mdtid_ImplMap>(MetaData());
@@ -1567,8 +1530,8 @@ HRESULT MetadataEmit::DefineCustomAttribute(
     // TODO: Recognize pseudoattributes and handle them appropriately.
 
     // We hand out tokens here, so we can't move rows to keep the parent column sorted.
-    dnmd::added_row_t new_row;
-    if (!md_append_row(MetaData(), mdtid_CustomAttribute, &new_row))
+    auto new_row = dnmd::added_row<mdtid_CustomAttribute>::append(MetaData());
+    if (!new_row)
         return E_FAIL;
 
     dnmd::row_writer new_row_writer{dnmd::raw_cursor<mdtid_CustomAttribute>{new_row}.as()};
@@ -1583,7 +1546,7 @@ HRESULT MetadataEmit::DefineCustomAttribute(
     if (!new_row_writer.write(CustomAttribute_Value, pCustomAttributeBlob, customAttributeBlobLen))
         return E_FAIL;
 
-    if (!md_cursor_to_token(new_row, pcv))
+    if (!new_row.get_token(*pcv))
         return CLDB_E_FILE_CORRUPT;
 
     // TODO: Update EncLog
@@ -1691,12 +1654,12 @@ HRESULT MetadataEmit::DefineField(
 
     char const* name = cvt;
 
-    dnmd::added_row_t c;
-    mdcursor_t typeDef;
-    if (!md_token_to_cursor(MetaData(), td, &typeDef))
+    auto typeDef = dnmd::raw_cursor<mdtid_TypeDef>{MetaData(), td};
+    if (!typeDef)
         return CLDB_E_FILE_CORRUPT;
 
-    if (!md_add_new_row_to_list(typeDef, mdtTypeDef_FieldList, &c))
+    auto c = dnmd::md_add_new_row_to_list(typeDef.as(), TypeDef_FieldList);
+    if (!c)
         return E_FAIL;
 
     auto c_row = dnmd::raw_cursor<mdtid_Field>{c}.as();
@@ -1754,8 +1717,8 @@ HRESULT MetadataEmit::DefineField(
 
     if (hasConstant)
     {
-        dnmd::added_row_t constant;
-        if (!md_append_row(MetaData(), mdtid_Constant, &constant))
+        auto constant = dnmd::added_row<mdtid_Constant>::append(MetaData());
+        if (!constant)
             return E_FAIL;
 
         dnmd::row_writer constant_writer{dnmd::raw_cursor<mdtid_Constant>{constant}.as()};
@@ -1777,7 +1740,7 @@ HRESULT MetadataEmit::DefineField(
 
     }
 
-    if (!md_cursor_to_token(c, pmd))
+    if (!c.get_token(*pmd))
         return CLDB_E_FILE_CORRUPT;
 
     // TODO: Update EncLog
@@ -1801,8 +1764,8 @@ HRESULT MetadataEmit::DefineProperty(
     return FindOrCreateParentedRow(MetaData(), td, PropertyMap_Parent, [=] (dnmd::cursor<mdtid_PropertyMap> map)
         {
             HRESULT hr;
-            dnmd::added_row_t c;
-            if (!md_add_new_row_to_list(map, mdtPropertyMap_Parent, &c))
+            auto c = dnmd::md_add_new_row_to_list(map, PropertyMap_PropertyList);
+            if (!c)
                 return E_FAIL;
 
             pal::StringConvert<WCHAR, char> cvt(szProperty);
@@ -1870,8 +1833,8 @@ HRESULT MetadataEmit::DefineProperty(
 
             if (hasConstant)
             {
-                dnmd::added_row_t constant;
-                if (!md_append_row(MetaData(), mdtid_Constant, &constant))
+                auto constant = dnmd::added_row<mdtid_Constant>::append(MetaData());
+                if (!constant)
                     return E_FAIL;
 
                 dnmd::row_writer constant_writer{dnmd::raw_cursor<mdtid_Constant>{constant}.as()};
@@ -1892,7 +1855,7 @@ HRESULT MetadataEmit::DefineProperty(
                     return E_FAIL;
             }
 
-            if (!md_cursor_to_token(c, pmdProp))
+            if (!c.get_token(*pmdProp))
                 return CLDB_E_FILE_CORRUPT;
 
             // TODO: Update EncLog
@@ -1917,12 +1880,12 @@ HRESULT MetadataEmit::DefineParam(
 
     char const* name = cvt;
 
-    dnmd::added_row_t c;
-    mdcursor_t method;
-    if (!md_token_to_cursor(MetaData(), md, &method))
+    auto method = dnmd::raw_cursor<mdtid_MethodDef>{MetaData(), md};
+    if (!method)
         return CLDB_E_FILE_CORRUPT;
 
-    if (!md_add_new_row_to_sorted_list(method, mdtMethodDef_ParamList, mdtParam_Sequence, (uint32_t)ulParamSeq, &c))
+    auto c = dnmd::md_add_new_row_to_sorted_list(method.as(), MethodDef_ParamList, Param_Sequence, (uint32_t)ulParamSeq);
+    if (!c)
         return E_FAIL;
 
     auto c_row = dnmd::raw_cursor<mdtid_Param>{c}.as();
@@ -1957,8 +1920,8 @@ HRESULT MetadataEmit::DefineParam(
 
     if (hasConstant)
     {
-        dnmd::added_row_t constant;
-        if (!md_append_row(MetaData(), mdtid_Constant, &constant))
+        auto constant = dnmd::added_row<mdtid_Constant>::append(MetaData());
+        if (!constant)
             return E_FAIL;
 
         dnmd::row_writer constant_writer{dnmd::raw_cursor<mdtid_Constant>{constant}.as()};
@@ -1980,7 +1943,7 @@ HRESULT MetadataEmit::DefineParam(
 
     }
 
-    if (!md_cursor_to_token(c, ppd))
+    if (!c.get_token(*ppd))
         return CLDB_E_FILE_CORRUPT;
 
     // TODO: Update EncLog
@@ -2267,7 +2230,7 @@ HRESULT MetadataEmit::TranslateSigWithScope(
         assemEmit->MetaData(),
         moduleEmit->MetaData(),
         { pbSigBlob, cbSigBlob },
-        [](mdcursor_t){},
+        [](dnmd::any_cursor){},
         translatedSig));
 
     std::copy_n(translatedSig.begin(), std::min(translatedSig.size(), (size_t)cbTranslatedSigMax), (uint8_t*)pvTranslatedSig);
@@ -2313,12 +2276,12 @@ HRESULT MetadataEmit::SetFieldRVA(
     if (!field)
         return E_INVALIDARG;
 
+    auto field_row = field.as();
     uint32_t flags;
-    if (!md_get_column_value_as_constant(field, mdtField_Flags, &flags))
+    if (!field_row.get_column_value(Field_Flags, &flags))
         return CLDB_E_FILE_CORRUPT;
 
     flags |= fdHasFieldRVA;
-    auto field_row = field.as();
     if (!field_row.set_column_value(Field_Flags, flags))
         return E_FAIL;
 
@@ -2357,8 +2320,8 @@ HRESULT MetadataEmit::DefineMethodSpec(
     if (cbSigBlob == 0 || pvSigBlob == nullptr || pmi == nullptr)
         return META_E_BAD_INPUT_PARAMETER;
 
-    dnmd::added_row_t c;
-    if (!md_append_row(MetaData(), mdtid_MethodSpec, &c))
+    auto c = dnmd::added_row<mdtid_MethodSpec>::append(MetaData());
+    if (!c)
         return E_FAIL;
 
     dnmd::row_writer writer{dnmd::raw_cursor<mdtid_MethodSpec>{c}.as()};
@@ -2369,7 +2332,7 @@ HRESULT MetadataEmit::DefineMethodSpec(
     if (!writer.write(MethodSpec_Instantiation, pvSigBlob, sigLength))
         return E_FAIL;
 
-    if (!md_cursor_to_token(c, pmi))
+    if (!c.get_token(*pmi))
         return CLDB_E_FILE_CORRUPT;
 
     // TODO: Update EncLog
@@ -2432,8 +2395,8 @@ HRESULT MetadataEmit::DefineGenericParam(
 
     // TODO: Check for duplicates
 
-    dnmd::added_row_t c;
-    if (!md_append_row(MetaData(), mdtid_GenericParam, &c))
+    auto c = dnmd::added_row<mdtid_GenericParam>::append(MetaData());
+    if (!c)
         return E_FAIL;
 
     auto c_row = dnmd::raw_cursor<mdtid_GenericParam>{c}.as();
@@ -2470,8 +2433,8 @@ HRESULT MetadataEmit::DefineGenericParam(
     {
         for (size_t i = 0; RidFromToken(rtkConstraints[i]) != mdTokenNil; i++)
         {
-            dnmd::added_row_t added_row;
-            if (!md_append_row(MetaData(), mdtid_GenericParamConstraint, &added_row))
+            auto added_row = dnmd::added_row<mdtid_GenericParamConstraint>::append(MetaData());
+            if (!added_row)
                 return E_FAIL;
 
             dnmd::row_writer constraint_writer{dnmd::raw_cursor<mdtid_GenericParamConstraint>{added_row}.as()};
@@ -2486,7 +2449,7 @@ HRESULT MetadataEmit::DefineGenericParam(
     }
 
     // TODO: Update EncLog
-    if (!md_cursor_to_token(c, pgp))
+    if (!c.get_token(*pgp))
         return CLDB_E_FILE_CORRUPT;
 
     return S_OK;
@@ -2534,14 +2497,14 @@ HRESULT MetadataEmit::SetGenericParamProps(
         {
             for (uint32_t i = 0; i < count; ++i, dnmd::md_cursor_next(constraint))
             {
+                auto constraint_row = constraint.as();
                 mdToken parent;
-                if (!md_get_column_value_as_token(constraint, mdtGenericParamConstraint_Owner, &parent))
+                if (!constraint_row.get_column_value(GenericParamConstraint_Owner, parent))
                     return E_FAIL;
 
                 if (parent == gp)
                 {
                     parent = mdGenericParamNil;
-                    auto constraint_row = dnmd::raw_cursor<mdtid_GenericParamConstraint>{constraint}.as();
                     if (!constraint_row.set_column_value(GenericParamConstraint_Owner, parent))
                         return E_FAIL;
                 }
@@ -2550,8 +2513,8 @@ HRESULT MetadataEmit::SetGenericParamProps(
 
         for (size_t i = 0; RidFromToken(rtkConstraints[i]) != mdTokenNil; i++)
         {
-            dnmd::added_row_t added_row;
-            if (!md_append_row(MetaData(), mdtid_GenericParamConstraint, &added_row))
+            auto added_row = dnmd::added_row<mdtid_GenericParamConstraint>::append(MetaData());
+            if (!added_row)
                 return E_FAIL;
 
             auto constraint_row = dnmd::raw_cursor<mdtid_GenericParamConstraint>{added_row}.as();
@@ -2592,18 +2555,14 @@ HRESULT MetadataEmit::DefineAssembly(
     if (!cvt.Success())
         return E_INVALIDARG;
 
-    mdcursor_t c;
-    uint32_t count;
-    if (!md_create_cursor(MetaData(), mdtid_Assembly, &c, &count))
+    auto c = dnmd::md_create_cursor<mdtid_Assembly>(MetaData());
+    if (!c)
     {
-        if (md_append_row(MetaData(), mdtid_Assembly, &c))
-        {
-            dnmd::md_commit_row_add(dnmd::raw_cursor<mdtid_Assembly>{c}.as());
-        }
-        else
-        {
+        auto added = dnmd::added_row<mdtid_Assembly>::append(MetaData());
+        if (!added)
             return E_FAIL;
-        }
+        c = added.position();
+        added.commit();
     }
 
     uint32_t assemblyFlags = dwAssemblyFlags;
@@ -2671,7 +2630,7 @@ HRESULT MetadataEmit::DefineAssembly(
             return E_FAIL;
     }
 
-    if (!md_cursor_to_token(c, pma))
+    if (!c.get_token(*pma))
         return E_FAIL;
 
     // TODO: Update ENC Log
@@ -2696,8 +2655,8 @@ HRESULT MetadataEmit::DefineAssemblyRef(
     if (!cvt.Success())
         return E_INVALIDARG;
 
-    dnmd::added_row_t c;
-    if (!md_append_row(MetaData(), mdtid_AssemblyRef, &c))
+    auto c = dnmd::added_row<mdtid_AssemblyRef>::append(MetaData());
+    if (!c)
         return E_FAIL;
 
     const uint8_t* publicKey = (const uint8_t*)pbPublicKeyOrToken;
@@ -2771,7 +2730,7 @@ HRESULT MetadataEmit::DefineAssemblyRef(
             return E_FAIL;
     }
 
-    if (!md_cursor_to_token(c, pmdar))
+    if (!c.get_token(*pmdar))
         return E_FAIL;
 
     // TODO: Update ENC Log
@@ -2791,9 +2750,9 @@ HRESULT MetadataEmit::DefineFile(
     if (!cvt.Success())
         return E_INVALIDARG;
 
-    dnmd::added_row_t c;
+    auto c = dnmd::added_row<mdtid_File>::append(MetaData());
 
-    if (!md_append_row(MetaData(), mdtid_File, &c))
+    if (!c)
         return E_FAIL;
 
     char const* name = cvt;
@@ -2821,7 +2780,7 @@ HRESULT MetadataEmit::DefineFile(
     if (!writer.write(File_Flags, fileFlags))
         return E_FAIL;
 
-    if (!md_cursor_to_token(c, pmdf))
+    if (!c.get_token(*pmdf))
         return E_FAIL;
 
     // TODO: Update ENC Log
@@ -2835,8 +2794,8 @@ HRESULT MetadataEmit::DefineExportedType(
         DWORD       dwExportedTypeFlags,
         mdExportedType   *pmdct)
 {
-    dnmd::added_row_t c;
-    if (!md_append_row(MetaData(), mdtid_ExportedType, &c))
+    auto c = dnmd::added_row<mdtid_ExportedType>::append(MetaData());
+    if (!c)
         return E_FAIL;
 
     pal::StringConvert<WCHAR, char> cvt(szName);
@@ -2883,7 +2842,7 @@ HRESULT MetadataEmit::DefineExportedType(
     if (!writer.write(ExportedType_Flags, exportedTypeFlags))
         return E_FAIL;
 
-    if (!md_cursor_to_token(c, pmdct))
+    if (!c.get_token(*pmdct))
         return E_FAIL;
 
     // TODO: Update ENC Log
@@ -2898,8 +2857,8 @@ HRESULT MetadataEmit::DefineManifestResource(
         mdManifestResource  *pmdmr)
 {
     // TODO: check for duplicates
-    dnmd::added_row_t c;
-    if (!md_append_row(MetaData(), mdtid_ManifestResource, &c))
+    auto c = dnmd::added_row<mdtid_ManifestResource>::append(MetaData());
+    if (!c)
         return E_FAIL;
 
     pal::StringConvert<WCHAR, char> cvt(szName);
@@ -2933,7 +2892,7 @@ HRESULT MetadataEmit::DefineManifestResource(
     if (!writer.write(ManifestResource_Flags, resourceFlags))
         return E_FAIL;
 
-    if (!md_cursor_to_token(c, pmdmr))
+    if (!c.get_token(*pmdmr))
         return E_FAIL;
 
     // TODO: Update ENC Log

@@ -2,81 +2,103 @@
 #define _SRC_INC_DNMD_CURSORS_HPP_
 
 #include "dnmd_columns.hpp"
+#include <limits>
 #include <utility>
 
 namespace dnmd
 {
-
 namespace detail
 {
 extern "C" mdcxt_t* extract_mdcxt(mdhandle_t handle);
 
-inline bool is_valid_token(mdcxt_t const& context, mdToken token) noexcept
+inline mdcxt_t& context(mdhandle_t handle) noexcept
+{
+    auto value = extract_mdcxt(handle);
+    assert(value != nullptr);
+    return *value;
+}
+
+struct cursor_access
+{
+    template<typename P> static mdtable_t* table(P const& p) noexcept { return p._table; }
+    template<typename P> static uint32_t row(P const& p) noexcept { return p._row; }
+};
+
+template<typename P> inline mdtable_t* CursorTable(P const& p) noexcept { return cursor_access::table(p); }
+template<typename P> inline uint32_t CursorRow(P const& p) noexcept { return cursor_access::row(p); }
+
+inline bool is_valid_token(mdcxt_t const& c, mdToken token) noexcept
 {
     uint32_t table = ExtractTokenType(token);
     uint32_t row = (RidFromToken)(token);
-    return table < static_cast<uint32_t>(mdtid_End) && row != 0 && row <= context.tables[table].row_count;
+    return table < static_cast<uint32_t>(mdtid_End) && row != 0 && row <= c.tables[table].row_count;
 }
 
-inline bool is_dereferenceable(mdcursor_t const& cursor) noexcept
+inline bool position_token(mdtable_t const& table, uint32_t row, mdToken& token) noexcept
 {
-    uint32_t row = CursorRow(cursor);
-    return row != 0 && row <= CursorTable(cursor)->row_count;
+    if (row > 0x00ffffff)
+        return false;
+    token = CreateTokenType(table.table_id) | row;
+    return true;
 }
 
-template<mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
-inline bool resolve_indirect_cursor(mdcursor_t source, mdcursor_t& target) noexcept;
+template<typename T> struct is_position : std::false_type {};
+template<mdtable_id_t T> struct is_position<cursor<T>> : std::true_type {};
+template<mdtable_id_t... T> struct is_position<raw_cursor<T...>> : std::true_type {};
+template<mdtable_id_t D, mdtable_id_t P> struct is_position<indirect_cursor<D, P>> : std::true_type {};
+
+template<typename P, mdtable_id_t... Targets>
+struct position_targets_subset : std::false_type {};
+template<mdtable_id_t T, mdtable_id_t... Targets>
+struct position_targets_subset<cursor<T>, Targets...>
+    : std::bool_constant<contains_table_id_v<T, Targets...>> {};
+template<mdtable_id_t... Sources, mdtable_id_t... Targets>
+struct position_targets_subset<raw_cursor<Sources...>, Targets...>
+    : std::bool_constant<((Sources == mdtid_Unused || contains_table_id_v<Sources, Targets...>) && ...)> {};
+template<mdtable_id_t Direct, mdtable_id_t Ptr, mdtable_id_t... Targets>
+struct position_targets_subset<indirect_cursor<Direct, Ptr>, Targets...>
+    : std::bool_constant<contains_table_id_v<Direct, Targets...> && contains_table_id_v<Ptr, Targets...>> {};
+
+template<mdtable_id_t... T> struct first_concrete_table;
+template<> struct first_concrete_table<> : std::integral_constant<mdtable_id_t, mdtid_Unused> {};
+template<mdtable_id_t T, mdtable_id_t... Rest>
+struct first_concrete_table<T, Rest...> : std::integral_constant<mdtable_id_t,
+    T == mdtid_Unused ? first_concrete_table<Rest...>::value : T> {};
 }
 
 template<mdtable_id_t TableId>
 struct cursor final
 {
-    private:
-        template<mdtable_id_t...>
-        friend struct raw_cursor;
-        template<mdtable_id_t, mdtable_id_t>
-        friend struct indirect_cursor;
-        template<mdtable_id_t>
-        friend struct row_reader;
-        template<mdtable_id_t>
-        friend struct row_writer;
+private:
+    template<mdtable_id_t...> friend struct raw_cursor;
+    template<mdtable_id_t, mdtable_id_t> friend struct indirect_cursor;
+    template<mdtable_id_t> friend struct row_reader;
+    template<mdtable_id_t> friend struct row_writer;
+    friend struct detail::cursor_access;
+    mdtable_t* _table;
+    uint32_t _row;
 
-        mdcursor_t _cursor;
+    cursor(mdtable_t& table, uint32_t row) noexcept : _table{&table}, _row{row}
+    {
+        assert(table.table_id == TableId && table.is_initialized);
+        assert(row != 0 && row <= table.row_count);
+    }
 
-        explicit cursor(mdcursor_t c) noexcept : _cursor{ c }
-        {
-            assert(detail::CursorTable(_cursor) != nullptr);
-#ifndef NDEBUG
-            mdToken tk;
-            assert(detail::is_dereferenceable(_cursor));
-            assert(::md_cursor_to_token(_cursor, &tk));
-            assert(ExtractTokenType(tk) == TableId);
-#endif
-        }
-
-    public:
-        cursor() = delete;
-
-        operator mdcursor_t() const noexcept
-        {
-            return _cursor;
-        }
-
-        bool get_token(mdToken& tk) const noexcept
-        {
-            return ::md_cursor_to_token(_cursor, &tk);
-        }
-
+public:
+    cursor() = delete;
+    mdhandle_t get_handle() const noexcept { return _table->cxt; }
+    bool get_token(mdToken& token) const noexcept { return detail::position_token(*_table, _row, token); }
         bool get_parent_token(mdToken& tk) const noexcept;
 
-        template<mdtable_id_t... TargetTableIds>
-        int32_t get_column_values(column<TableId, raw_cursor<TargetTableIds...>> column, uint32_t count, mdToken* tokens) const noexcept
+        template<typename C, std::enable_if_t<detail::searchable_column<C>::value
+            && !std::is_same_v<C, column_type_constant>, int> = 0>
+        int32_t get_column_values(column<TableId, C> column, uint32_t count, mdToken* tokens) const noexcept
         {
             if (count == 0)
                 return 0;
             assert(tokens != nullptr);
             row_reader<TableId> reader{*this};
-            uint32_t row = detail::CursorRow(_cursor);
+            uint32_t row = _row;
             uint32_t available = reader._table->row_count - row + 1;
             if (count > available)
                 count = available;
@@ -180,303 +202,273 @@ struct cursor final
         }
 };
 
-template<mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
-struct indirect_cursor final
-{
-    private:
-        mdcursor_t _cursor{};
-        mdcursor_t target{};
-        bool target_resolved = false;
-        bool has_row = false;
-
-    public:
-        indirect_cursor() = default;
-        explicit indirect_cursor(mdcursor_t c) noexcept : _cursor{ c }
-        {
-            assert(detail::CursorTable(_cursor) != nullptr);
-#ifndef NDEBUG
-            mdToken tk;
-            assert(::md_cursor_to_token(_cursor, &tk));
-            assert(ExtractTokenType(tk) == DirectTableId || ExtractTokenType(tk) == IndirectTableId);
-#endif
-            target_resolved = detail::resolve_indirect_cursor<DirectTableId, IndirectTableId>(_cursor, target);
-            has_row = target_resolved && detail::is_dereferenceable(target);
-        }
-
-        operator mdcursor_t() const noexcept
-        {
-            return _cursor;
-        }
-
-        explicit operator bool() const noexcept
-        {
-            return has_row;
-        }
-
-        cursor<DirectTableId> as() const noexcept
-        {
-            assert(has_row);
-            return cursor<DirectTableId>{target};
-        }
-
-        bool get_token(mdToken& tk) const noexcept
-        {
-            return ::md_cursor_to_token(_cursor, &tk);
-        }
-
-        bool get_target_token(mdToken& tk) const noexcept
-        {
-            return target_resolved && ::md_cursor_to_token(target, &tk);
-        }
-};
-
 template<mdtable_id_t... TableIds>
 struct raw_cursor final
 {
-    static_assert(sizeof...(TableIds) != 0, "A raw cursor must specify at least one table.");
+    static_assert(sizeof...(TableIds) != 0);
+private:
+    template<mdtable_id_t...> friend struct raw_cursor;
+    friend struct detail::cursor_access;
+    mdtable_t* _table;
+    uint32_t _row;
+    static constexpr mdtable_id_t first_table = detail::first_concrete_table<TableIds...>::value;
+    static_assert(first_table >= mdtid_First && first_table < mdtid_End);
 
-    private:
-        template<mdtable_id_t...>
-        friend struct raw_cursor;
-        template<mdtable_id_t... TargetTableIds>
-        friend raw_cursor<TargetTableIds...> md_token_to_cursor(mdhandle_t handle, mdToken token) noexcept;
-
-        mdcursor_t _cursor{};
-
-        static constexpr mdtable_id_t first_table_id = [] {
-            constexpr mdtable_id_t tables[] = {TableIds...};
-            for (auto table : tables)
-            {
-                if (table != mdtid_Unused)
-                    return table;
-            }
-            return mdtid_Unused;
-        }();
-
-        static mdcxt_t& context_from_handle(mdhandle_t handle) noexcept
-        {
-            auto context = detail::extract_mdcxt(handle);
-            assert(context != nullptr);
-            return *context;
-        }
-
-        raw_cursor(mdcxt_t& context, mdToken token) noexcept
-        {
-            static_assert(first_table_id >= mdtid_First && first_table_id < mdtid_End,
-                "A token position must specify at least one concrete table.");
-            auto table_id = first_table_id;
-            uint32_t row = 0;
-            uint32_t token_table = ExtractTokenType(token);
-            if (((token_table == static_cast<uint32_t>(TableIds)) || ...) && detail::is_valid_token(context, token))
-            {
-                table_id = static_cast<mdtable_id_t>(token_table);
-                row = (detail::RidFromToken)(token);
-            }
-
-            auto table = &context.tables[table_id];
-            // Preserve empty-table initialization state while giving nil tokens their table identity.
-            if (row == 0 && table->table_id == 0 && table_id != mdtid_Module)
-                table->table_id = static_cast<uint8_t>(table_id);
-            _cursor = detail::CreateCursor(table, row);
-        }
-
-    public:
-        raw_cursor() = default;
-        raw_cursor(mdhandle_t handle, mdToken token) noexcept
-            : raw_cursor{context_from_handle(handle), token}
-        {
-        }
-
-        explicit raw_cursor(mdcursor_t c) noexcept
-            : _cursor{ c }
-        {
-            assert(detail::CursorTable(_cursor) != nullptr);
-#ifndef NDEBUG
-            mdToken tk;
-            assert(::md_cursor_to_token(_cursor, &tk));
-            assert(((ExtractTokenType(tk) == TableIds) || ...));
-#endif
-        }
-
-        operator mdcursor_t() const noexcept
-        {
-            return _cursor;
-        }
-
-        explicit operator bool() const noexcept
-        {
-            return detail::is_dereferenceable(_cursor);
-        }
-
-        bool get_token(mdToken& tk) const noexcept
-        {
-            return ::md_cursor_to_token(_cursor, &tk);
-        }
-
-        template<size_t TableCount = sizeof...(TableIds),
-            std::enable_if_t<TableCount == 1 && TableCount == sizeof...(TableIds), int> = 0>
-        auto as() const noexcept
-        {
-            return (cursor<TableIds>{_cursor}, ...);
-        }
-
-        template<mdtable_id_t CodedTableId>
-        raw_cursor<CodedTableId> get_as() const noexcept
-        {
-            static_assert(CodedTableId != mdtid_Unused, "Reserved tags do not refer to a table.");
-            static_assert(((CodedTableId == TableIds) || ...), "CodedTableId must be one of the tables in the coded index.");
-            mdToken tk;
-            if (!get_token(tk) || ExtractTokenType(tk) != CodedTableId)
-                return {};
-            // Narrowing preserves default-empty positions without a C-cursor conversion.
-            raw_cursor<CodedTableId> result;
-            result._cursor = _cursor;
-            return result;
-        }
-
-        template<typename TCallable>
-        bool visit(TCallable&& callable) const
-        {
-            mdToken tk;
-            if (!*this || !get_token(tk))
-                return false;
-            return (visit_impl<TableIds>(static_cast<mdtable_id_t>(ExtractTokenType(tk)), std::forward<TCallable>(callable)) || ...);
-        }
-
-    private:
-        template<mdtable_id_t CodedTableId, typename TCallable>
-        bool visit_impl(mdtable_id_t table_id, TCallable&& callable) const
-        {
-            if constexpr (CodedTableId == mdtid_Unused)
-            {
-                return false;
-            }
-            else
-            {
-                if (table_id != CodedTableId)
-                    return false;
-                std::forward<TCallable>(callable)(cursor<CodedTableId>{_cursor});
-                return true;
-            }
-        }
-};
-
-namespace detail
-{
-template<mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
-inline bool resolve_indirect_cursor(mdcursor_t source, mdcursor_t& target) noexcept
-{
-    auto table = CursorTable(source);
-    if (table->table_id == DirectTableId)
+    raw_cursor(mdtable_t& table, uint32_t row) noexcept : _table{&table}, _row{row}
     {
-        target = source;
-        return true;
+        assert(((table.table_id == TableIds) || ...));
+        assert(uint64_t{row} <= uint64_t{table.row_count} + 1);
     }
-    if (table->table_id != IndirectTableId)
-        return false;
 
-    uint32_t row = CursorRow(source);
-    // Sentinel positions have no pointer row to read.
-    if (row == 0 || row == table->row_count + 1)
+public:
+    raw_cursor() = delete;
+    raw_cursor(mdhandle_t handle, mdToken token) noexcept
+        : raw_cursor{detail::context(handle).tables[first_table], 0}
     {
-        mdcursor_t position;
-        if (!resolve_column_reference(table, DirectTableId, 0, &position))
+        uint32_t table = ExtractTokenType(token);
+        if (((table == static_cast<uint32_t>(TableIds)) || ...)
+            && detail::is_valid_token(*_table->cxt, token))
+        {
+            _table = &_table->cxt->tables[table];
+            _row = (detail::RidFromToken)(token);
+        }
+    }
+    template<typename T> raw_cursor(T*, mdToken) = delete;
+
+    template<typename P, std::enable_if_t<detail::position_targets_subset<P, TableIds...>::value
+        && !std::is_same_v<P, raw_cursor>, int> = 0>
+    raw_cursor(P const& other) noexcept
+        : _table{detail::CursorTable(other)}, _row{detail::CursorRow(other)}
+    {
+    }
+
+    template<typename P, std::enable_if_t<detail::is_position<P>::value
+        && !detail::position_targets_subset<P, TableIds...>::value
+        && !std::is_same_v<P, raw_cursor>, int> = 0>
+    explicit raw_cursor(P const& other) noexcept
+        : _table{detail::CursorTable(other)}, _row{detail::CursorRow(other)}
+    {
+        if (!((_table->table_id == TableIds) || ...))
+        {
+            _table = &_table->cxt->tables[first_table];
+            _row = 0;
+        }
+        assert(((_table->table_id == TableIds) || ...));
+    }
+
+    template<mdtable_id_t T>
+    explicit raw_cursor(added_row<T> const& other) noexcept : raw_cursor{other.position()} {}
+
+    static raw_cursor nil(mdhandle_t handle) noexcept
+    {
+        return raw_cursor{detail::context(handle).tables[first_table], 0};
+    }
+
+    static raw_cursor at(mdhandle_t handle, uint32_t row, mdtable_id_t table = first_table) noexcept
+    {
+        auto& c = detail::context(handle);
+        if (table < mdtid_First || table >= mdtid_End
+            || !((table == TableIds) || ...)
+            || uint64_t{row} > uint64_t{c.tables[table].row_count} + 1)
+            return nil(handle);
+        return raw_cursor{c.tables[table], row};
+    }
+
+    static raw_cursor end(mdhandle_t handle) noexcept
+    {
+        auto& table = detail::context(handle).tables[first_table];
+        assert(table.row_count != UINT32_MAX);
+        return raw_cursor{table, table.row_count + 1};
+    }
+
+    mdhandle_t get_handle() const noexcept { return _table->cxt; }
+    explicit operator bool() const noexcept { return _row != 0 && _row <= _table->row_count; }
+    bool get_token(mdToken& token) const noexcept { return detail::position_token(*_table, _row, token); }
+
+    template<mdtable_id_t T>
+    bool is() const noexcept { return _table->table_id == T; }
+
+    bool is_nil() const noexcept { return _row == 0; }
+
+    bool move(int32_t delta) noexcept
+    {
+        int64_t row = int64_t{_row} + delta;
+        if (row <= 0 || uint64_t(row) > uint64_t{_table->row_count} + 1 || row > UINT32_MAX)
             return false;
-        if (row != 0)
-            position._reserved2 = CursorTable(position)->row_count + 1;
-        target = position;
+        _row = static_cast<uint32_t>(row);
         return true;
     }
-    if (row > table->row_count)
-        return false;
 
-    row_reader<IndirectTableId> reader{raw_cursor<IndirectTableId>{source}.as()};
-    raw_cursor<DirectTableId> position;
-    if (!reader.read(pointer_column<IndirectTableId>(), position))
-        return false;
-    target = position;
-    return true;
-}
-}
+    template<size_t Count = sizeof...(TableIds), std::enable_if_t<Count == 1 && Count == sizeof...(TableIds), int> = 0>
+    auto as() const noexcept
+    {
+        assert(static_cast<bool>(*this));
+        return (cursor<TableIds>{*_table, _row}, ...);
+    }
 
-template<typename T>
-struct cursor_tableid;
+    template<mdtable_id_t T>
+    raw_cursor<T> get_as() const noexcept
+    {
+        static_assert(T != mdtid_Unused && ((T == TableIds) || ...));
+        return is<T>() ? raw_cursor<T>::at(get_handle(), _row)
+            : raw_cursor<T>::nil(get_handle());
+    }
 
-template<mdtable_id_t TableId>
-struct cursor_tableid<cursor<TableId>>
-{
-    static constexpr mdtable_id_t value = TableId;
+    template<typename F>
+    bool visit(F&& callable) const
+    {
+        if (!*this)
+            return false;
+        return (visit_impl<TableIds>(callable) || ...);
+    }
+
+private:
+    template<mdtable_id_t T, typename F>
+    bool visit_impl(F&& callable) const
+    {
+        if constexpr (T == mdtid_Unused)
+            return false;
+        else
+        {
+            if (!is<T>())
+                return false;
+            std::forward<F>(callable)(cursor<T>{*_table, _row});
+            return true;
+        }
+    }
 };
 
-template<typename T>
-inline constexpr mdtable_id_t cursor_tableid_v = cursor_tableid<T>::value;
-
-template<mdtable_id_t... TableIds>
-inline bool md_cursor_move(raw_cursor<TableIds...>& cursor, int32_t delta) noexcept
+template<mdtable_id_t Direct, mdtable_id_t Ptr>
+struct indirect_cursor final
 {
-    mdcursor_t c = cursor;
-    if (!::md_cursor_move(&c, delta))
-        return false;
-    cursor = raw_cursor<TableIds...>{c};
-    return true;
-}
+private:
+    friend struct detail::cursor_access;
+    mdtable_t* _table;
+    uint32_t _row;
+    raw_cursor<Direct> _target;
+    bool _resolved;
+    bool _has_row;
 
-template<mdtable_id_t TableId, mdtable_id_t IndirectTableId>
-inline bool md_cursor_move(indirect_cursor<TableId, IndirectTableId>& cursor, int32_t delta) noexcept
+    void resolve() noexcept
+    {
+        _target = raw_cursor<Direct>::nil(get_handle());
+        _resolved = true;
+        if (_table->table_id == Direct)
+            _target = raw_cursor<Direct>::at(get_handle(), _row);
+        else if (_row == 0)
+        {
+            _has_row = false;
+            return;
+        }
+        else if (_row == _table->row_count + 1)
+            _target = raw_cursor<Direct>::end(get_handle());
+        else
+        {
+            auto source = raw_cursor<Ptr>::at(get_handle(), _row).as();
+            _resolved = row_reader<Ptr>{source}.read(detail::pointer_column<Ptr>(), _target);
+        }
+        _has_row = _resolved && static_cast<bool>(_target);
+    }
+
+public:
+    indirect_cursor() = delete;
+    template<typename P, std::enable_if_t<detail::is_position<P>::value, int> = 0>
+    explicit indirect_cursor(P const& p) noexcept
+        : indirect_cursor{raw_cursor<Direct, Ptr>{p}} {}
+
+    explicit indirect_cursor(raw_cursor<Direct, Ptr> const& source) noexcept
+        : _table{detail::CursorTable(source)}, _row{detail::CursorRow(source)},
+          _target{raw_cursor<Direct>::nil(source.get_handle())}, _resolved{false}, _has_row{false}
+    {
+        resolve();
+    }
+
+    indirect_cursor(mdhandle_t handle, mdToken token) noexcept
+        : indirect_cursor{raw_cursor<Direct, Ptr>{handle, token}} {}
+    template<typename T> indirect_cursor(T*, mdToken) = delete;
+
+    static indirect_cursor at(mdhandle_t handle, uint32_t row, mdtable_id_t table) noexcept
+    {
+        return indirect_cursor{raw_cursor<Direct, Ptr>::at(handle, row, table)};
+    }
+
+    static indirect_cursor nil(mdhandle_t handle) noexcept
+    {
+        auto& c = detail::context(handle);
+        auto table = c.tables[Direct].has_indirect_table ? Ptr : Direct;
+        return at(handle, 0, table);
+    }
+
+    static indirect_cursor end(mdhandle_t handle) noexcept
+    {
+        auto& c = detail::context(handle);
+        auto table = c.tables[Direct].has_indirect_table ? Ptr : Direct;
+        return at(handle, c.tables[table].row_count + 1, table);
+    }
+
+    mdhandle_t get_handle() const noexcept { return _table->cxt; }
+    explicit operator bool() const noexcept { return _has_row; }
+    cursor<Direct> as() const noexcept { assert(_has_row); return _target.as(); }
+    bool get_token(mdToken& token) const noexcept { return detail::position_token(*_table, _row, token); }
+    bool get_target_token(mdToken& token) const noexcept { return _resolved && _target.get_token(token); }
+    bool move(int32_t delta) noexcept
+    {
+        auto source = raw_cursor<Direct, Ptr>::at(get_handle(), _row, static_cast<mdtable_id_t>(_table->table_id));
+        if (!source.move(delta))
+            return false;
+        _row = detail::CursorRow(source);
+        resolve();
+        return true;
+    }
+};
+
+using any_cursor = raw_cursor<
+    mdtid_Module, mdtid_TypeRef, mdtid_TypeDef, mdtid_FieldPtr, mdtid_Field,
+    mdtid_MethodPtr, mdtid_MethodDef, mdtid_ParamPtr, mdtid_Param, mdtid_InterfaceImpl,
+    mdtid_MemberRef, mdtid_Constant, mdtid_CustomAttribute, mdtid_FieldMarshal,
+    mdtid_DeclSecurity, mdtid_ClassLayout, mdtid_FieldLayout, mdtid_StandAloneSig,
+    mdtid_EventMap, mdtid_EventPtr, mdtid_Event, mdtid_PropertyMap, mdtid_PropertyPtr,
+    mdtid_Property, mdtid_MethodSemantics, mdtid_MethodImpl, mdtid_ModuleRef,
+    mdtid_TypeSpec, mdtid_ImplMap, mdtid_FieldRva, mdtid_ENCLog, mdtid_ENCMap,
+    mdtid_Assembly, mdtid_AssemblyProcessor, mdtid_AssemblyOS, mdtid_AssemblyRef,
+    mdtid_AssemblyRefProcessor, mdtid_AssemblyRefOS, mdtid_File, mdtid_ExportedType,
+    mdtid_ManifestResource, mdtid_NestedClass, mdtid_GenericParam, mdtid_MethodSpec,
+    mdtid_GenericParamConstraint
+#ifdef DNMD_PORTABLE_PDB
+    , mdtid_Document, mdtid_MethodDebugInformation, mdtid_LocalScope, mdtid_LocalVariable,
+    mdtid_LocalConstant, mdtid_ImportScope, mdtid_StateMachineMethod, mdtid_CustomDebugInformation
+#endif
+>;
+
+template<typename T> struct cursor_tableid;
+template<mdtable_id_t T> struct cursor_tableid<cursor<T>> { static constexpr mdtable_id_t value = T; };
+template<typename T> inline constexpr mdtable_id_t cursor_tableid_v = cursor_tableid<T>::value;
+
+template<typename P>
+inline auto md_cursor_move(P& p, int32_t delta) noexcept -> decltype(p.move(delta)) { return p.move(delta); }
+template<typename P>
+inline auto md_cursor_next(P& p) noexcept -> decltype(p.move(1)) { return p.move(1); }
+
+template<mdtable_id_t T>
+inline raw_cursor<T> md_create_cursor(mdhandle_t handle, uint32_t* count) noexcept
 {
-    mdcursor_t c = cursor;
-    if (!::md_cursor_move(&c, delta))
-        return false;
-    cursor = indirect_cursor<TableId, IndirectTableId>{c};
-    return true;
+    if (count == nullptr)
+        return raw_cursor<T>::nil(handle);
+    auto result = raw_cursor<T>{handle, CreateTokenType(T) | 1};
+    if (result)
+        *count = detail::CursorTable(result)->row_count;
+    return result;
 }
-
-template<mdtable_id_t... TableIds>
-inline bool md_cursor_next(raw_cursor<TableIds...>& cursor) noexcept
+template<mdtable_id_t T>
+inline raw_cursor<T> md_create_cursor(mdhandle_t handle) noexcept { return raw_cursor<T>{handle, CreateTokenType(T) | 1}; }
+template<mdtable_id_t... T>
+inline raw_cursor<T...> md_token_to_cursor(mdhandle_t handle, mdToken token) noexcept { return raw_cursor<T...>{handle, token}; }
+inline bool md_is_valid_token(mdhandle_t handle, mdToken token) noexcept
 {
-    return md_cursor_move(cursor, 1);
+    auto c = detail::extract_mdcxt(handle);
+    return c != nullptr && detail::is_valid_token(*c, token);
 }
-
-template<mdtable_id_t TableId, mdtable_id_t IndirectTableId>
-inline bool md_cursor_next(indirect_cursor<TableId, IndirectTableId>& cursor) noexcept
-{
-    return md_cursor_move(cursor, 1);
-}
-
-template<mdtable_id_t TableId>
-inline raw_cursor<TableId> md_create_cursor(mdhandle_t handle, uint32_t* count) noexcept
-{
-    mdcursor_t c;
-    if (!::md_create_cursor(handle, TableId, &c, count))
-        return {};
-    return raw_cursor<TableId>{c};
-}
-
-template<mdtable_id_t TableId>
-inline raw_cursor<TableId> md_create_cursor(mdhandle_t handle) noexcept
-{
-    uint32_t count;
-    return md_create_cursor<TableId>(handle, &count);
-}
-
-template<mdtable_id_t... TableIds>
-inline raw_cursor<TableIds...> md_token_to_cursor(mdhandle_t handle, mdToken tk) noexcept
-{
-    auto context = detail::extract_mdcxt(handle);
-    if (context == nullptr)
-        return {};
-    return raw_cursor<TableIds...>{*context, tk};
-}
-
-inline bool md_is_valid_token(mdhandle_t handle, mdToken tk) noexcept
-{
-    auto context = detail::extract_mdcxt(handle);
-    return context != nullptr && detail::is_valid_token(*context, tk);
-}
-
 } // namespace dnmd
 
-// Row reads also complete indirect-cursor construction.
 #include "dnmd_read.hpp"
-
 #endif // _SRC_INC_DNMD_CURSORS_HPP_

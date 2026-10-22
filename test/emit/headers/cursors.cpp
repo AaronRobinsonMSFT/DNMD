@@ -2,240 +2,315 @@
 #include <dnmd_cursors.hpp>
 #include "fixture.hpp"
 
-TEST(CppCursorBounds, HeaderDereferenceability)
+namespace
 {
-    static_assert(noexcept(dnmd::detail::is_dereferenceable(mdcursor_t{})));
-    EXPECT_FALSE(dnmd::detail::is_dereferenceable(mdcursor_t{}));
+    template<typename T, typename = void>
+    struct accepts_c_token_conversion : std::false_type {};
 
-    mdtable_t table{};
-    table.table_id = mdtid_TypeDef;
-    table.row_count = 3;
-    auto check = [&](uint32_t row, bool expected) {
-        mdcursor_t position{reinterpret_cast<intptr_t>(&table), static_cast<intptr_t>(row)};
-        EXPECT_EQ(expected, dnmd::detail::is_dereferenceable(position)) << "Row " << row;
-    };
-    check(0, false);
-    check(1, true);
-    check(3, true);
-    check(4, false);
-    check(5, false);
-    check(0x01000001, true);
+    template<typename T>
+    struct accepts_c_token_conversion<T, std::void_t<decltype(
+        ::md_cursor_to_token(std::declval<T>(), std::declval<mdToken*>()))>> : std::true_type {};
 
-    table.row_count = 0;
-    check(0, false);
-    check(1, false);
+    using row = dnmd::cursor<mdtid_TypeDef>;
+    using position = dnmd::raw_cursor<mdtid_TypeDef>;
+    using indirect = dnmd::indirect_cursor<mdtid_MethodDef, mdtid_MethodPtr>;
+    using guard = dnmd::added_row<mdtid_TypeDef>;
+    static_assert(std::is_same_v<decltype(std::declval<position const&>().is<mdtid_TypeDef>()), bool>);
+    static_assert(noexcept(std::declval<position const&>().is<mdtid_TypeDef>()));
+    static_assert(std::is_same_v<decltype(std::declval<position const&>().is_nil()), bool>);
+    static_assert(noexcept(std::declval<position const&>().is_nil()));
+    static_assert(dnmd::detail::first_concrete_table<mdtid_Field, mdtid_FieldPtr>::value == mdtid_Field);
+    static_assert(dnmd::detail::first_concrete_table<mdtid_Unused, mdtid_Unused,
+        mdtid_MethodDef, mdtid_MemberRef, mdtid_Unused>::value == mdtid_MethodDef);
+    static_assert(!std::is_default_constructible_v<row>);
+    static_assert(!std::is_default_constructible_v<position>);
+    static_assert(!std::is_default_constructible_v<indirect>);
+    static_assert(!std::is_default_constructible_v<guard>);
+    static_assert(!std::is_default_constructible_v<dnmd::row_reader<mdtid_TypeDef>>);
+    static_assert(!std::is_constructible_v<row, mdtable_t*, uint32_t>);
+    static_assert(!std::is_constructible_v<row, mdtable_t&, uint32_t>);
+    static_assert(!std::is_constructible_v<position, mdtable_t*, uint32_t>);
+    static_assert(!std::is_constructible_v<position, mdcxt_t*, mdToken>);
+    static_assert(!std::is_constructible_v<position, mdtable_t&, uint32_t>);
+    static_assert(!std::is_constructible_v<position, intptr_t, uint32_t>);
+    static_assert(!std::is_constructible_v<indirect, mdtable_t*, mdToken>);
+    static_assert(!std::is_constructible_v<indirect, mdcxt_t*, mdToken>);
+    static_assert(std::is_constructible_v<position, mdhandle_t, mdToken>);
+    static_assert(std::is_constructible_v<indirect, mdhandle_t, mdToken>);
+    static_assert(!std::is_copy_constructible_v<guard>);
+    static_assert(!std::is_copy_assignable_v<guard>);
+    static_assert(std::is_move_constructible_v<guard>);
+    static_assert(std::is_move_assignable_v<guard>);
+    static_assert(std::is_trivially_copyable_v<row>);
+    static_assert(std::is_trivially_copyable_v<position>);
+    static_assert(std::is_trivially_copyable_v<indirect>);
+    static_assert(sizeof(row) == 2 * sizeof(void*));
+    static_assert(sizeof(position) == 2 * sizeof(void*));
+    static_assert(!accepts_c_token_conversion<row>::value);
+    static_assert(!accepts_c_token_conversion<position>::value);
+    static_assert(!accepts_c_token_conversion<indirect>::value);
+    static_assert(std::is_constructible_v<dnmd::raw_cursor<mdtid_Module, mdtid_TypeDef>, row>);
+    static_assert(std::is_constructible_v<position, dnmd::raw_cursor<mdtid_Module, mdtid_TypeDef>>);
+    static_assert(std::is_constructible_v<position, guard const&>);
 }
 
-TEST(CppCursorBounds, NarrowingPreservesEmptyAndTableBoundNilPositions)
+TEST_F(CppHeader, HeaderDereferenceability)
 {
-    dnmd::raw_cursor<mdtid_Module, mdtid_TypeDef> empty;
-    auto narrowed = empty.get_as<mdtid_Module>();
-    EXPECT_FALSE(narrowed);
-    mdToken token;
-    ASSERT_TRUE(narrowed.get_token(token));
-    EXPECT_EQ(mdToken{0}, token);
-    EXPECT_FALSE(dnmd::md_cursor_next(narrowed));
+    (void)Row<mdtid_TypeDef>();
+    (void)dnmd_test::AppendRow<mdtid_TypeDef>(handle);
+    (void)dnmd_test::AppendRow<mdtid_TypeDef>(handle);
+    for (uint32_t index : {0u, 1u, 3u, 4u})
+    {
+        auto value = position::at(handle, index);
+        EXPECT_EQ(index != 0 && index != 4, static_cast<bool>(value));
+        EXPECT_EQ(handle, value.get_handle());
+        EXPECT_EQ(CreateTokenType(mdtid_TypeDef) | index, dnmd_test::Token(value));
+    }
+    auto empty_nil = dnmd::raw_cursor<mdtid_TypeRef>::nil(handle);
+    auto empty_end = dnmd::raw_cursor<mdtid_TypeRef>::end(handle);
+    EXPECT_FALSE(empty_nil);
+    EXPECT_FALSE(empty_end);
+    EXPECT_EQ(CreateTokenType(mdtid_TypeRef), dnmd_test::Token(empty_nil));
+    EXPECT_EQ(CreateTokenType(mdtid_TypeRef) | 1, dnmd_test::Token(empty_end));
+    EXPECT_FALSE(dnmd::md_cursor_next(empty_end));
+    auto invalid = position::at(handle, 5);
+    EXPECT_FALSE(invalid);
+    EXPECT_EQ(handle, invalid.get_handle());
+    EXPECT_EQ(CreateTokenType(mdtid_TypeDef), dnmd_test::Token(invalid));
+    auto wrong_table = position::at(handle, 0, mdtid_Module);
+    EXPECT_EQ(CreateTokenType(mdtid_TypeDef), dnmd_test::Token(wrong_table));
+}
 
-    mdtable_t table{};
-    table.table_id = mdtid_Module;
-    table.row_count = 1;
-    mdcursor_t nil{reinterpret_cast<intptr_t>(&table), 0};
-    dnmd::raw_cursor<mdtid_Module, mdtid_TypeDef> bound{nil};
-    auto bound_nil = bound.get_as<mdtid_Module>();
-    EXPECT_FALSE(bound_nil);
-    EXPECT_EQ(&table, dnmd::detail::CursorTable(bound_nil));
-    ASSERT_TRUE(dnmd::md_cursor_next(bound_nil));
-    EXPECT_TRUE(bound_nil);
+TEST_F(CppHeader, NativeMovementMatchesCAndPreservesFailures)
+{
+    (void)Row<mdtid_TypeDef>();
+    (void)dnmd_test::AppendRow<mdtid_TypeDef>(handle);
+    auto table = &dnmd::detail::context(handle).tables[mdtid_TypeDef];
+    for (uint32_t index : {0u, 1u, table->row_count, table->row_count + 1})
+    {
+        for (int32_t delta : {INT32_MIN, -3, -1, 0, 1, 3, INT32_MAX})
+        {
+            auto value = position::at(handle, index);
+            mdToken before = dnmd_test::Token(value);
+            mdToken expected = 0x12345678;
+            bool c_moved = test_c_move(handle, before, delta, &expected);
+            bool moved = dnmd::md_cursor_move(value, delta);
+            EXPECT_EQ(c_moved, moved) << index << ":" << delta;
+            EXPECT_EQ(expected, dnmd_test::Token(value));
+            EXPECT_EQ(handle, value.get_handle());
+            if (!moved)
+                EXPECT_EQ(before, dnmd_test::Token(value));
+        }
+    }
+}
+
+TEST_F(CppHeader, TableIdentityIncludesNilAndEndPositions)
+{
+    (void)Row<mdtid_Module>();
+    (void)Row<mdtid_TypeDef>();
+    using union_position = dnmd::raw_cursor<mdtid_Module, mdtid_TypeDef, mdtid_TypeRef>;
+    auto& context = dnmd::detail::context(handle);
+    for (mdtable_id_t table : {mdtid_Module, mdtid_TypeDef, mdtid_TypeRef})
+    {
+        uint32_t row_count = context.tables[table].row_count;
+        for (uint32_t index : {0u, row_count, row_count + 1})
+        {
+            auto value = union_position::at(handle, index, table);
+            EXPECT_EQ(table == mdtid_Module, value.is<mdtid_Module>());
+            EXPECT_EQ(table == mdtid_TypeDef, value.is<mdtid_TypeDef>());
+            EXPECT_EQ(table == mdtid_TypeRef, value.is<mdtid_TypeRef>());
+            EXPECT_FALSE(value.is<mdtid_File>());
+            EXPECT_FALSE(value.is<mdtid_Unused>());
+            EXPECT_FALSE(value.is<mdtid_End>());
+            EXPECT_EQ(index == 0, value.is_nil());
+            EXPECT_EQ(index != 0 && index <= row_count, static_cast<bool>(value));
+            EXPECT_EQ(CreateTokenType(table) | index, dnmd_test::Token(value));
+            EXPECT_EQ(handle, value.get_handle());
+        }
+    }
+    EXPECT_FALSE(context.tables[mdtid_TypeRef].is_initialized);
+    auto single_table = position::nil(handle);
+    EXPECT_TRUE(single_table.is<mdtid_TypeDef>());
+    EXPECT_FALSE(single_table.is<mdtid_Module>());
+    EXPECT_TRUE(single_table.is_nil());
+    EXPECT_FALSE(position::end(handle).is_nil());
+    dnmd::raw_cursor<mdtid_Unused, mdtid_TypeRef> invalid{handle, 0xff000001};
+    EXPECT_TRUE(invalid.is<mdtid_TypeRef>());
+    EXPECT_TRUE(invalid.is_nil());
+    dnmd::any_cursor widened = invalid;
+    EXPECT_TRUE(widened.is<mdtid_TypeRef>());
+    EXPECT_TRUE(widened.is_nil());
+}
+
+TEST_F(CppHeader, NarrowingRebindsNilToTheSameImageIncludingEmptyTables)
+{
+    (void)Row<mdtid_Module>();
+    (void)Row<mdtid_TypeDef>();
+    using union_position = dnmd::raw_cursor<mdtid_Module, mdtid_TypeDef, mdtid_TypeRef, mdtid_MethodDef>;
+    auto source = union_position::at(handle, 0, mdtid_TypeRef);
+    auto same = source.get_as<mdtid_TypeRef>();
+    auto mismatch = source.get_as<mdtid_Module>();
+    auto empty_mismatch = source.get_as<mdtid_MethodDef>();
+    EXPECT_FALSE(same);
+    EXPECT_FALSE(mismatch);
+    EXPECT_FALSE(empty_mismatch);
+    EXPECT_EQ(handle, same.get_handle());
+    EXPECT_EQ(handle, mismatch.get_handle());
+    EXPECT_EQ(handle, empty_mismatch.get_handle());
+    EXPECT_EQ(CreateTokenType(mdtid_TypeRef), dnmd_test::Token(same));
+    EXPECT_EQ(CreateTokenType(mdtid_Module), dnmd_test::Token(mismatch));
+    EXPECT_EQ(CreateTokenType(mdtid_MethodDef), dnmd_test::Token(empty_mismatch));
+    auto end = union_position::at(handle, 2, mdtid_TypeDef);
+    EXPECT_EQ(CreateTokenType(mdtid_TypeDef) | 2, dnmd_test::Token(end.get_as<mdtid_TypeDef>()));
+    EXPECT_EQ(CreateTokenType(mdtid_Module), dnmd_test::Token(end.get_as<mdtid_Module>()));
+    EXPECT_TRUE(dnmd::md_cursor_next(mismatch));
+    EXPECT_TRUE(mismatch);
 }
 
 #if !defined(NDEBUG) && GTEST_HAS_DEATH_TEST
-TEST(CppCursorDeathTest, RejectsNullTableConstruction)
+TEST(CppCursorDeathTest, RejectsInvalidHandles)
 {
-    mdcursor_t empty{};
-    EXPECT_DEATH((dnmd::raw_cursor<mdtid_Module>{empty}), "CursorTable");
-    EXPECT_DEATH((dnmd::indirect_cursor<mdtid_MethodDef, mdtid_MethodPtr>{empty}), "CursorTable");
-    EXPECT_DEATH((dnmd::raw_cursor<mdtid_Module>{}.as()), "CursorTable");
+    mdToken token = CreateTokenType(mdtid_Module) | 1;
+    mdcxt_t invalid{};
+    EXPECT_DEATH((position{nullptr, token}), "value");
+    EXPECT_DEATH((position{static_cast<mdhandle_t>(&invalid), token}), "value");
+    EXPECT_DEATH((position::nil(nullptr)), "value");
+    EXPECT_DEATH((position::end(nullptr)), "value");
+    EXPECT_DEATH((dnmd::md_create_cursor<mdtid_TypeDef>(nullptr)), "value");
+    EXPECT_DEATH((dnmd::md_token_to_cursor<mdtid_Module>(nullptr, token)), "value");
+    EXPECT_DEATH((indirect{nullptr, token}), "value");
 }
 
-TEST(CppCursorDeathTest, RejectsInvalidHandlesInTokenConstruction)
+TEST_F(CppHeader, NilAndEndAsRequireLiveRows)
 {
-    using position = dnmd::raw_cursor<mdtid_Module>;
-    mdToken token = CreateTokenType(mdtid_Module) | 1;
-    EXPECT_DEATH((position{nullptr, token}), "context");
-    mdcxt_t invalid{};
-    EXPECT_DEATH((position{&invalid, token}), "context");
+    EXPECT_DEATH((position::nil(handle).as()), "bool");
+    EXPECT_DEATH((position::end(handle).as()), "bool");
+    EXPECT_DEATH((indirect::nil(handle).as()), "row");
+    EXPECT_DEATH((indirect::end(handle).as()), "row");
 }
 #endif
 
 TEST_F(CppHeader, TokenConstructionMatchesCForAllowedRows)
 {
-    using position = dnmd::raw_cursor<mdtid_TypeDef, mdtid_Module>;
-    static_assert(std::is_nothrow_constructible_v<position, mdhandle_t, mdToken>);
-    static_assert(sizeof(position) == sizeof(mdcursor_t));
+    using allowed = dnmd::raw_cursor<mdtid_TypeDef, mdtid_Module>;
+    static_assert(std::is_nothrow_constructible_v<allowed, mdhandle_t, mdToken>);
     (void)Row<mdtid_Module>();
     (void)Row<mdtid_TypeDef>();
     for (uint32_t i = 0; i < 2; ++i)
+        (void)dnmd_test::AppendRow<mdtid_TypeDef>(handle);
+    for (mdToken token : {CreateTokenType(mdtid_Module) | 1, CreateTokenType(mdtid_TypeDef) | 1,
+        CreateTokenType(mdtid_TypeDef) | 2, CreateTokenType(mdtid_TypeDef) | 3})
     {
-        mdcursor_t added;
-        ASSERT_TRUE(md_append_row(handle, mdtid_TypeDef, &added));
-        md_commit_row_add(added);
-    }
-    mdToken tokens[] = {
-        CreateTokenType(mdtid_Module) | 1,
-        CreateTokenType(mdtid_TypeDef) | 1,
-        CreateTokenType(mdtid_TypeDef) | 2,
-        CreateTokenType(mdtid_TypeDef) | 3,
-    };
-    for (mdToken token : tokens)
-    {
-        mdcursor_t expected;
-        ASSERT_TRUE(md_token_to_cursor(handle, token, &expected));
-        position actual{handle, token};
+        ASSERT_TRUE(test_c_token_is_valid(handle, token));
+        allowed actual{handle, token};
         ASSERT_TRUE(actual);
-        mdToken round_trip;
-        ASSERT_TRUE(actual.get_token(round_trip));
-        EXPECT_EQ(token, round_trip);
-        mdcursor_t raw = actual;
-        EXPECT_EQ(expected._reserved1, raw._reserved1);
-        EXPECT_EQ(expected._reserved2, raw._reserved2);
+        EXPECT_EQ(token, dnmd_test::Token(actual));
+        EXPECT_EQ(handle, actual.get_handle());
         EXPECT_TRUE(dnmd::md_is_valid_token(handle, token));
     }
-    dnmd::raw_cursor<mdtid_TypeDef> single{handle, tokens[1]};
-    ASSERT_TRUE(single);
-    EXPECT_EQ(1u, dnmd::detail::CursorRow(single.as()));
 }
 
 TEST_F(CppHeader, InvalidTokensBecomeNilInTheFirstTable)
 {
     auto first = Row<mdtid_TypeDef>();
-    (void)Row<mdtid_Module>();
     auto first_table = dnmd::detail::CursorTable(first);
     mdToken tokens[] = {
-        mdToken{0},
-        CreateTokenType(mdtid_TypeDef),
-        CreateTokenType(mdtid_TypeRef),
-        CreateTokenType(mdtid_Module) | 1,
-        CreateTokenType(mdtid_TypeDef) | (first_table->row_count + 1),
-        CreateTokenType(mdtid_TypeDef) | 0x00ffffff,
-        CreateTokenType(mdtid_TypeRef) | 1,
-        CreateTokenType(mdtid_End) | 1,
-        0x30000001,
-        0x70000001,
-        0xff000001,
-    };
+        0, CreateTokenType(mdtid_TypeDef), CreateTokenType(mdtid_TypeRef),
+        CreateTokenType(mdtid_Module) | 1, CreateTokenType(mdtid_TypeDef) | (first_table->row_count + 1),
+        CreateTokenType(mdtid_TypeDef) | 0x00ffffff, CreateTokenType(mdtid_TypeRef) | 1,
+        CreateTokenType(mdtid_End) | 1, 0x30000001, 0x70000001, 0xff000001};
     for (mdToken token : tokens)
     {
         dnmd::raw_cursor<mdtid_TypeDef, mdtid_TypeRef> actual{handle, token};
         EXPECT_FALSE(actual);
         EXPECT_EQ(first_table, dnmd::detail::CursorTable(actual));
-        EXPECT_EQ(0u, dnmd::detail::CursorRow(actual));
-        mdToken nil;
-        ASSERT_TRUE(actual.get_token(nil));
-        EXPECT_EQ(CreateTokenType(mdtid_TypeDef), nil);
-
+        EXPECT_EQ(CreateTokenType(mdtid_TypeDef), dnmd_test::Token(actual));
         auto factory = dnmd::md_token_to_cursor<mdtid_TypeDef, mdtid_TypeRef>(handle, token);
         EXPECT_FALSE(factory);
         EXPECT_EQ(first_table, dnmd::detail::CursorTable(factory));
-        ASSERT_TRUE(factory.get_token(nil));
-        EXPECT_EQ(CreateTokenType(mdtid_TypeDef), nil);
-
-        mdcursor_t c_position;
-        EXPECT_EQ(md_token_to_cursor(handle, token, &c_position), dnmd::md_is_valid_token(handle, token));
+        EXPECT_EQ(CreateTokenType(mdtid_TypeDef), dnmd_test::Token(factory));
+        EXPECT_EQ(test_c_token_is_valid(handle, token), dnmd::md_is_valid_token(handle, token));
     }
 }
 
 TEST_F(CppHeader, TokenFallbackRespectsDeclaredTableOrder)
 {
-    auto module = Row<mdtid_Module>();
-    auto type = Row<mdtid_TypeDef>();
+    (void)Row<mdtid_Module>();
+    (void)Row<mdtid_TypeDef>();
     dnmd::raw_cursor<mdtid_Module, mdtid_TypeDef> module_first{handle, 0xff000001};
     dnmd::raw_cursor<mdtid_TypeDef, mdtid_Module> type_first{handle, 0xff000001};
     EXPECT_FALSE(module_first);
     EXPECT_FALSE(type_first);
-    EXPECT_EQ(dnmd::detail::CursorTable(module), dnmd::detail::CursorTable(module_first));
-    EXPECT_EQ(dnmd::detail::CursorTable(type), dnmd::detail::CursorTable(type_first));
-    mdToken token;
-    ASSERT_TRUE(module_first.get_token(token));
-    EXPECT_EQ(CreateTokenType(mdtid_Module), token);
-    ASSERT_TRUE(type_first.get_token(token));
-    EXPECT_EQ(CreateTokenType(mdtid_TypeDef), token);
+    EXPECT_EQ(CreateTokenType(mdtid_Module), dnmd_test::Token(module_first));
+    EXPECT_EQ(CreateTokenType(mdtid_TypeDef), dnmd_test::Token(type_first));
     ASSERT_TRUE(dnmd::md_cursor_next(module_first));
     EXPECT_TRUE(module_first);
 }
 
 TEST_F(CppHeader, TokenValidityMatchesCForEveryTableTag)
 {
-    (void)Row<mdtid_Module>();
-    (void)Row<mdtid_TypeDef>();
     (void)Row<mdtid_GenericParamConstraint>();
-    dnmd::raw_cursor<mdtid_GenericParamConstraint> last_type_system_table{
-        handle, CreateTokenType(mdtid_GenericParamConstraint) | 1};
-    EXPECT_TRUE(last_type_system_table);
-    uint32_t rows[] = {0, 1, 0x00ffffff};
     for (uint32_t table = 0; table < 0x100; ++table)
     {
-        for (uint32_t row : rows)
+        for (uint32_t index : {0u, 1u, 0x00ffffffu})
         {
-            mdToken token = CreateTokenType(table) | row;
-            mdcursor_t expected;
-            bool valid = md_token_to_cursor(handle, token, &expected);
-            EXPECT_EQ(valid, dnmd::md_is_valid_token(handle, token)) << "Table " << table << ", row " << row;
-            dnmd::raw_cursor<mdtid_Module, mdtid_TypeDef> position{handle, token};
-            bool permitted = table == static_cast<uint32_t>(mdtid_Module)
-                || table == static_cast<uint32_t>(mdtid_TypeDef);
-            EXPECT_EQ(valid && permitted, static_cast<bool>(position)) << "Table " << table << ", row " << row;
+            mdToken token = CreateTokenType(table) | index;
+            bool valid = test_c_token_is_valid(handle, token);
+            EXPECT_EQ(valid, dnmd::md_is_valid_token(handle, token)) << table << ":" << index;
+            dnmd::raw_cursor<mdtid_Module, mdtid_TypeDef> actual{handle, token};
+            bool permitted = table == mdtid_Module || table == mdtid_TypeDef;
+            EXPECT_EQ(valid && permitted, static_cast<bool>(actual)) << table << ":" << index;
         }
     }
+    EXPECT_TRUE((dnmd::raw_cursor<mdtid_GenericParamConstraint>{
+        handle, CreateTokenType(mdtid_GenericParamConstraint) | 1}));
 }
 
 TEST_F(CppHeader, EmptyTokenFallbackDoesNotInitializeTableStorage)
 {
-    auto context = dnmd::detail::extract_mdcxt(handle);
-    auto table = &context->tables[mdtid_TypeRef];
+    auto& context = dnmd::detail::context(handle);
+    for (uint32_t index = 0; index < mdtid_End; ++index)
+    {
+        EXPECT_EQ(&context, context.tables[index].cxt);
+        EXPECT_EQ(index, context.tables[index].table_id);
+    }
+    auto table = &context.tables[mdtid_TypeRef];
     ASSERT_EQ(0u, table->row_count);
-    ASSERT_EQ(nullptr, table->cxt);
-    dnmd::raw_cursor<mdtid_TypeRef> position{handle, CreateTokenType(mdtid_TypeRef) | 1};
-    EXPECT_FALSE(position);
-    EXPECT_EQ(table, dnmd::detail::CursorTable(position));
-    mdToken token;
-    ASSERT_TRUE(position.get_token(token));
-    EXPECT_EQ(CreateTokenType(mdtid_TypeRef), token);
-    EXPECT_EQ(nullptr, table->cxt);
-
-    mdcursor_t added;
-    ASSERT_TRUE(md_append_row(handle, mdtid_TypeRef, &added));
-    md_commit_row_add(added);
-    EXPECT_EQ(context, table->cxt);
-    ASSERT_TRUE(dnmd::md_cursor_next(position));
-    EXPECT_TRUE(position);
+    ASSERT_EQ(&context, table->cxt);
+    ASSERT_FALSE(table->is_initialized);
+    EXPECT_EQ(sizeof(mdtable_t), test_c_table_size());
+    EXPECT_FALSE(test_c_table_is_initialized(handle, mdtid_TypeRef));
+    dnmd::raw_cursor<mdtid_TypeRef> actual{handle, CreateTokenType(mdtid_TypeRef) | 1};
+    EXPECT_FALSE(actual);
+    EXPECT_EQ(table, dnmd::detail::CursorTable(actual));
+    EXPECT_EQ(CreateTokenType(mdtid_TypeRef), dnmd_test::Token(actual));
+    EXPECT_EQ(&context, table->cxt);
+    EXPECT_FALSE(table->is_initialized);
+    (void)dnmd_test::AppendRow<mdtid_TypeRef>(handle);
+    EXPECT_TRUE(table->is_initialized);
+    EXPECT_TRUE(test_c_table_is_initialized(handle, mdtid_TypeRef));
+    ASSERT_TRUE(dnmd::md_cursor_next(actual));
+    EXPECT_TRUE(actual);
 }
 
 TEST_F(CppHeader, TokenConstructionSkipsReservedFallbackTables)
 {
-    using position = dnmd::raw_cursor<mdtid_Unused, mdtid_Unused, mdtid_MethodDef, mdtid_MemberRef, mdtid_Unused>;
+    using reserved = dnmd::raw_cursor<mdtid_Unused, mdtid_Unused, mdtid_MethodDef, mdtid_MemberRef, mdtid_Unused>;
     (void)Row<mdtid_MemberRef>();
-    position nil{handle, 0xff000001};
+    reserved nil{handle, 0xff000001};
     EXPECT_FALSE(nil);
-    mdToken token;
-    ASSERT_TRUE(nil.get_token(token));
-    EXPECT_EQ(CreateTokenType(mdtid_MethodDef), token);
-    EXPECT_FALSE(nil.get_as<mdtid_MethodDef>());
-    position valid{handle, CreateTokenType(mdtid_MemberRef) | 1};
+    EXPECT_EQ(CreateTokenType(mdtid_MethodDef), dnmd_test::Token(nil));
+    EXPECT_EQ(CreateTokenType(mdtid_MethodDef), dnmd_test::Token(reserved::at(handle, 0, mdtid_Unused)));
+    reserved valid{handle, CreateTokenType(mdtid_MemberRef) | 1};
     ASSERT_TRUE(valid);
     EXPECT_TRUE(valid.get_as<mdtid_MemberRef>());
 }
 
-TEST_F(CppHeader, TokenHelpersPreserveInvalidHandleFailures)
+TEST(CppCursorValidation, BooleanValidationRejectsInvalidHandles)
 {
     mdToken token = CreateTokenType(mdtid_Module) | 1;
-    auto missing = dnmd::md_token_to_cursor<mdtid_Module>(nullptr, token);
-    EXPECT_FALSE(missing);
-    EXPECT_EQ(nullptr, dnmd::detail::CursorTable(missing));
     EXPECT_FALSE(dnmd::md_is_valid_token(nullptr, token));
     mdcxt_t invalid{};
-    auto bad = dnmd::md_token_to_cursor<mdtid_Module>(&invalid, token);
-    EXPECT_FALSE(bad);
-    EXPECT_EQ(nullptr, dnmd::detail::CursorTable(bad));
     EXPECT_FALSE(dnmd::md_is_valid_token(&invalid, token));
 }
 
@@ -245,35 +320,42 @@ TEST_F(CppHeader, TokenConstructionAcceptsPortablePdbRows)
     (void)Row<mdtid_LocalScope>();
     (void)Row<mdtid_CustomDebugInformation>();
     mdToken token = CreateTokenType(mdtid_LocalScope) | 1;
-    dnmd::raw_cursor<mdtid_LocalScope> position{handle, token};
-    ASSERT_TRUE(position);
-    mdToken actual;
-    ASSERT_TRUE(position.get_token(actual));
-    EXPECT_EQ(token, actual);
-    EXPECT_TRUE(dnmd::md_is_valid_token(handle, token));
+    dnmd::raw_cursor<mdtid_LocalScope> scope{handle, token};
+    ASSERT_TRUE(scope);
+    EXPECT_TRUE(scope.is<mdtid_LocalScope>());
+    EXPECT_FALSE(scope.is_nil());
+    EXPECT_EQ(token, dnmd_test::Token(scope));
+    EXPECT_TRUE(test_c_token_is_valid(handle, token));
     token = CreateTokenType(mdtid_CustomDebugInformation) | 1;
-    dnmd::raw_cursor<mdtid_CustomDebugInformation> last_table{handle, token};
-    ASSERT_TRUE(last_table);
-    ASSERT_TRUE(last_table.get_token(actual));
-    EXPECT_EQ(token, actual);
-    EXPECT_TRUE(dnmd::md_is_valid_token(handle, token));
+    dnmd::raw_cursor<mdtid_CustomDebugInformation> debug{handle, token};
+    ASSERT_TRUE(debug);
+    EXPECT_TRUE(debug.is<mdtid_CustomDebugInformation>());
+    EXPECT_FALSE(debug.is_nil());
+    EXPECT_EQ(token, dnmd_test::Token(debug));
+    EXPECT_TRUE(test_c_token_is_valid(handle, token));
 }
 #endif
 
 TEST_F(CppHeader, StandaloneCursors)
 {
     auto type = dnmd::raw_cursor<mdtid_TypeDef>{Row<mdtid_TypeDef>()};
-    mdToken token;
-    ASSERT_TRUE(type.get_token(token));
+    mdToken token = dnmd_test::Token(type);
     EXPECT_TRUE(dnmd::md_is_valid_token(handle, token));
     EXPECT_TRUE(dnmd::md_token_to_cursor<mdtid_TypeDef>(handle, token));
     uint32_t flags;
     ASSERT_TRUE(type.as().get_column_value(dnmd::columns::TypeDef_Flags, &flags));
-    dnmd::indirect_cursor<mdtid_Field, mdtid_FieldPtr> fields;
+    auto fields = dnmd::indirect_cursor<mdtid_Field, mdtid_FieldPtr>::nil(handle);
     ASSERT_TRUE(type.as().get_column_value(dnmd::columns::TypeDef_FieldList, fields));
     ASSERT_TRUE(fields.get_target_token(token));
     EXPECT_EQ(mdtid_Field, ExtractTokenType(token));
     auto next = dnmd::md_create_cursor<mdtid_TypeDef>(handle);
     ASSERT_TRUE(next);
+    mdToken c_first;
+    uint32_t c_count;
+    ASSERT_TRUE(test_c_first_cursor(handle, mdtid_TypeDef, &c_first, &c_count));
+    uint32_t count;
+    auto counted = dnmd::md_create_cursor<mdtid_TypeDef>(handle, &count);
+    EXPECT_EQ(c_first, dnmd_test::Token(counted));
+    EXPECT_EQ(c_count, count);
     EXPECT_TRUE(dnmd::md_cursor_next(next));
 }

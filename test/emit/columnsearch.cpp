@@ -1,4 +1,5 @@
 #include <dnmd.hpp>
+#include "native.hpp"
 #include <gtest/gtest.h>
 #include <array>
 #include <vector>
@@ -51,18 +52,15 @@ namespace
         template<mdtable_id_t TableId>
         dnmd::cursor<TableId> AppendRow()
         {
-            mdcursor_t row{};
             if constexpr (TableId == mdtid_MethodDef)
             {
                 auto owner = GetRow<mdtid_TypeDef>();
-                EXPECT_TRUE(md_add_new_row_to_list(owner, dnmd::columns::TypeDef_MethodList.column_index, &row));
+                return dnmd_test::AddListRow(owner, dnmd::columns::TypeDef_MethodList);
             }
             else
             {
-                EXPECT_TRUE(md_append_row(handle.get(), TableId, &row));
+                return dnmd_test::AppendRow<TableId>(handle.get());
             }
-            md_commit_row_add(row);
-            return dnmd::raw_cursor<TableId>{row}.as();
         }
 
         template<mdtable_id_t TableId>
@@ -77,11 +75,11 @@ namespace
         {
             for (uint32_t value : values)
             {
-                mdcursor_t added;
-                ASSERT_TRUE(md_append_row(handle.get(), TableId, &added));
-                auto row = dnmd::raw_cursor<TableId>{added}.as();
+                auto added = dnmd::added_row<TableId>::append(handle.get());
+                ASSERT_TRUE(added);
+                auto row = added.as();
                 ASSERT_TRUE(row.set_column_value(col, value));
-                md_commit_row_add(added);
+                added.commit();
             }
         }
 
@@ -112,35 +110,30 @@ namespace
         {
             auto row = GetRow<TableId>();
             dnmd::detail::CursorTable(row)->is_sorted = true;
-            dnmd::raw_cursor<TableId> start;
+            dnmd::raw_cursor<TableId> start = dnmd::raw_cursor<TableId>::nil(handle.get());
             uint32_t count = 0;
             ASSERT_EQ(dnmd::range_result::found, dnmd::md_find_range_from_cursor(row, col, nil, start, &count));
             EXPECT_EQ(1u, count);
-            mdcursor_t c_start;
+            mdToken c_start;
             uint32_t c_count = 0;
             uint32_t c_key = nil;
             if constexpr (sizeof...(TargetTableIds) == 1)
                 c_key = (dnmd::detail::RidFromToken)(nil);
-            ASSERT_EQ(MD_RANGE_FOUND, md_find_range_from_cursor(row, col.column_index, c_key, &c_start, &c_count));
+            ASSERT_EQ(MD_RANGE_FOUND, test_c_find_range(handle.get(), dnmd_test::Token(row),
+                col.column_index, c_key, &c_start, &c_count));
             EXPECT_EQ(c_count, count);
-            EXPECT_EQ(c_start._reserved1, static_cast<mdcursor_t>(start)._reserved1);
-            EXPECT_EQ(c_start._reserved2, static_cast<mdcursor_t>(start)._reserved2);
+            EXPECT_EQ(c_start, dnmd_test::Token(start));
+            EXPECT_EQ(handle.get(), start.get_handle());
         }
 
         template<mdtable_id_t OwnerTableId, mdtable_id_t ElementTableId, mdtable_id_t PointerTableId>
         void CheckParents(dnmd::column<OwnerTableId, dnmd::indirect_cursor<ElementTableId, PointerTableId>> list)
         {
             auto owner = GetRow<OwnerTableId>();
-            mdcursor_t first;
-            ASSERT_TRUE(md_add_new_row_to_list(owner, list.column_index, &first));
-            md_commit_row_add(first);
+            auto first = dnmd_test::AddListRow(owner, list);
             auto other_owner = AppendRow<OwnerTableId>();
-            mdcursor_t second;
-            ASSERT_TRUE(md_add_new_row_to_list(other_owner, list.column_index, &second));
-            md_commit_row_add(second);
-            mdcursor_t third;
-            ASSERT_TRUE(md_add_new_row_to_list(owner, list.column_index, &third));
-            md_commit_row_add(third);
+            auto second = dnmd_test::AddListRow(other_owner, list);
+            auto third = dnmd_test::AddListRow(owner, list);
             mdToken owner_token;
             mdToken other_token;
             if constexpr (ElementTableId == mdtid_Event || ElementTableId == mdtid_Property)
@@ -166,9 +159,9 @@ namespace
                 ASSERT_TRUE(other_owner.get_token(other_token));
             }
             std::array<mdToken, 3> tokens;
-            ASSERT_TRUE(md_cursor_to_token(first, &tokens[0]));
-            ASSERT_TRUE(md_cursor_to_token(second, &tokens[1]));
-            ASSERT_TRUE(md_cursor_to_token(third, &tokens[2]));
+            ASSERT_TRUE(first.get_token(tokens[0]));
+            ASSERT_TRUE(second.get_token(tokens[1]));
+            ASSERT_TRUE(third.get_token(tokens[2]));
             std::array<mdToken, 3> expected{owner_token, other_token, owner_token};
             for (bool loaded : {false, true})
             {
@@ -181,7 +174,7 @@ namespace
                     mdToken actual;
                     ASSERT_TRUE(element.as().get_parent_token(actual));
                     EXPECT_EQ(expected[i], actual);
-                    dnmd::raw_cursor<dnmd::detail::parent_table_id<ElementTableId>()> parent;
+                    dnmd::raw_cursor<dnmd::detail::parent_table_id<ElementTableId>()> parent = dnmd::raw_cursor<dnmd::detail::parent_table_id<ElementTableId>()>::nil(handle.get());
                     ASSERT_TRUE(dnmd::md_find_cursor_of_range_element(element.as(), parent));
                     ASSERT_TRUE(parent.get_token(actual));
                     EXPECT_EQ(expected[i], actual);
@@ -254,7 +247,7 @@ TEST_F(CppColumnSearch, NarrowConstantKeysAreNotTruncated)
     auto start = first;
     EXPECT_EQ(dnmd::range_result::not_supported, dnmd::md_find_range_from_cursor(first.as(), ClassLayout_PackingSize, 1, start, &count));
     EXPECT_EQ(0x12345678u, count);
-    EXPECT_EQ(static_cast<mdcursor_t>(first)._reserved2, static_cast<mdcursor_t>(start)._reserved2);
+    EXPECT_EQ(dnmd::detail::CursorRow(first), dnmd::detail::CursorRow(start));
 }
 
 TEST_F(CppColumnSearch, SecondaryKeysDoNotUseBinarySearch)
@@ -269,7 +262,7 @@ TEST_F(CppColumnSearch, SecondaryKeysDoNotUseBinarySearch)
     }
     dnmd::detail::CursorTable(first)->is_sorted = true;
     ASSERT_NO_FATAL_FAILURE(ExpectRow(dnmd::md_find_row_from_cursor(first.as(), GenericParam_Number, 7), 2));
-    dnmd::raw_cursor<mdtid_GenericParam> range;
+    dnmd::raw_cursor<mdtid_GenericParam> range = dnmd::raw_cursor<mdtid_GenericParam>::nil(handle.get());
     uint32_t count = 99;
     EXPECT_EQ(dnmd::range_result::not_supported, dnmd::md_find_range_from_cursor(first.as(), GenericParam_Number, 7, range, &count));
     EXPECT_EQ(99u, count);
@@ -282,7 +275,7 @@ TEST_F(CppColumnSearch, SortedPrimaryRangesRespectTheSuffix)
         CreateTokenType(mdtid_TypeDef) | 2, CreateTokenType(mdtid_TypeDef) | 4}));
     auto first = dnmd::md_create_cursor<mdtid_ClassLayout>(handle.get());
     dnmd::detail::CursorTable(first)->is_sorted = true;
-    dnmd::raw_cursor<mdtid_ClassLayout> start;
+    dnmd::raw_cursor<mdtid_ClassLayout> start = dnmd::raw_cursor<mdtid_ClassLayout>::nil(handle.get());
     uint32_t count;
     ASSERT_EQ(dnmd::range_result::found, dnmd::md_find_range_from_cursor(first.as(), ClassLayout_Parent,
         CreateTokenType(mdtid_TypeDef) | 2, start, &count));
@@ -300,7 +293,7 @@ TEST_F(CppColumnSearch, SortedPrimaryRangesRespectTheSuffix)
     EXPECT_EQ(dnmd::range_result::not_found, dnmd::md_find_range_from_cursor(first.as(), ClassLayout_Parent,
         CreateTokenType(mdtid_TypeDef) | 3, start, &count));
     EXPECT_EQ(0x12345678u, count);
-    EXPECT_EQ(static_cast<mdcursor_t>(before)._reserved2, static_cast<mdcursor_t>(start)._reserved2);
+    EXPECT_EQ(dnmd::detail::CursorRow(before), dnmd::detail::CursorRow(start));
     EXPECT_EQ(dnmd::range_result::not_found, dnmd::md_find_range_from_cursor(first.as(), ClassLayout_Parent,
         CreateTokenType(mdtid_MethodDef) | 2, start, &count));
 }
@@ -310,14 +303,14 @@ TEST_F(CppColumnSearch, EmptyTypedRangeKeyPreservesOutputs)
     ASSERT_NO_FATAL_FAILURE(Fill(ClassLayout_Parent, {CreateTokenType(mdtid_TypeDef) | 1}));
     auto first = dnmd::md_create_cursor<mdtid_ClassLayout>(handle.get());
     dnmd::detail::CursorTable(first)->is_sorted = true;
-    dnmd::raw_cursor<mdtid_TypeDef> missing;
+    dnmd::raw_cursor<mdtid_TypeDef> missing = dnmd::raw_cursor<mdtid_TypeDef>::nil(handle.get());
     auto start = first;
     uint32_t count = 0x12345678;
     EXPECT_EQ(dnmd::range_result::not_found, dnmd::md_find_range_from_cursor(
         first.as(), ClassLayout_Parent, missing, start, &count));
     EXPECT_EQ(0x12345678u, count);
-    EXPECT_EQ(static_cast<mdcursor_t>(first)._reserved1, static_cast<mdcursor_t>(start)._reserved1);
-    EXPECT_EQ(static_cast<mdcursor_t>(first)._reserved2, static_cast<mdcursor_t>(start)._reserved2);
+    EXPECT_EQ(dnmd::detail::CursorTable(first), dnmd::detail::CursorTable(start));
+    EXPECT_EQ(dnmd::detail::CursorRow(first), dnmd::detail::CursorRow(start));
 }
 
 TEST_F(CppColumnSearch, CodedIndexSearchUsesStoredOrdering)
@@ -334,7 +327,7 @@ TEST_F(CppColumnSearch, CodedIndexSearchUsesStoredOrdering)
     EXPECT_EQ(35u, iterator[2]);
     ASSERT_NO_FATAL_FAILURE(ExpectRow(dnmd::md_find_row_from_cursor(first.as(), CustomAttribute_Parent,
         CreateTokenType(mdtid_Field) | 1), 2));
-    dnmd::raw_cursor<mdtid_CustomAttribute> range;
+    dnmd::raw_cursor<mdtid_CustomAttribute> range = dnmd::raw_cursor<mdtid_CustomAttribute>::nil(handle.get());
     uint32_t count;
     ASSERT_EQ(dnmd::range_result::found, dnmd::md_find_range_from_cursor(first.as(), CustomAttribute_Parent,
         CreateTokenType(mdtid_MethodDef) | 2, range, &count));
@@ -347,10 +340,9 @@ TEST_F(CppColumnSearch, PendingRowsDisableBinaryRangeSearch)
 {
     ASSERT_NO_FATAL_FAILURE(Fill(ClassLayout_Parent, {CreateTokenType(mdtid_TypeDef) | 1,
         CreateTokenType(mdtid_TypeDef) | 4}));
-    mdcursor_t added;
-    ASSERT_TRUE(md_append_row(handle.get(), mdtid_ClassLayout, &added));
-    ASSERT_TRUE((dnmd::raw_cursor<mdtid_ClassLayout>{added}.as().set_column_value(
-        ClassLayout_Parent, CreateTokenType(mdtid_TypeDef) | 2)));
+    auto added = dnmd::added_row<mdtid_ClassLayout>::append(handle.get());
+    ASSERT_TRUE(added);
+    ASSERT_TRUE(added.as().set_column_value(ClassLayout_Parent, CreateTokenType(mdtid_TypeDef) | 2));
     auto first = dnmd::md_create_cursor<mdtid_ClassLayout>(handle.get());
     dnmd::detail::CursorTable(first)->is_sorted = true;
     ASSERT_NO_FATAL_FAILURE(ExpectRow(dnmd::md_find_row_from_cursor(first.as(), ClassLayout_Parent,
@@ -360,7 +352,7 @@ TEST_F(CppColumnSearch, PendingRowsDisableBinaryRangeSearch)
     EXPECT_EQ(dnmd::range_result::not_supported, dnmd::md_find_range_from_cursor(first.as(), ClassLayout_Parent,
         CreateTokenType(mdtid_TypeDef) | 2, output, &count));
     EXPECT_EQ(99u, count);
-    md_commit_row_add(added);
+    added.commit();
 }
 
 TEST_F(CppColumnSearch, ReservedReferenceTagsDoNotMasqueradeAsNil)
@@ -387,14 +379,14 @@ TEST_F(CppColumnSearch, TypedKeysIncludeNilAndEndPositions)
     dnmd::raw_cursor<mdtid_TypeDef> position{target};
     ASSERT_NO_FATAL_FAILURE(ExpectRow(dnmd::md_find_row_from_cursor(first.as(), ClassLayout_Parent, position), 2));
     auto nil_row = first.as();
-    dnmd::raw_cursor<mdtid_TypeDef> nil;
+    dnmd::raw_cursor<mdtid_TypeDef> nil = dnmd::raw_cursor<mdtid_TypeDef>::nil(handle.get());
     ASSERT_TRUE(nil_row.get_column_value(ClassLayout_Parent, nil));
     EXPECT_FALSE(nil);
     ASSERT_NO_FATAL_FAILURE(ExpectRow(dnmd::md_find_row_from_cursor(first.as(), ClassLayout_Parent, nil), 1));
     ASSERT_TRUE(dnmd::md_cursor_next(position));
     EXPECT_FALSE(position);
     ASSERT_NO_FATAL_FAILURE(ExpectRow(dnmd::md_find_row_from_cursor(first.as(), ClassLayout_Parent, position), 3));
-    dnmd::raw_cursor<mdtid_ClassLayout> range;
+    dnmd::raw_cursor<mdtid_ClassLayout> range = dnmd::raw_cursor<mdtid_ClassLayout>::nil(handle.get());
     uint32_t count;
     ASSERT_EQ(dnmd::range_result::found, dnmd::md_find_range_from_cursor(first.as(), ClassLayout_Parent, target, range, &count));
     EXPECT_EQ(1u, count);
@@ -435,15 +427,10 @@ TEST_F(CppColumnSearch, ParentLookupsCoverAllPointerFamiliesAndReloads)
 TEST_F(CppColumnSearch, MissingPointerTargetsLeaveTheParentOutputUnchanged)
 {
     auto owner = GetRow<mdtid_TypeDef>();
-    mdcursor_t first;
-    mdcursor_t child;
-    ASSERT_TRUE(md_add_new_row_to_list(owner, TypeDef_FieldList.column_index, &first));
-    md_commit_row_add(first);
+    auto first = dnmd_test::AddListRow(owner, TypeDef_FieldList);
     auto other = AppendRow<mdtid_TypeDef>();
-    ASSERT_TRUE(md_add_new_row_to_list(other, TypeDef_FieldList.column_index, &child));
-    md_commit_row_add(child);
-    ASSERT_TRUE(md_add_new_row_to_list(owner, TypeDef_FieldList.column_index, &child));
-    md_commit_row_add(child);
+    (void)dnmd_test::AddListRow(other, TypeDef_FieldList);
+    (void)dnmd_test::AddListRow(owner, TypeDef_FieldList);
     uint32_t count;
     auto pointers = dnmd::md_create_cursor<mdtid_FieldPtr>(handle.get(), &count);
     ASSERT_TRUE(pointers);
@@ -454,10 +441,10 @@ TEST_F(CppColumnSearch, MissingPointerTargetsLeaveTheParentOutputUnchanged)
     EXPECT_FALSE(element.get_parent_token(token));
     EXPECT_EQ(0x12345678u, token);
     dnmd::raw_cursor<mdtid_TypeDef> parent{owner};
-    mdcursor_t before = parent;
+    auto before = parent;
     EXPECT_FALSE(dnmd::md_find_cursor_of_range_element(element, parent));
-    EXPECT_EQ(before._reserved1, static_cast<mdcursor_t>(parent)._reserved1);
-    EXPECT_EQ(before._reserved2, static_cast<mdcursor_t>(parent)._reserved2);
+    EXPECT_EQ(dnmd::detail::CursorTable(before), dnmd::detail::CursorTable(parent));
+    EXPECT_EQ(dnmd::detail::CursorRow(before), dnmd::detail::CursorRow(parent));
 }
 
 TEST_F(CppColumnSearch, LoadedDirectParentsHandleNilGapsAndEmptyRuns)
@@ -466,10 +453,8 @@ TEST_F(CppColumnSearch, LoadedDirectParentsHandleNilGapsAndEmptyRuns)
     std::array<mdToken, 4> children;
     for (auto& token : children)
     {
-        mdcursor_t child;
-        ASSERT_TRUE(md_add_new_row_to_list(owner, TypeDef_FieldList.column_index, &child));
-        md_commit_row_add(child);
-        ASSERT_TRUE(md_cursor_to_token(child, &token));
+        auto child = dnmd_test::AddListRow(owner, TypeDef_FieldList);
+        ASSERT_TRUE(child.get_token(token));
     }
     (void)AppendRow<mdtid_TypeDef>();
     (void)AppendRow<mdtid_TypeDef>();
@@ -502,15 +487,11 @@ TEST_F(CppColumnSearch, EventAndPropertyParentPositionsCanBeNil)
     auto type = GetRow<mdtid_TypeDef>();
     auto event_map = GetRow<mdtid_EventMap>();
     auto property_map = GetRow<mdtid_PropertyMap>();
-    mdcursor_t event;
-    mdcursor_t property;
-    ASSERT_TRUE(md_add_new_row_to_list(event_map, EventMap_EventList.column_index, &event));
-    md_commit_row_add(event);
-    ASSERT_TRUE(md_add_new_row_to_list(property_map, PropertyMap_PropertyList.column_index, &property));
-    md_commit_row_add(property);
+    auto event = dnmd_test::AddListRow(event_map, EventMap_EventList);
+    auto property = dnmd_test::AddListRow(property_map, PropertyMap_PropertyList);
     ASSERT_TRUE(event_map.set_column_value(EventMap_Parent, CreateTokenType(mdtid_TypeDef)));
     ASSERT_TRUE(property_map.set_column_value(PropertyMap_Parent, CreateTokenType(mdtid_TypeDef)));
-    dnmd::raw_cursor<mdtid_TypeDef> parent;
+    dnmd::raw_cursor<mdtid_TypeDef> parent = dnmd::raw_cursor<mdtid_TypeDef>::nil(handle.get());
     ASSERT_TRUE(dnmd::md_find_cursor_of_range_element(dnmd::raw_cursor<mdtid_Event>{event}.as(), parent));
     EXPECT_FALSE(parent);
     mdToken token;
@@ -527,19 +508,13 @@ TEST_F(CppColumnSearch, EventAndPropertyParentPositionsCanBeNil)
 TEST_F(CppColumnSearch, PortablePdbLocalRunsFindTheirScopes)
 {
     auto scope = GetRow<mdtid_LocalScope>();
-    mdcursor_t variable;
-    mdcursor_t constant;
-    ASSERT_TRUE(md_add_new_row_to_list(scope, LocalScope_VariableList.column_index, &variable));
-    md_commit_row_add(variable);
-    ASSERT_TRUE(md_add_new_row_to_list(scope, LocalScope_ConstantList.column_index, &constant));
-    md_commit_row_add(constant);
+    (void)dnmd_test::AddListRow(scope, LocalScope_VariableList);
+    (void)dnmd_test::AddListRow(scope, LocalScope_ConstantList);
     auto other = AppendRow<mdtid_LocalScope>();
     ASSERT_TRUE(other.set_column_value(LocalScope_VariableList, CreateTokenType(mdtid_LocalVariable) | 2));
     ASSERT_TRUE(other.set_column_value(LocalScope_ConstantList, CreateTokenType(mdtid_LocalConstant) | 2));
-    ASSERT_TRUE(md_add_new_row_to_list(other, LocalScope_VariableList.column_index, &variable));
-    md_commit_row_add(variable);
-    ASSERT_TRUE(md_add_new_row_to_list(other, LocalScope_ConstantList.column_index, &constant));
-    md_commit_row_add(constant);
+    (void)dnmd_test::AddListRow(other, LocalScope_VariableList);
+    (void)dnmd_test::AddListRow(other, LocalScope_ConstantList);
     (void)AppendRow<mdtid_LocalScope>();
     ASSERT_NO_FATAL_FAILURE(Reload());
     auto read_variable = dnmd::md_token_to_cursor<mdtid_LocalVariable>(handle.get(), CreateTokenType(mdtid_LocalVariable) | 2);

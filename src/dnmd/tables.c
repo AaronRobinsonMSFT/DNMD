@@ -762,7 +762,7 @@ bool initialize_new_table_details(
     mdtable_t* table
 )
 {
-    assert(table->cxt == NULL);
+    assert(table->cxt == cxt && !table->is_initialized);
     // Use the real table row counts to ensure that when saving, we can
     // directly write out table memory without any required post-processing.
     uint32_t table_row_counts[MDTABLE_MAX_COUNT];

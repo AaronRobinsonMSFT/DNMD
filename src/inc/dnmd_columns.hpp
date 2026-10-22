@@ -43,6 +43,9 @@ struct row_reader;
 template<mdtable_id_t TableId>
 struct row_writer;
 
+template<mdtable_id_t TableId>
+struct added_row;
+
 namespace detail
 {
 struct stored_column_value {};
@@ -109,22 +112,6 @@ constexpr auto pointer_column() noexcept
 inline uint32_t (RidFromToken)(uint64_t tk) noexcept
 {
     return static_cast<uint32_t>(tk) & 0x00ffffff;
-}
-
-inline mdtable_t* CursorTable(mdcursor_t const& c) noexcept
-{
-    return reinterpret_cast<mdtable_t*>(c._reserved1);
-}
-
-inline uint32_t CursorRow(mdcursor_t const& c) noexcept
-{
-    return (RidFromToken)(c._reserved2);
-}
-
-inline mdcursor_t CreateCursor(mdtable_t const* table, uint32_t row) noexcept
-{
-    assert(row <= table->row_count + 1);
-    return {reinterpret_cast<intptr_t>(table), static_cast<intptr_t>(row)};
 }
 
 template<mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
@@ -212,7 +199,6 @@ struct column_reference_codec<TableId>
     }
 };
 
-extern "C" bool resolve_column_reference(mdtable_t const* source, mdtable_id_t table, uint32_t row, mdcursor_t* cursor);
 }
 
 template<mdtable_id_t TableId, typename ColumnType, typename ValuePolicy = detail::stored_column_value>
