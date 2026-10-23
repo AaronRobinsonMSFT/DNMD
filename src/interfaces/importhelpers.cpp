@@ -46,7 +46,7 @@ namespace
         if (!c)
             return CLDB_E_FILE_CORRUPT;
 
-        if (!c.as().get_column_value(Module_Mvid, mvid))
+        if (!c.value().get_column_value(Module_Mvid, mvid))
             return CLDB_E_FILE_CORRUPT;
 
         return S_OK;
@@ -385,7 +385,7 @@ namespace
         {
             if (!c)
                 return CLDB_E_FILE_CORRUPT;
-            dnmd::row_reader reader{c.as()};
+            dnmd::row_reader reader{c.value()};
             // Search the table linearly by manually reading the columns.
             hr = matcher.Match(reader, majorVersion, minorVersion, buildNumber, revisionNumber);
             RETURN_IF_FAILED(hr);
@@ -473,10 +473,10 @@ namespace
     )
     {
         HRESULT hr;
-        auto sourceRow = sourceAssemblyRef.get_as<mdtid_AssemblyRef>();
+        auto sourceRow = sourceAssemblyRef.as<mdtid_AssemblyRef>();
         if (!sourceRow)
             return E_FAIL;
-        dnmd::row_reader reader{sourceRow.as()};
+        dnmd::row_reader reader{sourceRow.value()};
         uint32_t flags;
         if (!reader.read(AssemblyRef_Flags, &flags))
             return E_FAIL;
@@ -531,9 +531,9 @@ namespace
         if (!assemblyRef)
             return E_FAIL;
 
-        onRowAdded(assemblyRef.as());
+        onRowAdded(assemblyRef.value());
 
-        dnmd::row_writer writer{assemblyRef.as()};
+        dnmd::row_writer writer{assemblyRef.value()};
         if (!writer.write(AssemblyRef_MajorVersion, majorVersion))
             return E_FAIL;
 
@@ -598,10 +598,10 @@ namespace
         dnmd::raw_cursor<mdtid_AssemblyRef>* targetAssembly)
     {
         HRESULT hr;
-        auto sourceRow = sourceAssembly.get_as<mdtid_Assembly>();
+        auto sourceRow = sourceAssembly.as<mdtid_Assembly>();
         if (!sourceRow)
             return E_FAIL;
-        dnmd::row_reader reader{sourceRow.as()};
+        dnmd::row_reader reader{sourceRow.value()};
         uint32_t flags;
         if (!reader.read(Assembly_Flags, &flags))
             return E_FAIL;
@@ -670,9 +670,9 @@ namespace
         if (!assemblyRef)
             return E_FAIL;
 
-        onRowAdded(assemblyRef.as());
+        onRowAdded(assemblyRef.value());
 
-        dnmd::row_writer writer{assemblyRef.as()};
+        dnmd::row_writer writer{assemblyRef.value()};
         if (!writer.write(AssemblyRef_MajorVersion, majorVersion))
             return E_FAIL;
 
@@ -793,20 +793,20 @@ HRESULT ImportReferenceToTypeDef(
     {
         char const* importName;
         auto importModule = dnmd::md_create_cursor<mdtid_Module>(sourceModule);
-        if (!importModule || !importModule.as().get_column_value(Module_Name, &importName))
+        if (!importModule || !importModule.value().get_column_value(Module_Name, &importName))
         {
             return E_FAIL;
         }
 
         auto moduleRef = dnmd::added_row<mdtid_ModuleRef>::append(targetModule);
         if (!moduleRef
-            || !moduleRef.as().set_column_value(ModuleRef_Name, importName))
+            || !moduleRef.value().set_column_value(ModuleRef_Name, importName))
         {
             return E_FAIL;
         }
 
         resolutionScope = moduleRef.position();
-        onRowAdded(moduleRef.as());
+        onRowAdded(moduleRef.value());
     }
     else if (sameModuleMvid)
     {
@@ -836,11 +836,11 @@ HRESULT ImportReferenceToTypeDef(
         while (nestedClasses)
         {
             auto nestedClass = dnmd::md_find_row_from_cursor(
-                nestedClasses.as(), NestedClass_NestedClass, nestedTypeToken);
+                nestedClasses.value(), NestedClass_NestedClass, nestedTypeToken);
             if (!nestedClass)
                 break;
             dnmd::raw_cursor<mdtid_TypeDef> enclosingClass{sourceModule, 0};
-            if (!nestedClass || !nestedClass.as().get_column_value(NestedClass_EnclosingClass, enclosingClass))
+            if (!nestedClass || !nestedClass.value().get_column_value(NestedClass_EnclosingClass, enclosingClass))
                 return E_FAIL;
 
             typesForTypeRefs.push(enclosingClass);
@@ -850,18 +850,18 @@ HRESULT ImportReferenceToTypeDef(
 
         for (; !typesForTypeRefs.empty(); typesForTypeRefs.pop())
         {
-            auto typeDef = typesForTypeRefs.top().get_as<mdtid_TypeDef>();
+            auto typeDef = typesForTypeRefs.top().as<mdtid_TypeDef>();
             auto typeRef = dnmd::added_row<mdtid_TypeRef>::append(targetModule);
             if (!typeRef)
                 return E_FAIL;
 
-            dnmd::row_writer writer{typeRef.as()};
+            dnmd::row_writer writer{typeRef.value()};
             if (!writer.write(TypeRef_ResolutionScope, resolutionScope))
                 return E_FAIL;
 
             if (!typeDef)
                 return E_FAIL;
-            dnmd::row_reader reader{typeDef.as()};
+            dnmd::row_reader reader{typeDef.value()};
             char const* typeName;
             if (!reader.read(TypeDef_TypeName, &typeName)
                 || !writer.write(TypeRef_TypeName, typeName))
@@ -870,7 +870,7 @@ HRESULT ImportReferenceToTypeDef(
             }
 
             if (sourceModule == targetModule)
-                reader = dnmd::row_reader{typeDef.as()};
+                reader = dnmd::row_reader{typeDef.value()};
             char const* typeNamespace;
             if (!reader.read(TypeDef_TypeNamespace, &typeNamespace)
                 || !writer.write(TypeRef_TypeNamespace, typeNamespace))
@@ -879,10 +879,10 @@ HRESULT ImportReferenceToTypeDef(
             }
 
             resolutionScope = typeRef.position();
-            onRowAdded(typeRef.as());
+            onRowAdded(typeRef.value());
         }
 
-        *targetTypeDef = resolutionScope.get_as<mdtid_TypeRef>();
+        *targetTypeDef = resolutionScope.as<mdtid_TypeRef>();
     }
     catch (std::bad_alloc const&)
     {
@@ -904,7 +904,7 @@ namespace
         for (uint32_t i = 0; i < count; i++, c.move(1))
         {
             char const* name;
-            if (!c || !c.as().get_column_value(ModuleRef_Name, &name))
+            if (!c || !c.value().get_column_value(ModuleRef_Name, &name))
                 return dnmd::raw_cursor<mdtid_ModuleRef>::nil(image);
 
             if (std::strcmp(name, moduleName) == 0)
@@ -939,7 +939,7 @@ namespace
             {
                 if (!exportedType)
                     return E_FAIL;
-                dnmd::row_reader reader{exportedType.as()};
+                dnmd::row_reader reader{exportedType.value()};
                 char const* exportedTypeName;
                 if (!reader.read(ExportedType_TypeName, &exportedTypeName))
                     return E_FAIL;
@@ -961,7 +961,7 @@ namespace
             // If we found an ExportedType, then the type is defined in another module or is forwarded to another assembly.
             // We need to find the imported scope for the type.
             dnmd::raw_cursor<mdtid_File, mdtid_AssemblyRef, mdtid_ExportedType> implementation{assembly, 0};
-            if (!exportedType || !exportedType.as().get_column_value(ExportedType_Implementation, implementation))
+            if (!exportedType || !exportedType.value().get_column_value(ExportedType_Implementation, implementation))
                 return E_FAIL;
 
             HRESULT result = E_FAIL;
@@ -981,7 +981,7 @@ namespace
                         return;
 
                     char const* moduleName;
-                    if (!moduleCursor || !moduleCursor.as().get_column_value(Module_Name, &moduleName))
+                    if (!moduleCursor || !moduleCursor.value().get_column_value(Module_Name, &moduleName))
                         return;
 
                     if (std::strcmp(fileName, moduleName) == 0)
@@ -998,11 +998,11 @@ namespace
                         if (!moduleRef)
                             return;
 
-                        if (!moduleRef.as().set_column_value(ModuleRef_Name, fileName))
+                        if (!moduleRef.value().set_column_value(ModuleRef_Name, fileName))
                             return;
 
                         *importedScope = moduleRef.position();
-                        onRowAdded(moduleRef.as());
+                        onRowAdded(moduleRef.value());
                     }
                     result = S_OK;
                 }
@@ -1036,7 +1036,7 @@ namespace
         {
             if (!typeDef)
                 return E_FAIL;
-            dnmd::row_reader reader{typeDef.as()};
+            dnmd::row_reader reader{typeDef.value()};
             char const* typeDefName;
             if (!reader.read(TypeDef_TypeName, &typeDefName))
                 return E_FAIL;
@@ -1057,7 +1057,7 @@ namespace
                 if (!typeDef.get_token(typeDefToken))
                     return CLDB_E_FILE_CORRUPT;
 
-                if (dnmd::md_find_row_from_cursor(nestedType.as(), NestedClass_NestedClass, typeDefToken))
+                if (dnmd::md_find_row_from_cursor(nestedType.value(), NestedClass_NestedClass, typeDefToken))
                     return E_FAIL;
 
                 // If we found the type defined in the assembly, then the correct imported scope is the assembly module.
@@ -1070,7 +1070,7 @@ namespace
                     return CLDB_E_FILE_CORRUPT;
 
                 char const* assemblyModuleName;
-                if (!assemblyModule || !assemblyModule.as().get_column_value(Module_Name, &assemblyModuleName))
+                if (!assemblyModule || !assemblyModule.value().get_column_value(Module_Name, &assemblyModuleName))
                     return CLDB_E_FILE_CORRUPT;
 
                 dnmd::raw_cursor<mdtid_Module> moduleCursor{module, TokenFromRid(1, mdtModule)};
@@ -1078,7 +1078,7 @@ namespace
                     return CLDB_E_FILE_CORRUPT;
 
                 char const* moduleName;
-                if (!moduleCursor || !moduleCursor.as().get_column_value(Module_Name, &moduleName))
+                if (!moduleCursor || !moduleCursor.value().get_column_value(Module_Name, &moduleName))
                     return CLDB_E_FILE_CORRUPT;
 
                 if (std::strcmp(assemblyModuleName, moduleName) == 0)
@@ -1097,11 +1097,11 @@ namespace
                     if (!moduleRef)
                         return E_FAIL;
 
-                    if (!moduleRef.as().set_column_value(ModuleRef_Name, assemblyModuleName))
+                    if (!moduleRef.value().set_column_value(ModuleRef_Name, assemblyModuleName))
                         return E_FAIL;
 
                     *importedScope = moduleRef.position();
-                    onRowAdded(moduleRef.as());
+                    onRowAdded(moduleRef.value());
                 }
                 return S_OK;
             }
@@ -1114,12 +1114,12 @@ namespace
         dnmd::raw_cursor<mdtid_Assembly> assembly)
     {
         HRESULT hr;
-        auto refRow = assemblyRef.get_as<mdtid_AssemblyRef>();
-        auto assemblyRow = assembly.get_as<mdtid_Assembly>();
+        auto refRow = assemblyRef.as<mdtid_AssemblyRef>();
+        auto assemblyRow = assembly.as<mdtid_Assembly>();
         if (!refRow || !assemblyRow)
             return CLDB_E_FILE_CORRUPT;
-        dnmd::row_reader refReader{refRow.as()};
-        dnmd::row_reader assemblyReader{assemblyRow.as()};
+        dnmd::row_reader refReader{refRow.value()};
+        dnmd::row_reader assemblyReader{assemblyRow.value()};
         // Compare version, Name, Locale, and PublicKeyOrToken (possibly creating token from the assembly's key if needed)
         uint32_t refMajorVersion;
         if (!refReader.read(AssemblyRef_MajorVersion, &refMajorVersion))
@@ -1244,9 +1244,9 @@ namespace
         source_scope_cursor scope = sourceTypeRef;
         while (scope.is<mdtid_TypeRef>())
         {
-            auto typeRefScope = scope.get_as<mdtid_TypeRef>();
+            auto typeRefScope = scope.as<mdtid_TypeRef>();
             dnmd::raw_cursor<mdtid_Module, mdtid_ModuleRef, mdtid_AssemblyRef, mdtid_TypeRef> resolutionScope{scope.get_handle(), 0};
-            if (!typeRefScope || !typeRefScope.as().get_column_value(TypeRef_ResolutionScope, resolutionScope))
+            if (!typeRefScope || !typeRefScope.value().get_column_value(TypeRef_ResolutionScope, resolutionScope))
                 return E_FAIL;
 
             typesForTypeRefs.push(resolutionScope);
@@ -1323,11 +1323,11 @@ namespace
                             if (!moduleRef)
                                 return;
 
-                            if (!moduleRef.as().set_column_value(ModuleRef_Name, moduleName))
+                            if (!moduleRef.value().set_column_value(ModuleRef_Name, moduleName))
                                 return;
 
                             targetOutermostScope = moduleRef.position();
-                            onRowAdded(moduleRef.as());
+                            onRowAdded(moduleRef.value());
                         }
                         result = S_OK;
                     }
@@ -1347,7 +1347,7 @@ namespace
                             return;
 
                         char const* targetModuleName;
-                        if (!targetModuleCursor.as().get_column_value(Module_Name, &targetModuleName))
+                        if (!targetModuleCursor.value().get_column_value(Module_Name, &targetModuleName))
                             return;
 
                         if (std::strcmp(moduleName, targetModuleName) == 0)
@@ -1364,11 +1364,11 @@ namespace
                             if (!moduleRef)
                                 return;
 
-                            if (!moduleRef.as().set_column_value(ModuleRef_Name, moduleName))
+                            if (!moduleRef.value().set_column_value(ModuleRef_Name, moduleName))
                                 return;
 
                             targetOutermostScope = moduleRef.position();
-                            onRowAdded(moduleRef.as());
+                            onRowAdded(moduleRef.value());
                         }
                         result = S_OK;
                     }
@@ -1413,10 +1413,10 @@ namespace
                 dnmd::raw_cursor<mdtid_File, mdtid_AssemblyRef, mdtid_ExportedType> implementation{sourceAssembly, 0};
                 if (exportedType)
                 {
-                    auto outermostTypeRef = typesForTypeRefs.top().get_as<mdtid_TypeRef>();
+                    auto outermostTypeRef = typesForTypeRefs.top().as<mdtid_TypeRef>();
                     if (!outermostTypeRef)
                         return E_FAIL;
-                    dnmd::row_reader reader{outermostTypeRef.as()};
+                    dnmd::row_reader reader{outermostTypeRef.value()};
                     char const* typeName;
                     if (!reader.read(TypeRef_TypeName, &typeName))
                         return E_FAIL;
@@ -1430,7 +1430,7 @@ namespace
                     {
                         if (!exportedType)
                             return E_FAIL;
-                        dnmd::row_reader exportedTypeReader{exportedType.as()};
+                        dnmd::row_reader exportedTypeReader{exportedType.value()};
                         char const* exportedTypeName;
                         if (!exportedTypeReader.read(ExportedType_TypeName, &exportedTypeName))
                             return E_FAIL;
@@ -1498,10 +1498,10 @@ namespace
                     if (!sourceAssemblyTypeDef)
                         return E_FAIL;
 
-                    auto outermostTypeRef = typesForTypeRefs.top().get_as<mdtid_TypeRef>();
+                    auto outermostTypeRef = typesForTypeRefs.top().as<mdtid_TypeRef>();
                     if (!outermostTypeRef)
                         return E_FAIL;
-                    dnmd::row_reader reader{outermostTypeRef.as()};
+                    dnmd::row_reader reader{outermostTypeRef.value()};
                     char const* typeName;
                     if (!reader.read(TypeRef_TypeName, &typeName))
                         return E_FAIL;
@@ -1515,7 +1515,7 @@ namespace
                     {
                         if (!sourceAssemblyTypeDef)
                             return E_FAIL;
-                        dnmd::row_reader sourceTypeDefReader{sourceAssemblyTypeDef.as()};
+                        dnmd::row_reader sourceTypeDefReader{sourceAssemblyTypeDef.value()};
                         char const* sourceAssemblyTypeDefName;
                         if (!sourceTypeDefReader.read(TypeDef_TypeName, &sourceAssemblyTypeDefName))
                             return E_FAIL;
@@ -1529,7 +1529,7 @@ namespace
 
                         auto sourceAssemblyTypeDefEnclosingClass = dnmd::md_create_cursor<mdtid_NestedClass>(sourceAssembly);
                         if (sourceAssemblyTypeDefEnclosingClass
-                            && dnmd::md_find_row_from_cursor(sourceAssemblyTypeDefEnclosingClass.as(),
+                            && dnmd::md_find_row_from_cursor(sourceAssemblyTypeDefEnclosingClass.value(),
                                 NestedClass_NestedClass, TokenFromRid(i + 1, mdtTypeDef)))
                         {
                             // If the type is nested, then it can't be the right type as we're already at the outermost scope.
@@ -1577,10 +1577,10 @@ namespace
                     if (match == S_OK)
                     {
                         // The type is defined in the target assembly, so we need to correctly define its scope.
-                        auto outermostTypeRef = typesForTypeRefs.top().get_as<mdtid_TypeRef>();
+                        auto outermostTypeRef = typesForTypeRefs.top().as<mdtid_TypeRef>();
                         if (!outermostTypeRef)
                             return;
-                        dnmd::row_reader reader{outermostTypeRef.as()};
+                        dnmd::row_reader reader{outermostTypeRef.value()};
                         char const* typeName;
                         if (!reader.read(TypeRef_TypeName, &typeName))
                             return;
@@ -1642,10 +1642,10 @@ namespace
                 return E_FAIL;
             for (; !typesForTypeRefs.empty(); typesForTypeRefs.pop())
             {
-                auto sourceEnclosingTypeRef = typesForTypeRefs.top().get_as<mdtid_TypeRef>();
+                auto sourceEnclosingTypeRef = typesForTypeRefs.top().as<mdtid_TypeRef>();
                 if (!sourceEnclosingTypeRef)
                     return E_FAIL;
-                dnmd::row_reader reader{sourceEnclosingTypeRef.as()};
+                dnmd::row_reader reader{sourceEnclosingTypeRef.value()};
 
                 char const* typeName;
                 if (!reader.read(TypeRef_TypeName, &typeName))
@@ -1668,7 +1668,7 @@ namespace
                 {
                     if (!targetTypeDef)
                         return E_FAIL;
-                    dnmd::row_reader targetTypeDefReader{targetTypeDef.as()};
+                    dnmd::row_reader targetTypeDefReader{targetTypeDef.value()};
                     char const* targetTypeName;
                     if (!targetTypeDefReader.read(TypeDef_TypeName, &targetTypeName))
                         return E_FAIL;
@@ -1690,7 +1690,7 @@ namespace
                     auto targetNestedClass = dnmd::md_create_cursor<mdtid_NestedClass>(targetModule);
                     if (shouldHaveEnclosingType !=
                         (targetNestedClass
-                            && (targetNestedClass = dnmd::md_find_row_from_cursor(targetNestedClass.as(),
+                            && (targetNestedClass = dnmd::md_find_row_from_cursor(targetNestedClass.value(),
                                 NestedClass_NestedClass, targetTypeDefToken))))
                     {
                         // If the source TypeRef has an enclosing type, then the target TypeDef must have an enclosing type and vice versa.
@@ -1700,7 +1700,7 @@ namespace
                     if (shouldHaveEnclosingType)
                     {
                         mdToken targetEnclosingType;
-                        if (!targetNestedClass || !targetNestedClass.as().get_column_value(NestedClass_EnclosingClass, targetEnclosingType))
+                        if (!targetNestedClass || !targetNestedClass.value().get_column_value(NestedClass_EnclosingClass, targetEnclosingType))
                             return E_FAIL;
 
                         // If the enclosing type doesn't match, then we are in a failure state.
@@ -1717,25 +1717,25 @@ namespace
 
                 enclosingScope = targetTypeDef;
             }
-            *targetTypeRef = enclosingScope.get_as<mdtid_TypeDef>();
+            *targetTypeRef = enclosingScope.as<mdtid_TypeDef>();
             return S_OK;
         }
 
         resolution_scope_cursor resolutionScope = targetOutermostScope;
         for (; !typesForTypeRefs.empty(); typesForTypeRefs.pop())
         {
-            auto sourceEnclosingTypeRef = typesForTypeRefs.top().get_as<mdtid_TypeRef>();
+            auto sourceEnclosingTypeRef = typesForTypeRefs.top().as<mdtid_TypeRef>();
             auto targetEnclosingTypeRef = dnmd::added_row<mdtid_TypeRef>::append(targetModule);
             if (!targetEnclosingTypeRef)
                 return E_FAIL;
 
-            dnmd::row_writer writer{targetEnclosingTypeRef.as()};
+            dnmd::row_writer writer{targetEnclosingTypeRef.value()};
             if (!writer.write(TypeRef_ResolutionScope, resolutionScope))
                 return E_FAIL;
 
             if (!sourceEnclosingTypeRef)
                 return E_FAIL;
-            dnmd::row_reader reader{sourceEnclosingTypeRef.as()};
+            dnmd::row_reader reader{sourceEnclosingTypeRef.value()};
             char const* typeName;
             if (!reader.read(TypeRef_TypeName, &typeName)
                 || !writer.write(TypeRef_TypeName, typeName))
@@ -1744,7 +1744,7 @@ namespace
             }
 
             if (sourceModule == targetModule)
-                reader = dnmd::row_reader{sourceEnclosingTypeRef.as()};
+                reader = dnmd::row_reader{sourceEnclosingTypeRef.value()};
             char const* typeNamespace;
             if (!reader.read(TypeRef_TypeNamespace, &typeNamespace)
                 || !writer.write(TypeRef_TypeNamespace, typeNamespace))
@@ -1753,10 +1753,10 @@ namespace
             }
 
             resolutionScope = targetEnclosingTypeRef.position();
-            onRowAdded(targetEnclosingTypeRef.as());
+            onRowAdded(targetEnclosingTypeRef.value());
         }
 
-        *targetTypeRef = resolutionScope.get_as<mdtid_TypeRef>();
+        *targetTypeRef = resolutionScope.as<mdtid_TypeRef>();
 
         return S_OK;
     }
@@ -1775,9 +1775,9 @@ HRESULT ImportReferenceToTypeDefOrRefOrSpec(
     if (!dnmd::md_is_valid_token(sourceModule, *importedToken))
         return CLDB_E_FILE_CORRUPT;
 
-    switch (TypeFromToken(*importedToken))
+    switch (ExtractTokenType(*importedToken))
     {
-        case mdtTypeDef:
+        case mdtid_TypeDef:
         {
             dnmd::raw_cursor<mdtid_TypeDef, mdtid_TypeRef> targetCursor{targetModule, 0};
             RETURN_IF_FAILED(ImportReferenceToTypeDef(dnmd::raw_cursor<mdtid_TypeDef>{sourceModule, *importedToken}, sourceAssembly, sourceAssemblyHash, targetAssembly, targetModule, true, onRowAdded, &targetCursor));
@@ -1786,7 +1786,7 @@ HRESULT ImportReferenceToTypeDefOrRefOrSpec(
 
             return S_OK;
         }
-        case mdtTypeRef:
+        case mdtid_TypeRef:
         {
             dnmd::raw_cursor<mdtid_TypeDef, mdtid_TypeRef> targetCursor{targetModule, 0};
             RETURN_IF_FAILED(ImportReferenceToTypeRef(dnmd::raw_cursor<mdtid_TypeRef>{sourceModule, *importedToken}, sourceAssembly, sourceAssemblyHash, targetAssembly, targetModule, onRowAdded, &targetCursor));
@@ -1795,12 +1795,12 @@ HRESULT ImportReferenceToTypeDefOrRefOrSpec(
 
             return S_OK;
         }
-        case mdtTypeSpec:
+        case mdtid_TypeSpec:
         {
             auto sourceTypeSpec = dnmd::raw_cursor<mdtid_TypeSpec>{sourceModule, *importedToken};
             uint8_t const* signature;
             uint32_t signatureLength;
-            if (!sourceTypeSpec || !sourceTypeSpec.as().get_column_value(TypeSpec_Signature, &signature, &signatureLength))
+            if (!sourceTypeSpec || !sourceTypeSpec.value().get_column_value(TypeSpec_Signature, &signature, &signatureLength))
                 return E_FAIL;
 
             inline_span<uint8_t> importedSignature;
@@ -1812,7 +1812,7 @@ HRESULT ImportReferenceToTypeDefOrRefOrSpec(
 
             uint8_t const* importedSignatureData = (uint8_t const*)importedSignature;
             uint32_t importedSignatureLength = (uint32_t)importedSignature.size();
-            if (!typeSpec.as().set_column_value(TypeSpec_Signature, importedSignatureData, importedSignatureLength))
+            if (!typeSpec.value().set_column_value(TypeSpec_Signature, importedSignatureData, importedSignatureLength))
                 return E_FAIL;
 
             if (!typeSpec.get_token(*importedToken))
@@ -1838,10 +1838,10 @@ HRESULT DefineImportMember(
 {
     HRESULT hr;
     assert(pImport && pmr);
-    assert(TypeFromToken(tkImport) == mdtTypeRef || TypeFromToken(tkImport) == mdtModuleRef ||
-                IsNilToken(tkImport) || TypeFromToken(tkImport) == mdtTypeSpec);
-    assert((TypeFromToken(mbMember) == mdtMethodDef && mbMember != mdMethodDefNil) ||
-             (TypeFromToken(mbMember) == mdtFieldDef && mbMember != mdFieldDefNil));
+    assert(ExtractTokenType(tkImport) == mdtid_TypeRef || ExtractTokenType(tkImport) == mdtid_ModuleRef ||
+                IsNilToken(tkImport) || ExtractTokenType(tkImport) == mdtid_TypeSpec);
+    assert((ExtractTokenType(mbMember) == mdtid_MethodDef && mbMember != mdMethodDefNil) ||
+             (ExtractTokenType(mbMember) == mdtid_Field && mbMember != mdFieldDefNil));
 
     size_t memberNameSize = 128;
     std::unique_ptr<WCHAR[]> memberName { new WCHAR[memberNameSize] }; // Name of the imported member.
@@ -1851,7 +1851,7 @@ HRESULT DefineImportMember(
     ULONG       cbSig;                  // Length of member's signature.
     ULONG       translatedSigLength;        // Length of translated signature.
 
-    if (TypeFromToken(mbMember) == mdtMethodDef)
+    if (ExtractTokenType(mbMember) == mdtid_MethodDef)
     {
         ULONG acutalNameLength;
         for (;;)
@@ -1867,7 +1867,7 @@ HRESULT DefineImportMember(
             break;
         }
     }
-    else    // TypeFromToken(mbMember) == mdtFieldDef
+    else    // ExtractTokenType(mbMember) == mdtid_Field
     {
         ULONG acutalNameLength;
         for (;;)

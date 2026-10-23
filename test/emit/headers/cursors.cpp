@@ -31,6 +31,7 @@ namespace
     static_assert(!std::is_constructible_v<row, mdtable_t&, uint32_t>);
     static_assert(!std::is_constructible_v<position, mdtable_t*, uint32_t>);
     static_assert(!std::is_constructible_v<position, mdcxt_t*, mdToken>);
+    static_assert(!std::is_constructible_v<position, mdcxt_t&, mdToken>);
     static_assert(!std::is_constructible_v<position, mdtable_t&, uint32_t>);
     static_assert(!std::is_constructible_v<position, intptr_t, uint32_t>);
     static_assert(!std::is_constructible_v<indirect, mdtable_t*, mdToken>);
@@ -249,6 +250,7 @@ TEST_F(CppHeader, TokenFallbackRespectsDeclaredTableOrder)
 
 TEST_F(CppHeader, TokenValidityMatchesCForEveryTableTag)
 {
+    using reserved = dnmd::raw_cursor<mdtid_Unused, mdtid_TypeDef, mdtid_Unused, mdtid_Module, mdtid_Unused>;
     (void)Row<mdtid_GenericParamConstraint>();
     for (uint32_t table = 0; table < 0x100; ++table)
     {
@@ -260,6 +262,18 @@ TEST_F(CppHeader, TokenValidityMatchesCForEveryTableTag)
             dnmd::raw_cursor<mdtid_Module, mdtid_TypeDef> actual{handle, token};
             bool permitted = table == mdtid_Module || table == mdtid_TypeDef;
             EXPECT_EQ(valid && permitted, static_cast<bool>(actual)) << table << ":" << index;
+            reserved with_reserved{handle, token};
+            EXPECT_EQ(valid && permitted, static_cast<bool>(with_reserved)) << table << ":" << index;
+            EXPECT_EQ(handle, with_reserved.get_handle());
+            if (valid && permitted)
+            {
+                EXPECT_EQ(token, dnmd_test::Token(with_reserved));
+            }
+            else
+            {
+                EXPECT_TRUE(with_reserved.is_nil());
+                EXPECT_TRUE(with_reserved.is<mdtid_TypeDef>());
+            }
         }
     }
     EXPECT_TRUE((dnmd::raw_cursor<mdtid_GenericParamConstraint>{

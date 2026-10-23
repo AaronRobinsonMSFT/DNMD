@@ -85,7 +85,7 @@ namespace
             if (FAILED(hr))
                 return hr;
             
-            if (!moduleCursor.as().set_column_value(dnmd::columns::Module_Mvid, mvid))
+            if (!moduleCursor.value().set_column_value(dnmd::columns::Module_Mvid, mvid))
                 return E_OUTOFMEMORY;
             
             dncp::com_ptr<ControllingIUnknown> obj;

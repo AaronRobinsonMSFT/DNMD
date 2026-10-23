@@ -238,6 +238,19 @@ The metadata handle must outlive its cursors, readers, and writers.
 
 > `cmake --build artifacts --target install`
 
+For shipping-representative disassembly on Windows, use the Release build in
+`artifacts\release` with IPO enabled for both C and C++ targets:
+
+```powershell
+cmake -S . -B artifacts\release -DCMAKE_BUILD_TYPE=Release `
+    -DCMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE=ON `
+    -DCMAKE_POLICY_DEFAULT_CMP0069=NEW
+cmake --build artifacts\release --target dnmd_interfaces
+```
+
+The IPO setting enables MSVC `/GL` compilation and `/LTCG` linking. The policy
+setting also enables IPO for the vendored dependency.
+
 ## Test
 
 The `test/` directory contains all product tests. The native components for

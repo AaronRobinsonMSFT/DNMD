@@ -48,9 +48,9 @@ inline bool validate_row_sorted_within_table(cursor<TableId> row) noexcept
 {
     auto table = CursorTable(row);
     uint32_t index = CursorRow(row);
-    if (index > 1 && !rows_sorted(raw_cursor<TableId>::at(table->cxt, index - 1).as(), row))
+    if (index > 1 && !rows_sorted(raw_cursor<TableId>::at(table->cxt, index - 1).value(), row))
         return false;
-    return index == table->row_count || rows_sorted(row, raw_cursor<TableId>::at(table->cxt, index + 1).as());
+    return index == table->row_count || rows_sorted(row, raw_cursor<TableId>::at(table->cxt, index + 1).value());
 }
 
 template<mdtable_id_t TableId, typename ColumnType>
@@ -63,7 +63,7 @@ inline void update_column_sort_order(cursor<TableId> row, column<TableId, Column
         return ((col.column_index == keys.column.column_index) || ...);
     }, table_sort_keys<TableId>());
     if (is_key)
-        table->is_sorted = validate_row_sorted_within_table(raw_cursor<TableId>{row}.as());
+        table->is_sorted = validate_row_sorted_within_table(raw_cursor<TableId>{row}.value());
 }
 }
 
@@ -369,7 +369,7 @@ public:
     mdhandle_t get_handle() const noexcept { return _table->cxt; }
     raw_cursor<TableId> position() const noexcept { return raw_cursor<TableId>::at(get_handle(), _row); }
     explicit operator bool() const noexcept { return _row != 0; }
-    cursor<TableId> as() const noexcept { assert(_row != 0); return position().as(); }
+    cursor<TableId> value() const noexcept { assert(_row != 0); return position().value(); }
     bool get_token(mdToken& token) const noexcept { return position().get_token(token); }
 
     void commit() noexcept
@@ -378,7 +378,7 @@ public:
             return;
         assert(_table->is_adding_new_row);
         if (_table->is_sorted)
-            _table->is_sorted = detail::validate_row_sorted_within_table(as());
+            _table->is_sorted = detail::validate_row_sorted_within_table(value());
         _table->is_adding_new_row = false;
         _row = 0;
     }

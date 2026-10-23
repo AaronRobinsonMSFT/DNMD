@@ -83,7 +83,7 @@ HRESULT MetadataEmit::SetModuleProps(
         }
     }
 
-    auto c_row = dnmd::raw_cursor<mdtid_Module>{c}.as();
+    auto c_row = dnmd::raw_cursor<mdtid_Module>{c}.value();
     if (!c_row.set_column_value(Module_Name, start))
         return E_FAIL;
 
@@ -193,7 +193,7 @@ HRESULT MetadataEmit::DefineTypeDef(
     char const* ns;
     char const* name;
     SplitTypeName(cvt, &ns, &name);
-    auto c_row = dnmd::raw_cursor<mdtid_TypeDef>{c}.as();
+    auto c_row = dnmd::raw_cursor<mdtid_TypeDef>{c}.value();
     dnmd::row_writer writer{c_row};
     if (!writer.write(TypeDef_TypeNamespace, ns))
         return E_FAIL;
@@ -228,7 +228,7 @@ HRESULT MetadataEmit::DefineTypeDef(
             if (!interfaceImpl)
                 return E_FAIL;
 
-            dnmd::row_writer interfaceImpl_writer{dnmd::raw_cursor<mdtid_InterfaceImpl>{interfaceImpl}.as()};
+            dnmd::row_writer interfaceImpl_writer{dnmd::raw_cursor<mdtid_InterfaceImpl>{interfaceImpl}.value()};
             if (!interfaceImpl_writer.write(InterfaceImpl_Class, c_row))
                 return E_FAIL;
 
@@ -255,7 +255,7 @@ HRESULT MetadataEmit::DefineNestedType(
 {
     HRESULT hr;
 
-    if (TypeFromToken(tdEncloser) != mdtTypeDef || IsNilToken(tdEncloser))
+    if (ExtractTokenType(tdEncloser) != mdtid_TypeDef || IsNilToken(tdEncloser))
         return E_INVALIDARG;
 
     if (IsTdNested(dwTypeDefFlags))
@@ -267,7 +267,7 @@ HRESULT MetadataEmit::DefineNestedType(
     if (!c)
         return E_FAIL;
 
-    dnmd::row_writer writer{dnmd::raw_cursor<mdtid_NestedClass>{c}.as()};
+    dnmd::row_writer writer{dnmd::raw_cursor<mdtid_NestedClass>{c}.value()};
     if (!writer.write(NestedClass_NestedClass, *ptd))
         return E_FAIL;
 
@@ -298,21 +298,21 @@ HRESULT MetadataEmit::DefineMethod(
         DWORD           dwImplFlags,
         mdMethodDef     *pmd)
 {
-    if (TypeFromToken(td) != mdtTypeDef)
+    if (ExtractTokenType(td) != mdtid_TypeDef)
         return E_INVALIDARG;
 
     auto type = dnmd::raw_cursor<mdtid_TypeDef>{MetaData(), td};
     if (!type)
         return CLDB_E_FILE_CORRUPT;
 
-    auto newMethod = dnmd::md_add_new_row_to_list(type.as(), TypeDef_MethodList);
+    auto newMethod = dnmd::md_add_new_row_to_list(type.value(), TypeDef_MethodList);
     if (!newMethod)
         return E_FAIL;
 
     pal::StringConvert<WCHAR, char> cvt(szName);
 
     char const* name = cvt;
-    dnmd::row_writer newMethod_writer{dnmd::raw_cursor<mdtid_MethodDef>{newMethod}.as()};
+    dnmd::row_writer newMethod_writer{dnmd::raw_cursor<mdtid_MethodDef>{newMethod}.value()};
     if (!newMethod_writer.write(MethodDef_Name, name))
         return E_FAIL;
 
@@ -348,7 +348,7 @@ HRESULT MetadataEmit::DefineMethodImpl(
     if (!c)
         return E_FAIL;
 
-    dnmd::row_writer writer{dnmd::raw_cursor<mdtid_MethodImpl>{c}.as()};
+    dnmd::row_writer writer{dnmd::raw_cursor<mdtid_MethodImpl>{c}.value()};
     if (!writer.write(MethodImpl_Class, td))
         return E_FAIL;
 
@@ -371,7 +371,7 @@ HRESULT MetadataEmit::DefineTypeRefByName(
     if (!c)
         return E_FAIL;
 
-    dnmd::row_writer writer{dnmd::raw_cursor<mdtid_TypeRef>{c}.as()};
+    dnmd::row_writer writer{dnmd::raw_cursor<mdtid_TypeRef>{c}.value()};
     if (!writer.write(TypeRef_ResolutionScope, tkResolutionScope))
         return E_FAIL;
 
@@ -465,7 +465,7 @@ HRESULT MetadataEmit::DefineMemberRef(
     if (!c)
         return E_FAIL;
 
-    dnmd::row_writer writer{dnmd::raw_cursor<mdtid_MemberRef>{c}.as()};
+    dnmd::row_writer writer{dnmd::raw_cursor<mdtid_MemberRef>{c}.value()};
     if (!writer.write(MemberRef_Class, tkImport))
         return E_FAIL;
 
@@ -515,7 +515,7 @@ namespace
         if (!addMethodSemantic)
             return E_FAIL;
 
-        dnmd::row_writer writer{dnmd::raw_cursor<mdtid_MethodSemantics>{addMethodSemantic}.as()};
+        dnmd::row_writer writer{dnmd::raw_cursor<mdtid_MethodSemantics>{addMethodSemantic}.value()};
         if (!writer.write(MethodSemantics_Association, parent))
             return E_FAIL;
 
@@ -538,12 +538,12 @@ namespace
         if (!begin)
             return CLDB_E_RECORD_NOTFOUND;
 
-        auto position = dnmd::md_find_row_from_cursor(begin.as(), parentColumn, parent);
+        auto position = dnmd::md_find_row_from_cursor(begin.value(), parentColumn, parent);
         if (!position)
             return CLDB_E_RECORD_NOTFOUND;
 
-        mdToken nilParent = TokenFromRid(mdTokenNil, TypeFromToken(parent));
-        if (!position.as().set_column_value(parentColumn, nilParent))
+        mdToken nilParent = CreateTokenType(ExtractTokenType(parent));
+        if (!position.value().set_column_value(parentColumn, nilParent))
             return E_FAIL;
 
         if (!dnmd::md_is_valid_token(md, parent))
@@ -560,7 +560,7 @@ namespace
         auto position = dnmd::raw_cursor<TableId>{md, tk};
         if (!position)
             return CLDB_E_FILE_CORRUPT;
-        auto row = position.as();
+        auto row = position.value();
 
         uint32_t flags;
         if (!row.get_column_value(flagsColumn, &flags))
@@ -598,7 +598,7 @@ namespace
         auto position = dnmd::raw_cursor<TableId>{md, tk};
         if (!position)
             return CLDB_E_FILE_CORRUPT;
-        return AddFlag(position.as(), flagsColumn, flagToAdd);
+        return AddFlag(position.value(), flagsColumn, flagToAdd);
     }
 
     template<mdtable_id_t TableId, mdtable_id_t... ParentTableIds, typename T>
@@ -608,7 +608,7 @@ namespace
         auto begin = dnmd::md_create_cursor<TableId>(md);
         auto position = dnmd::raw_cursor<TableId>::nil(md);
         if (begin)
-            position = dnmd::md_find_row_from_cursor(begin.as(), parentCol, parent);
+            position = dnmd::md_find_row_from_cursor(begin.value(), parentCol, parent);
         if (!position)
         {
             // TODO: Update EncLog
@@ -616,11 +616,11 @@ namespace
             if (!addedRow)
                 return E_FAIL;
 
-            if (!addedRow.as().set_column_value(parentCol, parent))
+            if (!addedRow.value().set_column_value(parentCol, parent))
                 return E_FAIL;
-            return setTableData(addedRow.as());
+            return setTableData(addedRow.value());
         }
-        return setTableData(position.as());
+        return setTableData(position.value());
     }
 }
 
@@ -635,12 +635,12 @@ HRESULT MetadataEmit::DefineEvent(
         mdMethodDef rmdOtherMethods[],
         mdEvent     *pmdEvent)
 {
-    assert(TypeFromToken(td) == mdtTypeDef && td != mdTypeDefNil);
-    assert(IsNilToken(tkEventType) || TypeFromToken(tkEventType) == mdtTypeDef ||
-                TypeFromToken(tkEventType) == mdtTypeRef || TypeFromToken(tkEventType) == mdtTypeSpec);
-    assert(TypeFromToken(mdAddOn) == mdtMethodDef && mdAddOn != mdMethodDefNil);
-    assert(TypeFromToken(mdRemoveOn) == mdtMethodDef && mdRemoveOn != mdMethodDefNil);
-    assert(IsNilToken(mdFire) || TypeFromToken(mdFire) == mdtMethodDef);
+    assert(ExtractTokenType(td) == mdtid_TypeDef && td != mdTypeDefNil);
+    assert(IsNilToken(tkEventType) || ExtractTokenType(tkEventType) == mdtid_TypeDef ||
+                ExtractTokenType(tkEventType) == mdtid_TypeRef || ExtractTokenType(tkEventType) == mdtid_TypeSpec);
+    assert(ExtractTokenType(mdAddOn) == mdtid_MethodDef && mdAddOn != mdMethodDefNil);
+    assert(ExtractTokenType(mdRemoveOn) == mdtid_MethodDef && mdRemoveOn != mdMethodDefNil);
+    assert(IsNilToken(mdFire) || ExtractTokenType(mdFire) == mdtid_MethodDef);
     assert(szEvent && pmdEvent);
 
     pal::StringConvert<WCHAR, char> cvt(szEvent);
@@ -657,7 +657,7 @@ HRESULT MetadataEmit::DefineEvent(
         if (!addedEvent)
             return E_FAIL;
 
-        dnmd::row_writer addedEvent_writer{dnmd::raw_cursor<mdtid_Event>{addedEvent}.as()};
+        dnmd::row_writer addedEvent_writer{dnmd::raw_cursor<mdtid_Event>{addedEvent}.value()};
         if (!addedEvent_writer.write(Event_Name, name))
             return E_FAIL;
 
@@ -670,24 +670,24 @@ HRESULT MetadataEmit::DefineEvent(
 
         if (mdAddOn != mdMethodDefNil)
         {
-            RETURN_IF_FAILED(AddMethodSemantic(MetaData(), dnmd::raw_cursor<mdtid_Event>{addedEvent}.as(), msAddOn, mdAddOn));
+            RETURN_IF_FAILED(AddMethodSemantic(MetaData(), dnmd::raw_cursor<mdtid_Event>{addedEvent}.value(), msAddOn, mdAddOn));
         }
 
         if (mdRemoveOn != mdMethodDefNil)
         {
-            RETURN_IF_FAILED(AddMethodSemantic(MetaData(), dnmd::raw_cursor<mdtid_Event>{addedEvent}.as(), msRemoveOn, mdRemoveOn));
+            RETURN_IF_FAILED(AddMethodSemantic(MetaData(), dnmd::raw_cursor<mdtid_Event>{addedEvent}.value(), msRemoveOn, mdRemoveOn));
         }
 
         if (mdFire != mdMethodDefNil)
         {
-            RETURN_IF_FAILED(AddMethodSemantic(MetaData(), dnmd::raw_cursor<mdtid_Event>{addedEvent}.as(), msFire, mdFire));
+            RETURN_IF_FAILED(AddMethodSemantic(MetaData(), dnmd::raw_cursor<mdtid_Event>{addedEvent}.value(), msFire, mdFire));
         }
 
         if (rmdOtherMethods != nullptr)
         {
             for (size_t i = 0; !IsNilToken(rmdOtherMethods[i]); i++)
             {
-                RETURN_IF_FAILED(AddMethodSemantic(MetaData(), dnmd::raw_cursor<mdtid_Event>{addedEvent}.as(), msOther, rmdOtherMethods[i]));
+                RETURN_IF_FAILED(AddMethodSemantic(MetaData(), dnmd::raw_cursor<mdtid_Event>{addedEvent}.value(), msOther, rmdOtherMethods[i]));
             }
         }
 
@@ -706,7 +706,7 @@ HRESULT MetadataEmit::SetClassLayout(
         ULONG       ulClassSize)
 {
     HRESULT hr;
-    assert(TypeFromToken(td) == mdtTypeDef);
+    assert(ExtractTokenType(td) == mdtid_TypeDef);
 
     if (rFieldOffsets != nullptr)
     {
@@ -747,7 +747,7 @@ HRESULT MetadataEmit::SetClassLayout(
 HRESULT MetadataEmit::DeleteClassLayout(
         mdTypeDef   td)
 {
-    assert(TypeFromToken(td) == mdtTypeDef);
+    assert(ExtractTokenType(td) == mdtid_TypeDef);
     HRESULT hr;
     RETURN_IF_FAILED(DeleteParentedToken(MetaData(), td, ClassLayout_Parent));
 
@@ -759,7 +759,7 @@ HRESULT MetadataEmit::DeleteClassLayout(
 
     auto field = dnmd::indirect_cursor<mdtid_Field, mdtid_FieldPtr>::nil(MetaData());
     uint32_t fieldCount;
-    if (!type.as().get_column_value_as_range(TypeDef_FieldList, field, &fieldCount))
+    if (!type.value().get_column_value_as_range(TypeDef_FieldList, field, &fieldCount))
         return S_OK;
 
     for (uint32_t i = 0; i < fieldCount; ++i, dnmd::md_cursor_next(field))
@@ -814,7 +814,7 @@ HRESULT MetadataEmit::DeleteFieldMarshal(
         mdToken     tk)
 {
     HRESULT hr;
-    assert(TypeFromToken(tk) == mdtFieldDef || TypeFromToken(tk) == mdtParamDef);
+    assert(ExtractTokenType(tk) == mdtid_Field || ExtractTokenType(tk) == mdtid_Param);
     assert(!IsNilToken(tk));
 
     RETURN_IF_FAILED(DeleteParentedToken(
@@ -822,7 +822,7 @@ HRESULT MetadataEmit::DeleteFieldMarshal(
         tk,
         FieldMarshal_Parent));
 
-    return TypeFromToken(tk) == mdtFieldDef
+    return ExtractTokenType(tk) == mdtid_Field
         ? RemoveFlag(MetaData(), tk, Field_Flags, fdHasFieldMarshal)
         : RemoveFlag(MetaData(), tk, Param_Flags, pdHasFieldMarshal);
 }
@@ -835,19 +835,19 @@ HRESULT MetadataEmit::DefinePermissionSet(
         mdPermission *ppm)
 {
     // TODO: Check for duplicates
-    assert(TypeFromToken(tk) == mdtTypeDef || TypeFromToken(tk) == mdtMethodDef ||
-             TypeFromToken(tk) == mdtAssembly);
+    assert(ExtractTokenType(tk) == mdtid_TypeDef || ExtractTokenType(tk) == mdtid_MethodDef ||
+             ExtractTokenType(tk) == mdtid_Assembly);
 
     auto c = dnmd::added_row<mdtid_DeclSecurity>::append(MetaData());
     if (!c)
         return E_FAIL;
 
-    dnmd::row_writer writer{dnmd::raw_cursor<mdtid_DeclSecurity>{c}.as()};
+    dnmd::row_writer writer{dnmd::raw_cursor<mdtid_DeclSecurity>{c}.value()};
     if (!writer.write(DeclSecurity_Parent, tk))
         return E_FAIL;
 
-    if (TypeFromToken(tk) == mdtTypeDef
-        || TypeFromToken(tk) == mdtMethodDef)
+    if (ExtractTokenType(tk) == mdtid_TypeDef
+        || ExtractTokenType(tk) == mdtid_MethodDef)
     {
         auto parent = dnmd::raw_cursor<mdtid_TypeDef, mdtid_MethodDef>{MetaData(), tk};
         HRESULT result = E_FAIL;
@@ -887,7 +887,7 @@ HRESULT MetadataEmit::SetRVA(
         return CLDB_E_FILE_CORRUPT;
 
     uint32_t rva = ulRVA;
-    auto method_row = method.as();
+    auto method_row = method.value();
     if (!method_row.set_column_value(MethodDef_Rva, rva))
         return E_FAIL;
 
@@ -905,7 +905,7 @@ HRESULT MetadataEmit::GetTokenFromSig(
         return E_FAIL;
 
     uint32_t sigLength = cbSig;
-    auto c_row = dnmd::raw_cursor<mdtid_StandAloneSig>{c}.as();
+    auto c_row = dnmd::raw_cursor<mdtid_StandAloneSig>{c}.value();
     if (!c_row.set_column_value(StandAloneSig_Signature, pvSig, sigLength))
         return E_FAIL;
 
@@ -927,7 +927,7 @@ HRESULT MetadataEmit::DefineModuleRef(
     pal::StringConvert<WCHAR, char> cvt(szName);
     char const* name = cvt;
 
-    auto c_row = dnmd::raw_cursor<mdtid_ModuleRef>{c}.as();
+    auto c_row = dnmd::raw_cursor<mdtid_ModuleRef>{c}.value();
     if (!c_row.set_column_value(ModuleRef_Name, name))
         return E_FAIL;
 
@@ -947,7 +947,7 @@ HRESULT MetadataEmit::SetParent(
     if (!c)
         return CLDB_E_FILE_CORRUPT;
 
-    auto c_row = c.as();
+    auto c_row = c.value();
     if (!c_row.set_column_value(MemberRef_Class, tk))
         return E_FAIL;
 
@@ -965,7 +965,7 @@ HRESULT MetadataEmit::GetTokenFromTypeSpec(
         return E_FAIL;
 
     uint32_t sigLength = cbSig;
-    auto c_row = dnmd::raw_cursor<mdtid_TypeSpec>{c}.as();
+    auto c_row = dnmd::raw_cursor<mdtid_TypeSpec>{c}.value();
     if (!c_row.set_column_value(TypeSpec_Signature, pvSig, sigLength))
         return E_FAIL;
 
@@ -1012,104 +1012,104 @@ HRESULT MetadataEmit::DeleteToken(
         return E_INVALIDARG;
 
     char const* deletedName = COR_DELETED_NAME_A;
-    switch (TypeFromToken(tkObj))
+    switch (ExtractTokenType(tkObj))
     {
-        case mdtTypeDef:
+        case mdtid_TypeDef:
         {
-            auto c_row = dnmd::raw_cursor<mdtid_TypeDef>{MetaData(), tkObj}.as();
+            auto c_row = dnmd::raw_cursor<mdtid_TypeDef>{MetaData(), tkObj}.value();
             if (!c_row.set_column_value(TypeDef_TypeName, deletedName))
                 return E_FAIL;
             return AddFlag(MetaData(), tkObj, TypeDef_Flags, tdSpecialName | tdRTSpecialName);
         }
-        case mdtMethodDef:
+        case mdtid_MethodDef:
         {
-            auto c_row = dnmd::raw_cursor<mdtid_MethodDef>{MetaData(), tkObj}.as();
+            auto c_row = dnmd::raw_cursor<mdtid_MethodDef>{MetaData(), tkObj}.value();
             if (!c_row.set_column_value(MethodDef_Name, deletedName))
                 return E_FAIL;
             return AddFlag(MetaData(), tkObj, MethodDef_Flags, mdSpecialName | mdRTSpecialName);
         }
-        case mdtFieldDef:
+        case mdtid_Field:
         {
-            auto c_row = dnmd::raw_cursor<mdtid_Field>{MetaData(), tkObj}.as();
+            auto c_row = dnmd::raw_cursor<mdtid_Field>{MetaData(), tkObj}.value();
             if (!c_row.set_column_value(Field_Name, deletedName))
                 return E_FAIL;
             return AddFlag(MetaData(), tkObj, Field_Flags, fdSpecialName | fdRTSpecialName);
         }
-        case mdtEvent:
+        case mdtid_Event:
         {
-            auto c_row = dnmd::raw_cursor<mdtid_Event>{MetaData(), tkObj}.as();
+            auto c_row = dnmd::raw_cursor<mdtid_Event>{MetaData(), tkObj}.value();
             if (!c_row.set_column_value(Event_Name, deletedName))
                 return E_FAIL;
             return AddFlag(MetaData(), tkObj, Event_EventFlags, evSpecialName | evRTSpecialName);
         }
-        case mdtProperty:
+        case mdtid_Property:
         {
-            auto c_row = dnmd::raw_cursor<mdtid_Property>{MetaData(), tkObj}.as();
+            auto c_row = dnmd::raw_cursor<mdtid_Property>{MetaData(), tkObj}.value();
             if (!c_row.set_column_value(Property_Name, deletedName))
                 return E_FAIL;
             return AddFlag(MetaData(), tkObj, Property_Flags, prSpecialName | prRTSpecialName);
         }
-        case mdtExportedType:
+        case mdtid_ExportedType:
         {
-            auto c_row = dnmd::raw_cursor<mdtid_ExportedType>{MetaData(), tkObj}.as();
+            auto c_row = dnmd::raw_cursor<mdtid_ExportedType>{MetaData(), tkObj}.value();
             if (!c_row.set_column_value(ExportedType_TypeName, deletedName))
                 return E_FAIL;
             return S_OK;
         }
-        case mdtCustomAttribute:
+        case mdtid_CustomAttribute:
         {
-            auto c_row = dnmd::raw_cursor<mdtid_CustomAttribute>{MetaData(), tkObj}.as();
+            auto c_row = dnmd::raw_cursor<mdtid_CustomAttribute>{MetaData(), tkObj}.value();
             mdToken parent;
             if (!c_row.get_column_value(CustomAttribute_Parent, parent))
                 return E_FAIL;
 
             // Change the parent to the nil token.
-            parent = TokenFromRid(mdTokenNil, TypeFromToken(parent));
+            parent = CreateTokenType(ExtractTokenType(parent));
 
             if (!c_row.set_column_value(CustomAttribute_Parent, parent))
                 return E_FAIL;
 
             return S_OK;
         }
-        case mdtGenericParam:
+        case mdtid_GenericParam:
         {
-            auto c_row = dnmd::raw_cursor<mdtid_GenericParam>{MetaData(), tkObj}.as();
+            auto c_row = dnmd::raw_cursor<mdtid_GenericParam>{MetaData(), tkObj}.value();
             mdToken parent;
             if (!c_row.get_column_value(GenericParam_Owner, parent))
                 return E_FAIL;
 
             // Change the parent to the nil token.
-            parent = TokenFromRid(mdTokenNil, TypeFromToken(parent));
+            parent = CreateTokenType(ExtractTokenType(parent));
 
             if (!c_row.set_column_value(GenericParam_Owner, parent))
                 return E_FAIL;
 
             return S_OK;
         }
-        case mdtGenericParamConstraint:
+        case mdtid_GenericParamConstraint:
         {
             mdToken parent = mdGenericParamNil;
-            auto c_row = dnmd::raw_cursor<mdtid_GenericParamConstraint>{MetaData(), tkObj}.as();
+            auto c_row = dnmd::raw_cursor<mdtid_GenericParamConstraint>{MetaData(), tkObj}.value();
             if (!c_row.set_column_value(GenericParamConstraint_Owner, parent))
                 return E_FAIL;
 
             return S_OK;
         }
-        case mdtPermission:
+        case mdtid_DeclSecurity:
         {
-            auto c_row = dnmd::raw_cursor<mdtid_DeclSecurity>{MetaData(), tkObj}.as();
+            auto c_row = dnmd::raw_cursor<mdtid_DeclSecurity>{MetaData(), tkObj}.value();
             mdToken parent;
             if (!c_row.get_column_value(DeclSecurity_Parent, parent))
                 return E_FAIL;
 
             // Change the parent to the nil token.
             mdToken originalParent = parent;
-            parent = TokenFromRid(mdTokenNil, TypeFromToken(parent));
+            parent = CreateTokenType(ExtractTokenType(parent));
 
             if (!c_row.set_column_value(DeclSecurity_Parent, parent))
                 return E_FAIL;
 
-            if (TypeFromToken(originalParent) == mdtAssembly)
+            if (ExtractTokenType(originalParent) == mdtid_Assembly)
             {
                 // There is no HasSecurity flag for an assembly, so we're done.
                 return S_OK;
@@ -1122,9 +1122,9 @@ HRESULT MetadataEmit::DeleteToken(
             // If we have no more permissions for this parent, remove the HasSecurity bit.
             // Since we just need to know if there's any matching row and we don't need a range of rows,
             // we can use find_row instead of find_range.
-            if (!dnmd::md_find_row_from_cursor(permissions.as(), DeclSecurity_Parent, originalParent))
+            if (!dnmd::md_find_row_from_cursor(permissions.value(), DeclSecurity_Parent, originalParent))
             {
-                return TypeFromToken(originalParent) == mdtTypeDef
+                return ExtractTokenType(originalParent) == mdtid_TypeDef
                     ? RemoveFlag(MetaData(), originalParent, TypeDef_Flags, tdHasSecurity)
                     : RemoveFlag(MetaData(), originalParent, MethodDef_Flags, mdHasSecurity);
             }
@@ -1147,7 +1147,7 @@ HRESULT MetadataEmit::SetMethodProps(
     if (!c)
         return CLDB_E_FILE_CORRUPT;
 
-    dnmd::row_writer writer{c.as()};
+    dnmd::row_writer writer{c.value()};
     if (dwMethodFlags != std::numeric_limits<DWORD>::max())
     {
         // TODO: Strip the reserved flags from user input and preserve the existing reserved flags.
@@ -1184,7 +1184,7 @@ HRESULT MetadataEmit::SetTypeDefProps(
     if (!c)
         return CLDB_E_FILE_CORRUPT;
 
-    auto c_row = c.as();
+    auto c_row = c.value();
     dnmd::row_writer writer{c_row};
     if (dwTypeDefFlags != std::numeric_limits<DWORD>::max())
     {
@@ -1212,12 +1212,12 @@ HRESULT MetadataEmit::SetTypeDefProps(
         uint32_t numInterfaceImpls;
         auto interfaceImplCursor = dnmd::md_create_cursor<mdtid_InterfaceImpl>(MetaData(), &numInterfaceImpls);
         if (interfaceImplCursor
-            && dnmd::md_find_range_from_cursor(interfaceImplCursor.as(), InterfaceImpl_Class, td,
+            && dnmd::md_find_range_from_cursor(interfaceImplCursor.value(), InterfaceImpl_Class, td,
                 interfaceImplCursor, &numInterfaceImpls) != dnmd::range_result::not_found)
         {
             for (uint32_t i = 0; i < numInterfaceImpls; ++i)
             {
-                auto interfaceImplRow = interfaceImplCursor.as();
+                auto interfaceImplRow = interfaceImplCursor.value();
                 mdToken parent;
                 if (!interfaceImplRow.get_column_value(InterfaceImpl_Class, parent))
                     return E_FAIL;
@@ -1242,7 +1242,7 @@ HRESULT MetadataEmit::SetTypeDefProps(
             if (!interfaceImpl)
                 return E_FAIL;
 
-            dnmd::row_writer interfaceImpl_writer{dnmd::raw_cursor<mdtid_InterfaceImpl>{interfaceImpl}.as()};
+            dnmd::row_writer interfaceImpl_writer{dnmd::raw_cursor<mdtid_InterfaceImpl>{interfaceImpl}.value()};
             if (!interfaceImpl_writer.write(InterfaceImpl_Class, c_row))
                 return E_FAIL;
 
@@ -1265,13 +1265,13 @@ namespace
         if (!c)
             return CLDB_E_RECORD_NOTFOUND;
 
-        dnmd::range_result result = dnmd::md_find_range_from_cursor(c.as(), MethodSemantics_Association, parent, c, &count);
+        dnmd::range_result result = dnmd::md_find_range_from_cursor(c.value(), MethodSemantics_Association, parent, c, &count);
         if (result == dnmd::range_result::not_found)
             return S_OK;
 
         for (uint32_t i = 0; i < count; ++i, dnmd::md_cursor_next(c))
         {
-            auto row = c.as();
+            auto row = c.value();
             dnmd::row_reader reader{row};
             mdToken association;
             if (!reader.read(MethodSemantics_Association, association))
@@ -1283,7 +1283,7 @@ namespace
 
             if (association == parent && recordSemantic == (uint32_t)semantic)
             {
-                association = TokenFromRid(mdTokenNil, TypeFromToken(association));
+                association = CreateTokenType(ExtractTokenType(association));
                 if (!row.set_column_value(MethodSemantics_Association, association))
                     return E_FAIL;
             }
@@ -1307,7 +1307,7 @@ HRESULT MetadataEmit::SetEventProps(
     if (!c)
         return CLDB_E_FILE_CORRUPT;
 
-    dnmd::row_writer writer{c.as()};
+    dnmd::row_writer writer{c.value()};
     if (dwEventFlags != std::numeric_limits<DWORD>::max())
     {
         uint32_t eventFlags = dwEventFlags;
@@ -1324,19 +1324,19 @@ HRESULT MetadataEmit::SetEventProps(
     if (!IsNilToken(mdAddOn))
     {
         RemoveSemantics(MetaData(), ev, msAddOn);
-        RETURN_IF_FAILED(AddMethodSemantic(MetaData(), dnmd::raw_cursor<mdtid_Event>{c}.as(), msAddOn, mdAddOn));
+        RETURN_IF_FAILED(AddMethodSemantic(MetaData(), dnmd::raw_cursor<mdtid_Event>{c}.value(), msAddOn, mdAddOn));
     }
 
     if (!IsNilToken(mdRemoveOn))
     {
         RemoveSemantics(MetaData(), ev, msRemoveOn);
-        RETURN_IF_FAILED(AddMethodSemantic(MetaData(), dnmd::raw_cursor<mdtid_Event>{c}.as(), msRemoveOn, mdRemoveOn));
+        RETURN_IF_FAILED(AddMethodSemantic(MetaData(), dnmd::raw_cursor<mdtid_Event>{c}.value(), msRemoveOn, mdRemoveOn));
     }
 
     if (!IsNilToken(mdFire))
     {
         RemoveSemantics(MetaData(), ev, msFire);
-        RETURN_IF_FAILED(AddMethodSemantic(MetaData(), dnmd::raw_cursor<mdtid_Event>{c}.as(), msFire, mdFire));
+        RETURN_IF_FAILED(AddMethodSemantic(MetaData(), dnmd::raw_cursor<mdtid_Event>{c}.value(), msFire, mdFire));
     }
 
     if (rmdOtherMethods)
@@ -1344,7 +1344,7 @@ HRESULT MetadataEmit::SetEventProps(
         RemoveSemantics(MetaData(), ev, msOther);
         for (size_t i = 0; rmdOtherMethods[i] != mdMethodDefNil; ++i)
         {
-            RETURN_IF_FAILED(AddMethodSemantic(MetaData(), dnmd::raw_cursor<mdtid_Event>{c}.as(), msOther, rmdOtherMethods[i]));
+            RETURN_IF_FAILED(AddMethodSemantic(MetaData(), dnmd::raw_cursor<mdtid_Event>{c}.value(), msOther, rmdOtherMethods[i]));
         }
     }
 
@@ -1360,8 +1360,8 @@ HRESULT MetadataEmit::SetPermissionSetProps(
         ULONG       cbPermission,
         mdPermission *ppm)
 {
-    assert(TypeFromToken(tk) == mdtTypeDef || TypeFromToken(tk) == mdtMethodDef ||
-        TypeFromToken(tk) == mdtAssembly);
+    assert(ExtractTokenType(tk) == mdtid_TypeDef || ExtractTokenType(tk) == mdtid_MethodDef ||
+        ExtractTokenType(tk) == mdtid_Assembly);
 
     if (dwAction == UINT32_MAX || dwAction == 0 || dwAction > dclMaximumValue)
         return E_INVALIDARG;
@@ -1370,12 +1370,12 @@ HRESULT MetadataEmit::SetPermissionSetProps(
     if (!c)
         return CLDB_E_RECORD_NOTFOUND;
 
-    c = dnmd::md_find_row_from_cursor(c.as(), DeclSecurity_Parent, tk);
+    c = dnmd::md_find_row_from_cursor(c.value(), DeclSecurity_Parent, tk);
     if (!c)
         return CLDB_E_RECORD_NOTFOUND;
 
     uint32_t action = dwAction;
-    dnmd::row_writer writer{dnmd::raw_cursor<mdtid_DeclSecurity>{c}.as()};
+    dnmd::row_writer writer{dnmd::raw_cursor<mdtid_DeclSecurity>{c}.value()};
     if (!writer.write(DeclSecurity_Action, action))
         return E_FAIL;
 
@@ -1401,11 +1401,11 @@ HRESULT MetadataEmit::DefinePinvokeMap(
     if (!dnmd::md_is_valid_token(MetaData(), tk))
         return CLDB_E_FILE_CORRUPT;
 
-    if (TypeFromToken(tk) == mdtMethodDef)
+    if (ExtractTokenType(tk) == mdtid_MethodDef)
     {
         RETURN_IF_FAILED(AddFlag(MetaData(), tk, MethodDef_Flags, mdPinvokeImpl));
     }
-    else if (TypeFromToken(tk) == mdtFieldDef)
+    else if (ExtractTokenType(tk) == mdtid_Field)
     {
         RETURN_IF_FAILED(AddFlag(MetaData(), tk, Field_Flags, fdPinvokeImpl));
     }
@@ -1420,7 +1420,7 @@ HRESULT MetadataEmit::DefinePinvokeMap(
     if (!row_to_edit)
         return E_FAIL;
 
-    dnmd::row_writer row_to_edit_writer{dnmd::raw_cursor<mdtid_ImplMap>{row_to_edit}.as()};
+    dnmd::row_writer row_to_edit_writer{dnmd::raw_cursor<mdtid_ImplMap>{row_to_edit}.value()};
     if (!row_to_edit_writer.write(ImplMap_MemberForwarded, tk))
         return E_FAIL;
 
@@ -1464,11 +1464,11 @@ HRESULT MetadataEmit::SetPinvokeMap(
     if (!implMapCursor)
         return E_FAIL;
 
-    auto row_to_edit = dnmd::md_find_row_from_cursor(implMapCursor.as(), ImplMap_MemberForwarded, tk);
+    auto row_to_edit = dnmd::md_find_row_from_cursor(implMapCursor.value(), ImplMap_MemberForwarded, tk);
     if (!row_to_edit)
         return CLDB_E_RECORD_NOTFOUND;
 
-    dnmd::row_writer row_to_edit_writer{dnmd::raw_cursor<mdtid_ImplMap>{row_to_edit}.as()};
+    dnmd::row_writer row_to_edit_writer{dnmd::raw_cursor<mdtid_ImplMap>{row_to_edit}.value()};
     if (dwMappingFlags != std::numeric_limits<uint32_t>::max())
     {
         uint32_t mappingFlags = dwMappingFlags;
@@ -1495,7 +1495,7 @@ HRESULT MetadataEmit::DeletePinvokeMap(
         mdToken     tk)
 {
     HRESULT hr;
-    assert(TypeFromToken(tk) == mdtFieldDef || TypeFromToken(tk) == mdtMethodDef);
+    assert(ExtractTokenType(tk) == mdtid_Field || ExtractTokenType(tk) == mdtid_MethodDef);
     assert(!IsNilToken(tk));
 
     RETURN_IF_FAILED(DeleteParentedToken(
@@ -1503,7 +1503,7 @@ HRESULT MetadataEmit::DeletePinvokeMap(
         tk,
         ImplMap_MemberForwarded));
 
-    return TypeFromToken(tk) == mdtFieldDef
+    return ExtractTokenType(tk) == mdtid_Field
         ? RemoveFlag(MetaData(), tk, Field_Flags, fdPinvokeImpl)
         : RemoveFlag(MetaData(), tk, MethodDef_Flags, mdPinvokeImpl);
 }
@@ -1516,13 +1516,13 @@ HRESULT MetadataEmit::DefineCustomAttribute(
         ULONG       cbCustomAttribute,
         mdCustomAttribute *pcv)
 {
-    if (TypeFromToken(tkOwner) == mdtCustomAttribute)
+    if (ExtractTokenType(tkOwner) == mdtid_CustomAttribute)
         return E_INVALIDARG;
 
     if (IsNilToken(tkOwner)
         || IsNilToken(tkCtor)
-        || (TypeFromToken(tkCtor) != mdtMethodDef
-            && TypeFromToken(tkCtor) != mdtMemberRef) )
+        || (ExtractTokenType(tkCtor) != mdtid_MethodDef
+            && ExtractTokenType(tkCtor) != mdtid_MemberRef) )
     {
         return E_INVALIDARG;
     }
@@ -1534,7 +1534,7 @@ HRESULT MetadataEmit::DefineCustomAttribute(
     if (!new_row)
         return E_FAIL;
 
-    dnmd::row_writer new_row_writer{dnmd::raw_cursor<mdtid_CustomAttribute>{new_row}.as()};
+    dnmd::row_writer new_row_writer{dnmd::raw_cursor<mdtid_CustomAttribute>{new_row}.value()};
     if (!new_row_writer.write(CustomAttribute_Parent, tkOwner))
         return E_FAIL;
 
@@ -1558,7 +1558,7 @@ HRESULT MetadataEmit::SetCustomAttributeValue(
         void const  *pCustomAttribute,
         ULONG       cbCustomAttribute)
 {
-    if (TypeFromToken(pcv) != mdtCustomAttribute)
+    if (ExtractTokenType(pcv) != mdtid_CustomAttribute)
         return E_INVALIDARG;
 
     auto c = dnmd::raw_cursor<mdtid_CustomAttribute>{MetaData(), pcv};
@@ -1567,7 +1567,7 @@ HRESULT MetadataEmit::SetCustomAttributeValue(
 
     uint8_t const* pCustomAttributeBlob = (uint8_t const*)pCustomAttribute;
     uint32_t customAttributeBlobLen = cbCustomAttribute;
-    auto c_row = c.as();
+    auto c_row = c.value();
     if (!c_row.set_column_value(CustomAttribute_Value, pCustomAttributeBlob, customAttributeBlobLen))
         return E_FAIL;
 
@@ -1658,11 +1658,11 @@ HRESULT MetadataEmit::DefineField(
     if (!typeDef)
         return CLDB_E_FILE_CORRUPT;
 
-    auto c = dnmd::md_add_new_row_to_list(typeDef.as(), TypeDef_FieldList);
+    auto c = dnmd::md_add_new_row_to_list(typeDef.value(), TypeDef_FieldList);
     if (!c)
         return E_FAIL;
 
-    auto c_row = dnmd::raw_cursor<mdtid_Field>{c}.as();
+    auto c_row = dnmd::raw_cursor<mdtid_Field>{c}.value();
     dnmd::row_writer writer{c_row};
     if (!writer.write(Field_Name, name))
         return E_FAIL;
@@ -1721,7 +1721,7 @@ HRESULT MetadataEmit::DefineField(
         if (!constant)
             return E_FAIL;
 
-        dnmd::row_writer constant_writer{dnmd::raw_cursor<mdtid_Constant>{constant}.as()};
+        dnmd::row_writer constant_writer{dnmd::raw_cursor<mdtid_Constant>{constant}.value()};
         if (!constant_writer.write(Constant_Parent, c_row))
             return E_FAIL;
 
@@ -1773,7 +1773,7 @@ HRESULT MetadataEmit::DefineProperty(
                 return E_INVALIDARG;
 
             char const* name = cvt;
-            auto c_row = dnmd::raw_cursor<mdtid_Property>{c}.as();
+            auto c_row = dnmd::raw_cursor<mdtid_Property>{c}.value();
             dnmd::row_writer writer{c_row};
             if (!writer.write(Property_Name, name))
                 return E_FAIL;
@@ -1815,19 +1815,19 @@ HRESULT MetadataEmit::DefineProperty(
 
             if (mdGetter != mdMethodDefNil)
             {
-                RETURN_IF_FAILED(AddMethodSemantic(MetaData(), dnmd::raw_cursor<mdtid_Property>{c}.as(), msGetter, mdGetter));
+                RETURN_IF_FAILED(AddMethodSemantic(MetaData(), dnmd::raw_cursor<mdtid_Property>{c}.value(), msGetter, mdGetter));
             }
 
             if (mdSetter != mdMethodDefNil)
             {
-                RETURN_IF_FAILED(AddMethodSemantic(MetaData(), dnmd::raw_cursor<mdtid_Property>{c}.as(), msSetter, mdSetter));
+                RETURN_IF_FAILED(AddMethodSemantic(MetaData(), dnmd::raw_cursor<mdtid_Property>{c}.value(), msSetter, mdSetter));
             }
 
             if (rmdOtherMethods)
             {
                 for (size_t i = 0; RidFromToken(rmdOtherMethods[i]) != mdTokenNil; ++i)
                 {
-                    RETURN_IF_FAILED(AddMethodSemantic(MetaData(), dnmd::raw_cursor<mdtid_Property>{c}.as(), msOther, rmdOtherMethods[i]));
+                    RETURN_IF_FAILED(AddMethodSemantic(MetaData(), dnmd::raw_cursor<mdtid_Property>{c}.value(), msOther, rmdOtherMethods[i]));
                 }
             }
 
@@ -1837,7 +1837,7 @@ HRESULT MetadataEmit::DefineProperty(
                 if (!constant)
                     return E_FAIL;
 
-                dnmd::row_writer constant_writer{dnmd::raw_cursor<mdtid_Constant>{constant}.as()};
+                dnmd::row_writer constant_writer{dnmd::raw_cursor<mdtid_Constant>{constant}.value()};
                 if (!constant_writer.write(Constant_Parent, c_row))
                     return E_FAIL;
 
@@ -1884,11 +1884,11 @@ HRESULT MetadataEmit::DefineParam(
     if (!method)
         return CLDB_E_FILE_CORRUPT;
 
-    auto c = dnmd::md_add_new_row_to_sorted_list(method.as(), MethodDef_ParamList, Param_Sequence, (uint32_t)ulParamSeq);
+    auto c = dnmd::md_add_new_row_to_sorted_list(method.value(), MethodDef_ParamList, Param_Sequence, (uint32_t)ulParamSeq);
     if (!c)
         return E_FAIL;
 
-    auto c_row = dnmd::raw_cursor<mdtid_Param>{c}.as();
+    auto c_row = dnmd::raw_cursor<mdtid_Param>{c}.value();
     dnmd::row_writer writer{c_row};
     if (!writer.write(Param_Name, name))
         return E_FAIL;
@@ -1924,7 +1924,7 @@ HRESULT MetadataEmit::DefineParam(
         if (!constant)
             return E_FAIL;
 
-        dnmd::row_writer constant_writer{dnmd::raw_cursor<mdtid_Constant>{constant}.as()};
+        dnmd::row_writer constant_writer{dnmd::raw_cursor<mdtid_Constant>{constant}.value()};
         if (!constant_writer.write(Constant_Parent, c_row))
             return E_FAIL;
 
@@ -1975,7 +1975,7 @@ HRESULT MetadataEmit::SetFieldProps(
     {
         // TODO: Handle reserved flags
         uint32_t fieldFlags = dwFieldFlags;
-        auto c_row = c.as();
+        auto c_row = c.value();
         if (!c_row.set_column_value(Field_Flags, fieldFlags))
             return E_FAIL;
     }
@@ -2042,7 +2042,7 @@ HRESULT MetadataEmit::SetPropertyProps(
     {
         // TODO: Preserve reserved flags
         uint32_t flags = dwPropFlags;
-        auto c_row = c.as();
+        auto c_row = c.value();
         if (!c_row.set_column_value(Property_Flags, flags))
             return E_FAIL;
     }
@@ -2050,13 +2050,13 @@ HRESULT MetadataEmit::SetPropertyProps(
     if (mdGetter != mdMethodDefNil)
     {
         RETURN_IF_FAILED(RemoveSemantics(MetaData(), pr, msGetter));
-        RETURN_IF_FAILED(AddMethodSemantic(MetaData(), dnmd::raw_cursor<mdtid_Property>{c}.as(), msGetter, mdGetter));
+        RETURN_IF_FAILED(AddMethodSemantic(MetaData(), dnmd::raw_cursor<mdtid_Property>{c}.value(), msGetter, mdGetter));
     }
 
     if (mdSetter != mdMethodDefNil)
     {
         RETURN_IF_FAILED(RemoveSemantics(MetaData(), pr, msSetter));
-        RETURN_IF_FAILED(AddMethodSemantic(MetaData(), dnmd::raw_cursor<mdtid_Property>{c}.as(), msSetter, mdSetter));
+        RETURN_IF_FAILED(AddMethodSemantic(MetaData(), dnmd::raw_cursor<mdtid_Property>{c}.value(), msSetter, mdSetter));
     }
 
     if (rmdOtherMethods)
@@ -2064,7 +2064,7 @@ HRESULT MetadataEmit::SetPropertyProps(
         RETURN_IF_FAILED(RemoveSemantics(MetaData(), pr, msOther));
         for (size_t i = 0; RidFromToken(rmdOtherMethods[i]) != mdTokenNil; ++i)
         {
-            RETURN_IF_FAILED(AddMethodSemantic(MetaData(), dnmd::raw_cursor<mdtid_Property>{c}.as(), msOther, rmdOtherMethods[i]));
+            RETURN_IF_FAILED(AddMethodSemantic(MetaData(), dnmd::raw_cursor<mdtid_Property>{c}.value(), msOther, rmdOtherMethods[i]));
         }
     }
 
@@ -2113,7 +2113,7 @@ HRESULT MetadataEmit::SetParamProps(
         return E_INVALIDARG;
 
     char const* name = cvt;
-    dnmd::row_writer writer{c.as()};
+    dnmd::row_writer writer{c.value()};
     if (!writer.write(Param_Name, name))
         return E_FAIL;
 
@@ -2248,7 +2248,7 @@ HRESULT MetadataEmit::SetMethodImplFlags(
         return E_INVALIDARG;
 
     uint32_t flags = (uint32_t)dwImplFlags;
-    auto c_row = c.as();
+    auto c_row = c.value();
     if (!c_row.set_column_value(MethodDef_ImplFlags, flags))
         return E_FAIL;
 
@@ -2276,7 +2276,7 @@ HRESULT MetadataEmit::SetFieldRVA(
     if (!field)
         return E_INVALIDARG;
 
-    auto field_row = field.as();
+    auto field_row = field.value();
     uint32_t flags;
     if (!field_row.get_column_value(Field_Flags, &flags))
         return CLDB_E_FILE_CORRUPT;
@@ -2314,7 +2314,7 @@ HRESULT MetadataEmit::DefineMethodSpec(
         ULONG       cbSigBlob,
         mdMethodSpec *pmi)
 {
-    if (TypeFromToken(tkParent) != mdtMethodDef && TypeFromToken(tkParent) != mdtMemberRef)
+    if (ExtractTokenType(tkParent) != mdtid_MethodDef && ExtractTokenType(tkParent) != mdtid_MemberRef)
         return META_E_BAD_INPUT_PARAMETER;
 
     if (cbSigBlob == 0 || pvSigBlob == nullptr || pmi == nullptr)
@@ -2324,7 +2324,7 @@ HRESULT MetadataEmit::DefineMethodSpec(
     if (!c)
         return E_FAIL;
 
-    dnmd::row_writer writer{dnmd::raw_cursor<mdtid_MethodSpec>{c}.as()};
+    dnmd::row_writer writer{dnmd::raw_cursor<mdtid_MethodSpec>{c}.value()};
     if (!writer.write(MethodSpec_Method, tkParent))
         return E_FAIL;
 
@@ -2390,7 +2390,7 @@ HRESULT MetadataEmit::DefineGenericParam(
     if (reserved != 0)
         return META_E_BAD_INPUT_PARAMETER;
 
-    if (TypeFromToken(tk) != mdtMethodDef && TypeFromToken(tk) != mdtTypeDef)
+    if (ExtractTokenType(tk) != mdtid_MethodDef && ExtractTokenType(tk) != mdtid_TypeDef)
         return META_E_BAD_INPUT_PARAMETER;
 
     // TODO: Check for duplicates
@@ -2399,7 +2399,7 @@ HRESULT MetadataEmit::DefineGenericParam(
     if (!c)
         return E_FAIL;
 
-    auto c_row = dnmd::raw_cursor<mdtid_GenericParam>{c}.as();
+    auto c_row = dnmd::raw_cursor<mdtid_GenericParam>{c}.value();
     dnmd::row_writer writer{c_row};
     if (!writer.write(GenericParam_Owner, tk))
         return E_FAIL;
@@ -2437,7 +2437,7 @@ HRESULT MetadataEmit::DefineGenericParam(
             if (!added_row)
                 return E_FAIL;
 
-            dnmd::row_writer constraint_writer{dnmd::raw_cursor<mdtid_GenericParamConstraint>{added_row}.as()};
+            dnmd::row_writer constraint_writer{dnmd::raw_cursor<mdtid_GenericParamConstraint>{added_row}.value()};
             if (!constraint_writer.write(GenericParamConstraint_Owner, c_row))
                 return E_FAIL;
 
@@ -2470,7 +2470,7 @@ HRESULT MetadataEmit::SetGenericParamProps(
         return E_INVALIDARG;
 
     uint32_t flags = dwParamFlags;
-    auto c_row = c.as();
+    auto c_row = c.value();
     dnmd::row_writer writer{c_row};
     if (!writer.write(GenericParam_Flags, flags))
         return E_FAIL;
@@ -2492,12 +2492,12 @@ HRESULT MetadataEmit::SetGenericParamProps(
         uint32_t count;
         auto constraint = dnmd::md_create_cursor<mdtid_GenericParamConstraint>(MetaData(), &count);
         if (constraint
-            && dnmd::md_find_range_from_cursor(constraint.as(), GenericParamConstraint_Owner, gp,
+            && dnmd::md_find_range_from_cursor(constraint.value(), GenericParamConstraint_Owner, gp,
                 constraint, &count) != dnmd::range_result::not_found)
         {
             for (uint32_t i = 0; i < count; ++i, dnmd::md_cursor_next(constraint))
             {
-                auto constraint_row = constraint.as();
+                auto constraint_row = constraint.value();
                 mdToken parent;
                 if (!constraint_row.get_column_value(GenericParamConstraint_Owner, parent))
                     return E_FAIL;
@@ -2517,7 +2517,7 @@ HRESULT MetadataEmit::SetGenericParamProps(
             if (!added_row)
                 return E_FAIL;
 
-            auto constraint_row = dnmd::raw_cursor<mdtid_GenericParamConstraint>{added_row}.as();
+            auto constraint_row = dnmd::raw_cursor<mdtid_GenericParamConstraint>{added_row}.value();
             dnmd::row_writer constraint_writer{constraint_row};
             if (!constraint_writer.write(GenericParamConstraint_Owner, c_row))
                 return E_FAIL;
@@ -2572,7 +2572,7 @@ HRESULT MetadataEmit::DefineAssembly(
     }
 
     const uint8_t* publicKey = (const uint8_t*)pbPublicKey;
-    dnmd::row_writer writer{dnmd::raw_cursor<mdtid_Assembly>{c}.as()};
+    dnmd::row_writer writer{dnmd::raw_cursor<mdtid_Assembly>{c}.value()};
     if (publicKey != nullptr)
     {
         uint32_t publicKeyLength = cbPublicKey;
@@ -2660,7 +2660,7 @@ HRESULT MetadataEmit::DefineAssemblyRef(
         return E_FAIL;
 
     const uint8_t* publicKey = (const uint8_t*)pbPublicKeyOrToken;
-    dnmd::row_writer writer{dnmd::raw_cursor<mdtid_AssemblyRef>{c}.as()};
+    dnmd::row_writer writer{dnmd::raw_cursor<mdtid_AssemblyRef>{c}.value()};
     if (publicKey != nullptr)
     {
         uint32_t publicKeyLength = cbPublicKeyOrToken;
@@ -2757,7 +2757,7 @@ HRESULT MetadataEmit::DefineFile(
 
     char const* name = cvt;
 
-    dnmd::row_writer writer{dnmd::raw_cursor<mdtid_File>{c}.as()};
+    dnmd::row_writer writer{dnmd::raw_cursor<mdtid_File>{c}.value()};
     if (!writer.write(File_Name, name))
         return E_FAIL;
 
@@ -2806,7 +2806,7 @@ HRESULT MetadataEmit::DefineExportedType(
     char const* ns;
     char const* name;
     SplitTypeName(cvt, &ns, &name);
-    dnmd::row_writer writer{dnmd::raw_cursor<mdtid_ExportedType>{c}.as()};
+    dnmd::row_writer writer{dnmd::raw_cursor<mdtid_ExportedType>{c}.value()};
     if (!writer.write(ExportedType_TypeNamespace, ns))
         return E_FAIL;
     if (!writer.write(ExportedType_TypeName, name))
@@ -2866,7 +2866,7 @@ HRESULT MetadataEmit::DefineManifestResource(
         return E_INVALIDARG;
 
     char const* name = cvt;
-    dnmd::row_writer writer{dnmd::raw_cursor<mdtid_ManifestResource>{c}.as()};
+    dnmd::row_writer writer{dnmd::raw_cursor<mdtid_ManifestResource>{c}.value()};
     if (!writer.write(ManifestResource_Name, name))
         return E_FAIL;
 
@@ -2919,7 +2919,7 @@ HRESULT MetadataEmit::SetAssemblyProps(
     }
 
     const uint8_t* publicKey = (const uint8_t*)pbPublicKey;
-    dnmd::row_writer writer{c.as()};
+    dnmd::row_writer writer{c.value()};
     if (publicKey != nullptr)
     {
         uint32_t publicKeyLength = cbPublicKey;
@@ -3013,7 +3013,7 @@ HRESULT MetadataEmit::SetAssemblyRefProps(
     }
 
     const uint8_t* publicKey = (const uint8_t*)pbPublicKeyOrToken;
-    dnmd::row_writer writer{c.as()};
+    dnmd::row_writer writer{c.value()};
     if (publicKey != nullptr)
     {
         uint32_t publicKeyLength = cbPublicKeyOrToken;
@@ -3097,7 +3097,7 @@ HRESULT MetadataEmit::SetFileProps(
     if (!c)
         return E_INVALIDARG;
 
-    dnmd::row_writer writer{c.as()};
+    dnmd::row_writer writer{c.value()};
     if (pbHashValue != nullptr)
     {
         uint8_t const* hashValue = (uint8_t const*)pbHashValue;
@@ -3128,7 +3128,7 @@ HRESULT MetadataEmit::SetExportedTypeProps(
     if (!c)
         return E_INVALIDARG;
 
-    dnmd::row_writer writer{c.as()};
+    dnmd::row_writer writer{c.value()};
     if (!IsNilToken(tkImplementation))
     {
         if (!writer.write(ExportedType_Implementation, tkImplementation))
@@ -3163,7 +3163,7 @@ HRESULT MetadataEmit::SetManifestResourceProps(
     if (!c)
         return E_INVALIDARG;
 
-    dnmd::row_writer writer{c.as()};
+    dnmd::row_writer writer{c.value()};
     if (!IsNilToken(tkImplementation))
     {
         if (!writer.write(ManifestResource_Implementation, tkImplementation))

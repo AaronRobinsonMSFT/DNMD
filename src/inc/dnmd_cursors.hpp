@@ -220,19 +220,27 @@ private:
         assert(uint64_t{row} <= uint64_t{table.row_count} + 1);
     }
 
+    raw_cursor(mdcxt_t& context, mdToken token) noexcept
+        : raw_cursor{context.tables[first_table], 0}
+    {
+        uint32_t table_id = ExtractTokenType(token);
+        if (((TableIds >= mdtid_First && TableIds < mdtid_End
+                && table_id == static_cast<uint32_t>(TableIds)) || ...))
+        {
+            auto& table = context.tables[table_id];
+            uint32_t row = (detail::RidFromToken)(token);
+            if (row != 0 && row <= table.row_count)
+            {
+                _table = &table;
+                _row = row;
+            }
+        }
+    }
+
 public:
     raw_cursor() = delete;
     raw_cursor(mdhandle_t handle, mdToken token) noexcept
-        : raw_cursor{detail::context(handle).tables[first_table], 0}
-    {
-        uint32_t table = ExtractTokenType(token);
-        if (((table == static_cast<uint32_t>(TableIds)) || ...)
-            && detail::is_valid_token(*_table->cxt, token))
-        {
-            _table = &_table->cxt->tables[table];
-            _row = (detail::RidFromToken)(token);
-        }
-    }
+        : raw_cursor{detail::context(handle), token} {}
     template<typename T> raw_cursor(T*, mdToken) = delete;
 
     template<typename P, std::enable_if_t<detail::position_targets_subset<P, TableIds...>::value
@@ -300,14 +308,14 @@ public:
     }
 
     template<size_t Count = sizeof...(TableIds), std::enable_if_t<Count == 1 && Count == sizeof...(TableIds), int> = 0>
-    auto as() const noexcept
+    auto value() const noexcept
     {
         assert(static_cast<bool>(*this));
         return (cursor<TableIds>{*_table, _row}, ...);
     }
 
     template<mdtable_id_t T>
-    raw_cursor<T> get_as() const noexcept
+    raw_cursor<T> as() const noexcept
     {
         static_assert(T != mdtid_Unused && ((T == TableIds) || ...));
         return is<T>() ? raw_cursor<T>::at(get_handle(), _row)
@@ -364,7 +372,7 @@ private:
             _target = raw_cursor<Direct>::end(get_handle());
         else
         {
-            auto source = raw_cursor<Ptr>::at(get_handle(), _row).as();
+            auto source = raw_cursor<Ptr>::at(get_handle(), _row).value();
             _resolved = row_reader<Ptr>{source}.read(detail::pointer_column<Ptr>(), _target);
         }
         _has_row = _resolved && static_cast<bool>(_target);
@@ -408,7 +416,7 @@ public:
 
     mdhandle_t get_handle() const noexcept { return _table->cxt; }
     explicit operator bool() const noexcept { return _has_row; }
-    cursor<Direct> as() const noexcept { assert(_has_row); return _target.as(); }
+    cursor<Direct> value() const noexcept { assert(_has_row); return _target.value(); }
     bool get_token(mdToken& token) const noexcept { return detail::position_token(*_table, _row, token); }
     bool get_target_token(mdToken& token) const noexcept { return _resolved && _target.get_token(token); }
     bool move(int32_t delta) noexcept

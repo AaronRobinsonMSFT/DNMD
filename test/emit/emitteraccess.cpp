@@ -111,3 +111,77 @@ TEST(CppEmitterAccess, DefinesEmptyTypeAfterFieldAndMethodIndirection)
     import->CloseEnum(fields);
     import->CloseEnum(methods);
 }
+
+TEST(CppEmitterAccess, TokenClassificationKeepsNamesAndUserStringsDistinct)
+{
+    dncp::com_ptr<IMetaDataEmit> emit;
+    ASSERT_NO_FATAL_FAILURE(CreateEmit(emit));
+    ASSERT_EQ(S_OK, emit->SetModuleProps(W("Classification")));
+    mdTypeDef type;
+    mdTypeRef reference;
+    mdModuleRef module;
+    ASSERT_EQ(S_OK, emit->DefineTypeDef(W("Tests.Type"), tdPublic, mdTypeDefNil, nullptr, &type));
+    ASSERT_EQ(S_OK, emit->DefineTypeRefByName(mdTokenNil, W("Tests.External"), &reference));
+    ASSERT_EQ(S_OK, emit->DefineModuleRef(W("Reference"), &module));
+    dncp::com_ptr<IMetaDataImport> import;
+    ASSERT_EQ(S_OK, emit->QueryInterface(IID_IMetaDataImport, (void**)&import));
+    struct
+    {
+        mdToken token;
+        char const* name;
+    } const names[] = {
+        {TokenFromRid(1, mdtModule), "Classification"},
+        {type, "Type"},
+        {reference, "External"},
+        {module, "Reference"}
+    };
+    for (auto const& entry : names)
+    {
+        MDUTF8CSTR name = nullptr;
+        ASSERT_EQ(S_OK, import->GetNameFromToken(entry.token, &name));
+        EXPECT_STREQ(entry.name, name);
+    }
+
+    mdString text;
+    ASSERT_EQ(S_OK, emit->DefineUserString(W("Hello"), 5, &text));
+    WCHAR value[8]{};
+    ULONG length;
+    ASSERT_EQ(S_OK, import->GetUserString(text, value, 8, &length));
+    EXPECT_EQ(WSTR_string(W("Hello")), WSTR_string(value, length));
+    EXPECT_EQ(5u, length);
+    EXPECT_EQ(E_INVALIDARG, import->GetUserString(type, value, 8, &length));
+    MDUTF8CSTR name = nullptr;
+    EXPECT_EQ(E_INVALIDARG, import->GetNameFromToken(text, &name));
+}
+
+TEST(CppEmitterAccess, PermissionSetEnumerationClassifiesOwnerTables)
+{
+    dncp::com_ptr<IMetaDataEmit> emit;
+    ASSERT_NO_FATAL_FAILURE(CreateEmit(emit));
+    dncp::com_ptr<IMetaDataImport> import;
+    ASSERT_EQ(S_OK, emit->QueryInterface(IID_IMetaDataImport, (void**)&import));
+    struct
+    {
+        mdToken token;
+        HRESULT result;
+    } const cases[] = {
+        {mdTypeDefNil, CLDB_E_RECORD_NOTFOUND},
+        {mdMethodDefNil, CLDB_E_RECORD_NOTFOUND},
+        {mdAssemblyNil, CLDB_E_RECORD_NOTFOUND},
+        {mdModuleNil, S_FALSE},
+        {mdTypeRefNil, S_FALSE},
+        {0xff000001u, S_FALSE}
+    };
+    for (auto const& test : cases)
+    {
+        SCOPED_TRACE(test.token);
+        HCORENUM enumeration{};
+        mdPermission permission;
+        ULONG count = 123;
+        EXPECT_EQ(test.result, import->EnumPermissionSets(&enumeration, test.token, 0, &permission, 1, &count));
+        if (test.result == S_FALSE)
+            EXPECT_EQ(0u, count);
+        EXPECT_EQ(nullptr, enumeration);
+        import->CloseEnum(enumeration);
+    }
+}

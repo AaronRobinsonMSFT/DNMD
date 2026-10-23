@@ -12,23 +12,23 @@ namespace
         switch (dnmd::detail::CursorTable(source)->table_id)
         {
         case mdtid_FieldPtr:
-            sentinel = source.get_as<mdtid_Field>();
+            sentinel = source.as<mdtid_Field>();
             resolved = dnmd::indirect_cursor<mdtid_Field, mdtid_FieldPtr>{source}.get_target_token(token);
             break;
         case mdtid_MethodPtr:
-            sentinel = source.get_as<mdtid_MethodDef>();
+            sentinel = source.as<mdtid_MethodDef>();
             resolved = dnmd::indirect_cursor<mdtid_MethodDef, mdtid_MethodPtr>{source}.get_target_token(token);
             break;
         case mdtid_ParamPtr:
-            sentinel = source.get_as<mdtid_Param>();
+            sentinel = source.as<mdtid_Param>();
             resolved = dnmd::indirect_cursor<mdtid_Param, mdtid_ParamPtr>{source}.get_target_token(token);
             break;
         case mdtid_EventPtr:
-            sentinel = source.get_as<mdtid_Event>();
+            sentinel = source.as<mdtid_Event>();
             resolved = dnmd::indirect_cursor<mdtid_Event, mdtid_EventPtr>{source}.get_target_token(token);
             break;
         case mdtid_PropertyPtr:
-            sentinel = source.get_as<mdtid_Property>();
+            sentinel = source.as<mdtid_Property>();
             resolved = dnmd::indirect_cursor<mdtid_Property, mdtid_PropertyPtr>{source}.get_target_token(token);
             break;
         default:

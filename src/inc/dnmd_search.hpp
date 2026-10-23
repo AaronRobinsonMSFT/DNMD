@@ -203,7 +203,7 @@ inline raw_cursor<OwnerTableId> find_list_owner(cursor<ElementTableId> element,
             auto pointer_table = &element_table->cxt->tables[pointer_id];
             if (pointer_table->row_count == 0)
                 return raw_cursor<OwnerTableId>::nil(element.get_handle());
-            auto pointer_begin = raw_cursor<pointer_id>::at(element.get_handle(), 1).as();
+            auto pointer_begin = raw_cursor<pointer_id>::at(element.get_handle(), 1).value();
             auto pointer = md_find_row_from_cursor(pointer_begin, pointer_column<pointer_id>(), element);
             if (!pointer)
                 return raw_cursor<OwnerTableId>::nil(element.get_handle());
@@ -211,7 +211,7 @@ inline raw_cursor<OwnerTableId> find_list_owner(cursor<ElementTableId> element,
         }
     }
 
-    auto owner_begin = raw_cursor<OwnerTableId>::at(element.get_handle(), 1).as();
+    auto owner_begin = raw_cursor<OwnerTableId>::at(element.get_handle(), 1).value();
     column_iterator first{owner_begin, col};
     auto last = first.end();
     auto found = last;
@@ -230,7 +230,7 @@ inline raw_cursor<OwnerTableId> find_list_owner(cursor<ElementTableId> element,
         auto after = std::upper_bound(ordered, ordered.end(), index);
         if (after == ordered)
             return raw_cursor<OwnerTableId>::nil(element.get_handle());
-        found = column_iterator{(--after).position().as(), col};
+        found = column_iterator{(--after).position().value(), col};
     }
 
     auto next = std::find_if(found + 1, last, [](uint32_t start) { return start != 0; });
@@ -251,9 +251,9 @@ inline bool md_find_cursor_of_range_element(cursor<ElementTableId> element, raw_
     if (!owner)
         return false;
     if constexpr (ElementTableId == mdtid_Event)
-        return row_reader{owner.as()}.read(columns::EventMap_Parent, parent);
+        return row_reader{owner.value()}.read(columns::EventMap_Parent, parent);
     else if constexpr (ElementTableId == mdtid_Property)
-        return row_reader{owner.as()}.read(columns::PropertyMap_Parent, parent);
+        return row_reader{owner.value()}.read(columns::PropertyMap_Parent, parent);
     else
     {
         parent = owner;
