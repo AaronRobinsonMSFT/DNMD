@@ -88,118 +88,118 @@ public:
     cursor() = delete;
     mdhandle_t get_handle() const noexcept { return _table->cxt; }
     bool get_token(mdToken& token) const noexcept { return detail::position_token(*_table, _row, token); }
-        bool get_parent_token(mdToken& tk) const noexcept;
+    bool get_parent_token(mdToken& tk) const noexcept;
 
-        template<typename C, std::enable_if_t<detail::searchable_column<C>::value
-            && !std::is_same_v<C, column_type_constant>, int> = 0>
-        int32_t get_column_values(column<TableId, C> column, uint32_t count, mdToken* tokens) const noexcept
+    template<typename C, std::enable_if_t<detail::searchable_column<C>::value
+        && !std::is_same_v<C, column_type_constant>, int> = 0>
+    int32_t get_column_values(column<TableId, C> column, uint32_t count, mdToken* tokens) const noexcept
+    {
+        if (count == 0)
+            return 0;
+        assert(tokens != nullptr);
+        row_reader<TableId> reader{*this};
+        uint32_t row = _row;
+        uint32_t available = reader._table->row_count - row + 1;
+        if (count > available)
+            count = available;
+        for (uint32_t i = 0; i < count; ++i)
         {
-            if (count == 0)
-                return 0;
-            assert(tokens != nullptr);
-            row_reader<TableId> reader{*this};
-            uint32_t row = _row;
-            uint32_t available = reader._table->row_count - row + 1;
-            if (count > available)
-                count = available;
-            for (uint32_t i = 0; i < count; ++i)
-            {
-                if (!reader.read(column, tokens[i]))
-                    return -1;
-                if (i + 1 < count)
-                    reader.advance();
-            }
-            return static_cast<int32_t>(count);
+            if (!reader.read(column, tokens[i]))
+                return -1;
+            if (i + 1 < count)
+                reader.advance();
         }
+        return static_cast<int32_t>(count);
+    }
 
-        template<mdtable_id_t... TargetTableIds>
-        bool get_column_value(column<TableId, raw_cursor<TargetTableIds...>> column, raw_cursor<TargetTableIds...>& target_cursor) const noexcept
-        {
-            return row_reader<TableId>{*this}.read(column, target_cursor);
-        }
+    template<mdtable_id_t... TargetTableIds>
+    bool get_column_value(column<TableId, raw_cursor<TargetTableIds...>> column, raw_cursor<TargetTableIds...>& target_cursor) const noexcept
+    {
+        return row_reader<TableId>{*this}.read(column, target_cursor);
+    }
 
-        template<mdtable_id_t... TargetTableIds>
-        bool get_column_value(column<TableId, raw_cursor<TargetTableIds...>> column, mdToken& tk) const noexcept
-        {
-            return row_reader<TableId>{*this}.read(column, tk);
-        }
+    template<mdtable_id_t... TargetTableIds>
+    bool get_column_value(column<TableId, raw_cursor<TargetTableIds...>> column, mdToken& tk) const noexcept
+    {
+        return row_reader<TableId>{*this}.read(column, tk);
+    }
 
-        template<mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
-        bool get_column_value(column<TableId, indirect_cursor<DirectTableId, IndirectTableId>> column, indirect_cursor<DirectTableId, IndirectTableId>& target_cursor) const noexcept
-        {
-            return row_reader<TableId>{*this}.read(column, target_cursor);
-        }
+    template<mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
+    bool get_column_value(column<TableId, indirect_cursor<DirectTableId, IndirectTableId>> column, indirect_cursor<DirectTableId, IndirectTableId>& target_cursor) const noexcept
+    {
+        return row_reader<TableId>{*this}.read(column, target_cursor);
+    }
 
-        template<mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
-        bool get_column_value(column<TableId, indirect_cursor<DirectTableId, IndirectTableId>> column, mdToken& tk) const noexcept
-        {
-            return row_reader<TableId>{*this}.read(column, tk);
-        }
+    template<mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
+    bool get_column_value(column<TableId, indirect_cursor<DirectTableId, IndirectTableId>> column, mdToken& tk) const noexcept
+    {
+        return row_reader<TableId>{*this}.read(column, tk);
+    }
 
-        bool get_column_value(column<TableId, column_type_constant> column, uint32_t* value) const noexcept
-        {
-            return row_reader<TableId>{*this}.read(column, value);
-        }
+    bool get_column_value(column<TableId, column_type_constant> column, uint32_t* value) const noexcept
+    {
+        return row_reader<TableId>{*this}.read(column, value);
+    }
 
-        bool get_column_value(column<TableId, column_type_blob> column, uint8_t const** blob, uint32_t* blob_len) const noexcept
-        {
-            return row_reader<TableId>{*this}.read(column, blob, blob_len);
-        }
+    bool get_column_value(column<TableId, column_type_blob> column, uint8_t const** blob, uint32_t* blob_len) const noexcept
+    {
+        return row_reader<TableId>{*this}.read(column, blob, blob_len);
+    }
 
-        bool get_column_value(column<TableId, column_type_guid> column, mdguid_t* guid) const noexcept
-        {
-            return row_reader<TableId>{*this}.read(column, guid);
-        }
+    bool get_column_value(column<TableId, column_type_guid> column, mdguid_t* guid) const noexcept
+    {
+        return row_reader<TableId>{*this}.read(column, guid);
+    }
 
-        bool get_column_value(column<TableId, column_type_userstring> column, mduserstring_t* userstring) const noexcept
-        {
-            return row_reader<TableId>{*this}.read(column, userstring);
-        }
+    bool get_column_value(column<TableId, column_type_userstring> column, mduserstring_t* userstring) const noexcept
+    {
+        return row_reader<TableId>{*this}.read(column, userstring);
+    }
 
-        bool get_column_value(column<TableId, column_type_string> column, char const** str) const noexcept
-        {
-            return row_reader<TableId>{*this}.read(column, str);
-        }
+    bool get_column_value(column<TableId, column_type_string> column, char const** str) const noexcept
+    {
+        return row_reader<TableId>{*this}.read(column, str);
+    }
 
-        bool set_column_value(column<TableId, column_type_constant> column, uint32_t value) const noexcept;
+    bool set_column_value(column<TableId, column_type_constant> column, uint32_t value) const noexcept;
 
-        bool set_column_value(column<TableId, column_type_string> column, char const* value) const noexcept;
+    bool set_column_value(column<TableId, column_type_string> column, char const* value) const noexcept;
 
-        bool set_column_value(column<TableId, column_type_blob> column, uint8_t const* value, uint32_t length) const noexcept;
+    bool set_column_value(column<TableId, column_type_blob> column, uint8_t const* value, uint32_t length) const noexcept;
 
-        bool set_column_value(column<TableId, column_type_guid> column, mdguid_t value) const noexcept;
+    bool set_column_value(column<TableId, column_type_guid> column, mdguid_t value) const noexcept;
 
-        bool set_column_value(column<TableId, column_type_userstring> column, char16_t const* value) const noexcept;
+    bool set_column_value(column<TableId, column_type_userstring> column, char16_t const* value) const noexcept;
 
-        template<mdtable_id_t... TargetTableIds>
-        bool set_column_value(column<TableId, raw_cursor<TargetTableIds...>> column, mdToken value) const noexcept;
+    template<mdtable_id_t... TargetTableIds>
+    bool set_column_value(column<TableId, raw_cursor<TargetTableIds...>> column, mdToken value) const noexcept;
 
-        template<mdtable_id_t... TargetTableIds, mdtable_id_t ValueTableId>
-        bool set_column_value(column<TableId, raw_cursor<TargetTableIds...>> column, cursor<ValueTableId> value) const noexcept;
+    template<mdtable_id_t... TargetTableIds, mdtable_id_t ValueTableId>
+    bool set_column_value(column<TableId, raw_cursor<TargetTableIds...>> column, cursor<ValueTableId> value) const noexcept;
 
-        template<mdtable_id_t... TargetTableIds, mdtable_id_t... ValueTableIds>
-        bool set_column_value(column<TableId, raw_cursor<TargetTableIds...>> column, raw_cursor<ValueTableIds...> const& value) const noexcept;
+    template<mdtable_id_t... TargetTableIds, mdtable_id_t... ValueTableIds>
+    bool set_column_value(column<TableId, raw_cursor<TargetTableIds...>> column, raw_cursor<ValueTableIds...> const& value) const noexcept;
 
-        template<mdtable_id_t... TargetTableIds, mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
-        bool set_column_value(column<TableId, raw_cursor<TargetTableIds...>> column, indirect_cursor<DirectTableId, IndirectTableId> const& value) const noexcept;
+    template<mdtable_id_t... TargetTableIds, mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
+    bool set_column_value(column<TableId, raw_cursor<TargetTableIds...>> column, indirect_cursor<DirectTableId, IndirectTableId> const& value) const noexcept;
 
-        template<mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
-        bool set_column_value(column<TableId, indirect_cursor<DirectTableId, IndirectTableId>> column, mdToken value) const noexcept;
+    template<mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
+    bool set_column_value(column<TableId, indirect_cursor<DirectTableId, IndirectTableId>> column, mdToken value) const noexcept;
 
-        template<mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId, mdtable_id_t ValueTableId>
-        bool set_column_value(column<TableId, indirect_cursor<DirectTableId, IndirectTableId>> column, cursor<ValueTableId> value) const noexcept;
+    template<mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId, mdtable_id_t ValueTableId>
+    bool set_column_value(column<TableId, indirect_cursor<DirectTableId, IndirectTableId>> column, cursor<ValueTableId> value) const noexcept;
 
-        template<mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId, mdtable_id_t... ValueTableIds>
-        bool set_column_value(column<TableId, indirect_cursor<DirectTableId, IndirectTableId>> column, raw_cursor<ValueTableIds...> const& value) const noexcept;
+    template<mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId, mdtable_id_t... ValueTableIds>
+    bool set_column_value(column<TableId, indirect_cursor<DirectTableId, IndirectTableId>> column, raw_cursor<ValueTableIds...> const& value) const noexcept;
 
-        template<mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
-        bool set_column_value(column<TableId, indirect_cursor<DirectTableId, IndirectTableId>> column, indirect_cursor<DirectTableId, IndirectTableId> const& value) const noexcept;
+    template<mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
+    bool set_column_value(column<TableId, indirect_cursor<DirectTableId, IndirectTableId>> column, indirect_cursor<DirectTableId, IndirectTableId> const& value) const noexcept;
 
-        template<mdtable_id_t TargetTableId, mdtable_id_t IndirectTableId>
-        bool get_column_value_as_range(column<TableId, indirect_cursor<TargetTableId, IndirectTableId>> column, indirect_cursor<TargetTableId, IndirectTableId>& range_cursor, uint32_t* count) const noexcept
-        {
-            return row_reader<TableId>{*this}.read(column, range_cursor, count);
-        }
+    template<mdtable_id_t TargetTableId, mdtable_id_t IndirectTableId>
+    bool get_column_value_as_range(column<TableId, indirect_cursor<TargetTableId, IndirectTableId>> column, indirect_cursor<TargetTableId, IndirectTableId>& range_cursor, uint32_t* count) const noexcept
+    {
+        return row_reader<TableId>{*this}.read(column, range_cursor, count);
+    }
 };
 
 template<mdtable_id_t... TableIds>
