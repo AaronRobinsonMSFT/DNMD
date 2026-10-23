@@ -425,20 +425,19 @@ HRESULT MetadataEmit::DefineImportType(
     if (!originalTypeDef)
         return CLDB_E_FILE_CORRUPT;
 
-    dnmd::raw_cursor<mdtid_TypeDef, mdtid_TypeRef> importedTypeDef{MetaData(), 0};
-
-    RETURN_IF_FAILED(ImportReferenceToTypeDef(
+    auto importedTypeDef = ImportReferenceToTypeDef(
         originalTypeDef,
         assemImport->MetaData(),
         { reinterpret_cast<uint8_t const*>(pbHashValue), cbHashValue },
         assemEmit->MetaData(),
         MetaData(),
         false,
-        [](dnmd::any_cursor){},
-        &importedTypeDef
-    ));
+        [](dnmd::any_cursor){}
+    );
+    if (!importedTypeDef)
+        return importedTypeDef.error();
 
-    if (!importedTypeDef.get_token(*ptr))
+    if (!importedTypeDef->get_token(*ptr))
         return E_FAIL;
 
     return S_OK;
