@@ -139,6 +139,105 @@ typedef enum
 #endif // DNMD_PORTABLE_PDB
 } mdtable_id_t;
 
+// Read-only table storage and column metadata used by the typed C++ readers.
+typedef struct mdcdata__
+{
+    uint8_t const* ptr;
+    size_t size;
+} mdcdata_t;
+
+typedef enum
+{
+    // Category of the stored value.
+    mdtc_none         = 0x00000000,
+    mdtc_constant     = 0x00000001,
+    mdtc_idx_heap     = 0x00000002,
+    mdtc_idx_table    = 0x00000004,
+    mdtc_idx_coded    = 0x00000008,
+    mdtc_categorymask = 0x0000000f,
+    // Width of a stored constant or index.
+    mdtc_b2           = 0x00000010,
+    mdtc_b4           = 0x00000020,
+    mdtc_widthmask    = 0x00000030,
+    // Byte offset, target table, and coded-index map within a row.
+    mdtc_comask       = 0x0000ff00,
+    mdtc_timask       = 0x00ff0000,
+    mdtc_cimask       = 0x0f000000,
+    // Heap selected by an index.
+    mdtc_hguid        = 0x10000000,
+    mdtc_hstring      = 0x20000000,
+    mdtc_hus          = 0x40000000,
+    mdtc_hblob        = 0x80000000,
+    mdtc_hmask        = 0xf0000000,
+} mdtcol_t;
+
+struct mdcxt__;
+
+typedef struct mdtable__
+{
+    mdcdata_t data;
+    uint32_t row_count;
+    uint8_t row_size_bytes;
+    uint8_t column_count;
+    bool is_sorted : 1;
+    bool is_adding_new_row : 1;
+    bool has_indirect_table : 1; // The corresponding Ptr table is in use for this element table.
+    bool is_initialized : 1; // Table schema and loaded or allocated storage are fully initialized.
+    uint8_t table_id;
+    struct mdcxt__* cxt; // Always identifies the owning context, including for absent tables.
+    mdtcol_t* column_details;
+} mdtable_t;
+
+typedef mdcdata_t mdstream_t;
+typedef struct mdmem__ mdmem_t;
+typedef struct mdeditor__ mdeditor_t;
+
+typedef enum
+{
+    mdc_none                    = 0x0000,
+    mdc_large_string_heap       = 0x0001,
+    mdc_large_guid_heap         = 0x0002,
+    mdc_large_blob_heap         = 0x0004,
+    mdc_extra_data              = 0x0040,
+    mdc_image_flags             = 0xffff,
+    mdc_minimal_delta           = 0x00010000,
+    mdc_uncompressed_table_heap = 0x00020000,
+} mdcxt_flag_t;
+
+// Metadata context shared with the typed C++ accessors.
+typedef struct mdcxt__
+{
+    uint32_t magic; // mdlib magic
+    mdcdata_t raw_metadata; // metadata raw bytes
+    mdeditor_t* editor; // metadata editor
+    mdcxt_flag_t context_flags;
+
+    // Metadata root details - II.24.2.1
+    uint16_t major_ver;
+    uint16_t minor_ver;
+    uint16_t flags;
+    char const* version;
+
+    // Metadata heaps - II.24.2.2
+    mdstream_t strings_heap;
+    mdstream_t guid_heap;
+    mdstream_t blob_heap;
+    mdstream_t user_string_heap;
+    mdstream_t tables_heap;
+#ifdef DNMD_PORTABLE_PDB
+    mdstream_t pdb;
+#endif
+
+    // Metadata tables - II.22
+    mdtable_t* tables;
+    // Additional memory used for dynamic operations
+    mdmem_t* mem;
+} mdcxt_t;
+
+// Macros for computing token types.
+#define CreateTokenType(tk) (mdToken)(((uint32_t)tk << 24) & 0xff000000)
+#define ExtractTokenType(tk) ((tk >> 24) & 0xff)
+
 // Table cursor definition
 typedef struct mdcursor__
 {
@@ -495,6 +594,7 @@ bool md_find_token_of_range_element(mdcursor_t element, mdToken* tk);
 bool md_find_cursor_of_range_element(mdcursor_t element, mdcursor_t* cursor);
 
 // Given a cursor, resolve any indirections to the final cursor or return the original cursor if it does not point to an indirection table.
+// Nil and one-past-the-end indirection cursors resolve to the corresponding target table positions.
 // Returns true if the cursor was not an indirect cursor or if the indirection was resolved, or false if the cursor pointed to an invalid indirection table entry.
 bool md_resolve_indirect_cursor(mdcursor_t c, mdcursor_t* target);
 

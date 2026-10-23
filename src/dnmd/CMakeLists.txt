@@ -1,6 +1,7 @@
 set(SOURCES
   access.c
   bytes.c
+  cppapi.c
   deltas.c
   editor.c
   entry.c
@@ -10,8 +11,19 @@ set(SOURCES
   write.c
 )
 
-set(HEADERS
+set(PUBLIC_HEADERS
   ../inc/dnmd.h
+  ../inc/dnmd_edit.h
+  ../inc/dnmd.hpp
+  ../inc/dnmd_columns.hpp
+  ../inc/dnmd_cursors.hpp
+  ../inc/dnmd_read.hpp
+  ../inc/dnmd_write.hpp
+  ../inc/dnmd_search.hpp
+)
+
+set(HEADERS
+  ${PUBLIC_HEADERS}
   ./internal.h
 )
 
@@ -43,11 +55,11 @@ target_include_directories(dnmd_pdb PUBLIC
   $<INSTALL_INTERFACE:include>)
 
 set_target_properties(dnmd PROPERTIES
-  PUBLIC_HEADER "../inc/dnmd.h;../inc/dnmd.hpp"
+  PUBLIC_HEADER "${PUBLIC_HEADERS}"
   POSITION_INDEPENDENT_CODE ON)
 
 set_target_properties(dnmd_pdb PROPERTIES
-  PUBLIC_HEADER "../inc/dnmd.h;../inc/dnmd.hpp;../inc/dnmd_pdb.h"
+  PUBLIC_HEADER "${PUBLIC_HEADERS};../inc/dnmd_pdb.h"
   POSITION_INDEPENDENT_CODE ON)
 
 install(TARGETS dnmd dnmd_pdb EXPORT dnmd

@@ -34,6 +34,45 @@ static bool is_row_sorted_with_next_row(md_key_info_t const* keys, uint8_t count
     return true;
 }
 
+void update_column_sort_order(mdcursor_t c, col_index_t col_idx)
+{
+    mdtable_t* table = CursorTable(&c);
+    if (!table->is_sorted || table->is_adding_new_row)
+        return;
+
+    md_key_info_t const* keys;
+    uint8_t key_count = get_table_keys(table->table_id, &keys);
+    uint8_t key_idx;
+    for (key_idx = 0; key_idx < key_count; ++key_idx)
+    {
+        if (keys[key_idx].index == col_to_index(col_idx, table))
+            break;
+    }
+    if (key_idx == key_count)
+        return;
+
+    mdcursor_t current_row = c;
+    bool success = md_cursor_next(&current_row);
+    assert(success);
+    (void)success;
+    mdcursor_t prior_row = current_row;
+    if (md_cursor_move(&prior_row, -1) && !CursorNull(&prior_row))
+    {
+        if (!is_row_sorted_with_next_row(keys, key_count, table->table_id, prior_row, current_row))
+        {
+            table->is_sorted = false;
+            return;
+        }
+    }
+
+    mdcursor_t next_row = current_row;
+    if (md_cursor_next(&next_row) && !CursorEnd(&next_row))
+    {
+        if (!is_row_sorted_with_next_row(keys, key_count, table->table_id, current_row, next_row))
+            table->is_sorted = false;
+    }
+}
+
 static bool set_column_value_as_token_or_cursor(mdcursor_t c, uint32_t col_idx, mdToken const* tk, mdcursor_t const* cursor)
 {
     access_cxt_t acxt;
@@ -47,27 +86,6 @@ static bool set_column_value_as_token_or_cursor(mdcursor_t c, uint32_t col_idx, 
     // If this isn't an index column, then fail.
     if (!(acxt.col_details & (mdtc_idx_table | mdtc_idx_coded)))
         return false;
-
-    uint8_t key_count = 0;
-    uint8_t key_idx = UINT8_MAX;
-    md_key_info_t const* keys = NULL;
-    // If we're editing already-existing rows, then we need to validate that we stay sorted.
-    // If we're in the middle of a row-add operation, we'll wait until the add is complete to validate.
-    if (acxt.table->is_sorted && !acxt.table->is_adding_new_row)
-    {
-        // If the table is sorted, then we need to validate that we stay sorted.
-        // We will not check here if a table goes from unsorted to sorted as that would require
-        // significantly more work to validate and is not a correctness issue.
-        key_count = get_table_keys(acxt.table->table_id, &keys);
-        for (uint8_t i = 0; i < key_count; i++)
-        {
-            if (keys[i].index == col_to_index(col_idx, acxt.table))
-            {
-                key_idx = i;
-                break;
-            }
-        }
-    }
 
     mdToken token;
     if (tk != NULL)
@@ -115,51 +133,7 @@ static bool set_column_value_as_token_or_cursor(mdcursor_t c, uint32_t col_idx, 
     if (!write_column_data(&acxt, raw))
         return false;
 
-    // If the column we are writing to is a key of a sorted column, then we need to validate that it is sorted correctly.
-    // We'll validate against the previous row here and then validate against the next row after we've written all of the columns that we will write.
-    if (key_idx != UINT8_MAX)
-    {
-        assert(keys != NULL && key_idx < key_count);
-        mdcursor_t current_row = c;
-        bool success = md_cursor_next(&current_row);
-        assert(success);
-        (void)success;
-        mdcursor_t prior_row = current_row;
-        if (md_cursor_move(&prior_row, -1) && !CursorNull(&prior_row))
-        {
-            // If we have a prior row, then we need to check if we're sorted with respect to it.
-            if (!is_row_sorted_with_next_row(keys, key_count, acxt.table->table_id, prior_row, current_row))
-            {
-                // If we're not sorted, then invalidate key_idx to avoid checking if we're sorted for future row writes.
-                // We won't go from unsorted to sorted.
-                acxt.table->is_sorted = false;
-                key_idx = UINT8_MAX;
-            }
-        }
-    }
-
-    // Validate that the last row we wrote is sorted with respect to any following rows.
-    if (key_idx != UINT8_MAX)
-    {
-        assert(keys != NULL && key_idx < key_count);
-        mdcursor_t current_row = c;
-        bool success = md_cursor_next(&current_row);
-        assert(success);
-        (void)success;
-        mdcursor_t next_row = current_row;
-        if (md_cursor_next(&next_row) && !CursorEnd(&next_row))
-        {
-            // If we have a prior row, then we need to check if we're sorted with respect to it.
-            if (!is_row_sorted_with_next_row(keys, key_count, acxt.table->table_id, current_row, next_row))
-            {
-                // If we're not sorted, then invalidate key_idx to avoid checking if we're sorted for future row writes.
-                // We won't go from unsorted to sorted.
-                acxt.table->is_sorted = false;
-                key_idx = UINT8_MAX;
-            }
-        }
-    }
-
+    update_column_sort_order(c, (col_index_t)col_idx);
     return true;
 }
 
@@ -183,75 +157,10 @@ bool md_set_column_value_as_constant(mdcursor_t c, col_index_t col_idx, uint32_t
     if (!(acxt.col_details & mdtc_constant))
         return false;
 
-    uint8_t key_count = 0;
-    uint8_t key_idx = UINT8_MAX;
-    md_key_info_t const* keys = NULL;
-    // If we're editing already-existing rows, then we need to validate that we stay sorted.
-    // If we're in the middle of a row-add operation, we'll wait until the add is complete to validate.
-    if (acxt.table->is_sorted && !acxt.table->is_adding_new_row)
-    {
-        // If the table is sorted, then we need to validate that we stay sorted.
-        // We will not check here if a table goes from unsorted to sorted as that would require
-        // significantly more work to validate and is not a correctness issue.
-        key_count = get_table_keys(acxt.table->table_id, &keys);
-        for (uint8_t i = 0; i < key_count; i++)
-        {
-            if (keys[i].index == col_to_index(col_idx, acxt.table))
-            {
-                key_idx = i;
-                break;
-            }
-        }
-    }
-
     if (!write_column_data(&acxt, constant))
         return false;
 
-    // If the column we are writing to is a key of a sorted column, then we need to validate that it is sorted correctly.
-    // We'll validate against the previous row here and then validate against the next row after we've written all of the columns that we will write.
-    if (key_idx != UINT8_MAX)
-    {
-        assert(keys != NULL && key_idx < key_count);
-        mdcursor_t current_row = c;
-        bool success = md_cursor_next(&current_row);
-        assert(success);
-        (void)success;
-        mdcursor_t prior_row = current_row;
-        if (md_cursor_move(&prior_row, -1) && !CursorNull(&prior_row))
-        {
-            // If we have a prior row, then we need to check if we're sorted with respect to it.
-            if (!is_row_sorted_with_next_row(keys, key_count, acxt.table->table_id, prior_row, current_row))
-            {
-                // If we're not sorted, then invalidate key_idx to avoid checking if we're sorted for future row writes.
-                // We won't go from unsorted to sorted.
-                acxt.table->is_sorted = false;
-                key_idx = UINT8_MAX;
-            }
-        }
-    }
-
-    // Validate that the last row we wrote is sorted with respect to any following rows.
-    if (key_idx != UINT8_MAX)
-    {
-        assert(keys != NULL && key_idx < key_count);
-        mdcursor_t current_row = c;
-        bool success = md_cursor_next(&current_row);
-        assert(success);
-        (void)success;
-        mdcursor_t next_row = current_row;
-        if (md_cursor_move(&next_row, 1) && !CursorEnd(&next_row))
-        {
-            // If we have a prior row, then we need to check if we're sorted with respect to it.
-            if (!is_row_sorted_with_next_row(keys, key_count, acxt.table->table_id, current_row, next_row))
-            {
-                // If we're not sorted, then invalidate key_idx to avoid checking if we're sorted for future row writes.
-                // We won't go from unsorted to sorted.
-                acxt.table->is_sorted = false;
-                key_idx = UINT8_MAX;
-            }
-        }
-    }
-
+    update_column_sort_order(c, col_idx);
     return true;
 }
 
@@ -502,7 +411,7 @@ static bool set_column_as_end_of_table_cursor(mdcursor_t c, col_index_t col_idx)
     mdtable_t* target_table = &table->cxt->tables[target_table_id];
 
     mdcursor_t end_of_table;
-    if (target_table->cxt == NULL)
+    if (!target_table->is_initialized)
     {
         if (!initialize_new_table_details(table->cxt, target_table_id, target_table))
         {
@@ -543,7 +452,7 @@ static bool initialize_list_columns(mdcursor_t c)
 static bool insert_row_cursor_relative(mdcursor_t row, int32_t offset, mdcursor_t* new_row)
 {
     mdtable_t* table = CursorTable(&row);
-    if (table->cxt == NULL) // We can't turn an insert into a "create table" operation.
+    if (!table->is_initialized) // We can't turn an insert into a "create table" operation.
         return false;
 
     // We don't allow inserting in the middle of tables that have indirection tables.
@@ -601,7 +510,7 @@ bool md_insert_row_after(mdcursor_t row, mdcursor_t* new_row)
 // The table must already exist.
 static bool append_row(mdtable_t* table, mdcursor_t* new_row)
 {
-    assert(table->cxt != NULL);
+    assert(table->is_initialized);
 
     if (!insert_row_into_table(table->cxt, table->table_id, table->row_count + 1, new_row))
         return false;
@@ -624,7 +533,7 @@ bool md_append_row(mdhandle_t handle, mdtable_id_t table_id, mdcursor_t* new_row
 
     mdtable_t* table = &cxt->tables[table_id];
 
-    if (table->cxt == NULL)
+    if (!table->is_initialized)
     {
         // We should never be allocating a new indirection table through md_append_row.
         // We should be allocating it in md_add_new_row_to_parent_table when necessary.
@@ -663,12 +572,18 @@ static bool add_new_row_to_list(mdcursor_t list_owner, col_index_t list_col, mdc
         if (!append_row(CursorTable(&target_row), new_row))
             return false;
 
-        mdcursor_t new_indirection_row;
+        mdcursor_t new_indirection_row = { 0 };
         if (!md_insert_row_before(row_to_insert_before, &new_indirection_row))
+        {
+            md_commit_row_add(new_indirection_row);
             return false;
+        }
 
         if (!md_set_column_value_as_cursor(new_indirection_row, index_to_col(0, CursorTable(&row_to_insert_before)->table_id), *new_row))
+        {
+            md_commit_row_add(new_indirection_row);
             return false;
+        }
 
         if (count == 0 || CursorRow(&range) == CursorRow(&row_to_insert_before))
         {
@@ -677,7 +592,10 @@ static bool add_new_row_to_list(mdcursor_t list_owner, col_index_t list_col, mdc
             // In both of these cases, we need to update the parent's row column to point to the newly inserted row.
             // Otherwise, this element would be associated with the entry before the parent row.
             if (!md_set_column_value_as_cursor(list_owner, list_col, new_indirection_row))
+            {
+                md_commit_row_add(new_indirection_row);
                 return false;
+            }
         }
 
         md_commit_row_add(new_indirection_row);
@@ -761,7 +679,7 @@ bool md_add_new_row_to_list(mdcursor_t list_owner, col_index_t list_col, mdcurso
     if (!md_get_column_value_as_range(list_owner, list_col, &existing_range, &count))
         return false;
 
-    if (CursorTable(&existing_range)->cxt == NULL)
+    if (!CursorTable(&existing_range)->is_initialized)
     {
         // If we don't have a table to add the row to, create one.
         if (!allocate_new_table(CursorTable(&list_owner)->cxt, CursorTable(&existing_range)->table_id))
@@ -792,7 +710,7 @@ bool md_add_new_row_to_sorted_list(mdcursor_t list_owner, col_index_t list_col, 
     if (!md_get_column_value_as_range(list_owner, list_col, &existing_range, &count))
         return false;
 
-    if (CursorTable(&existing_range)->cxt == NULL)
+    if (!CursorTable(&existing_range)->is_initialized)
     {
         // If we don't have a table to add the row to, create one.
         if (!allocate_new_table(CursorTable(&list_owner)->cxt, CursorTable(&existing_range)->table_id))
@@ -911,7 +829,7 @@ void md_commit_row_add(mdcursor_t row)
     mdtable_t* table = CursorTable(&row);
 
     // If this method is called with a zero-initialized cursor,
-    // no-op. This helps make the C++ helper md_added_row_t function more easily.
+    // no-op. This helps make the legacy C++ helper md_added_row_t function more easily.
     // This also allows users to call this method in all cases, even if the row-add fails.
     if (table == NULL)
         return;

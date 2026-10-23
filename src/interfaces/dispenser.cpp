@@ -71,13 +71,13 @@ namespace
                 return E_INVALIDARG;
             }
 
-            mdhandle_ptr md_ptr { md_create_new_handle() };
+            dnmd::handle_ptr md_ptr { md_create_new_handle() };
             if (md_ptr == nullptr)
                 return E_OUTOFMEMORY;
             
             // Initialize the MVID of the new image.
-            mdcursor_t moduleCursor;
-            if (!md_token_to_cursor(md_ptr.get(), TokenFromRid(1, mdtModule), &moduleCursor))
+            auto moduleCursor = dnmd::raw_cursor<mdtid_Module>{md_ptr.get(), TokenFromRid(1, mdtModule)};
+            if (!moduleCursor)
                 return E_FAIL;
             
             mdguid_t mvid;
@@ -85,7 +85,7 @@ namespace
             if (FAILED(hr))
                 return hr;
             
-            if (!md_set_column_value_as_guid(moduleCursor, mdtModule_Mvid, mvid))
+            if (!moduleCursor.value().set_column_value(dnmd::columns::Module_Mvid, mvid))
                 return E_OUTOFMEMORY;
             
             dncp::com_ptr<ControllingIUnknown> obj;
@@ -146,7 +146,7 @@ namespace
             if (!md_create_handle(pData, cbData, &mdhandle))
                 return CLDB_E_FILE_CORRUPT;
 
-            mdhandle_ptr md_ptr{ mdhandle };
+            dnmd::handle_ptr md_ptr{ mdhandle };
 
             dncp::com_ptr<ControllingIUnknown> obj;
             obj.Attach(new (std::nothrow) ControllingIUnknown());

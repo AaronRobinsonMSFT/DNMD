@@ -61,9 +61,11 @@ static mdcxt_t* allocate_full_context(mdcxt_t* cxt)
     pcxt->tables = (mdtable_t*)mem;
     mem += tables_mem;
 
-    // Update each table's column array
+    // Bind every table slot to its owner and column array, including absent tables.
     for (mdtable_id_t id = mdtid_First; id < mdtid_End; ++id)
     {
+        pcxt->tables[id].cxt = pcxt;
+        pcxt->tables[id].table_id = (uint8_t)id;
         pcxt->tables[id].column_details = (mdtcol_t*)mem;
         uint32_t size = table_col_sizes[id];
         mem += size;
@@ -853,7 +855,7 @@ static size_t get_table_stream_size(mdcxt_t* cxt)
 
     for (uint8_t i = 0; i < MDTABLE_MAX_COUNT; ++i)
     {
-        if (cxt->tables[i].cxt != NULL && cxt->tables[i].row_count != 0)
+        if (cxt->tables[i].is_initialized && cxt->tables[i].row_count != 0)
         {
             save_size += sizeof(uint32_t); // Row count
             save_size += cxt->tables[i].data.size; // Table data
@@ -1006,7 +1008,7 @@ bool md_write_to_buffer(mdhandle_t handle, uint8_t* buffer, size_t* len)
     uint64_t sorted_tables = 0;
     for (uint8_t i = 0; i < MDTABLE_MAX_COUNT; ++i)
     {
-        if (cxt->tables[i].cxt != NULL && cxt->tables[i].row_count != 0)
+        if (cxt->tables[i].is_initialized && cxt->tables[i].row_count != 0)
         {
             // We don't support saving if we are in the process of adding a new row.
             if (cxt->tables[i].is_adding_new_row)

@@ -17,7 +17,7 @@ bool apply_deltas(mdhandle_t handle, std::vector<char const*>& deltas, std::vect
             return false;
         }
 
-        mdhandle_ptr delta;
+        dnmd::handle_ptr delta;
         if (!create_mdhandle(d, delta))
         {
             std::fprintf(stderr, "Failed to create handle for '%s'.\n", p);
@@ -73,7 +73,7 @@ void dump(dump_config_t cfg)
     if (cfg.table_id != -1)
         std::printf("    Reading in table %d (0x%x)\n", cfg.table_id, cfg.table_id);
 
-    mdhandle_ptr handle;
+    dnmd::handle_ptr handle;
     if (!create_mdhandle(b, handle)
         || !apply_deltas(handle.get(), cfg.delta_paths, cfg.data)
         || !md_validate(handle.get())

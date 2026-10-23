@@ -114,6 +114,8 @@ bool try_get_blob(mdcxt_t* cxt, size_t offset, uint8_t const** blob, uint32_t* b
     uint32_t byte_count;
     if (!decompress_u32(&ptr, &data_len, &byte_count))
         return false;
+    if (byte_count > data_len)
+        return false;
 
     *blob = ptr;
     *blob_len = byte_count;
@@ -259,6 +261,13 @@ bool initialize_tables(mdcxt_t* cxt)
     }
 #endif // DNMD_PORTABLE_PDB
 
+    // Empty element tables still need to know whether their Ptr table is present.
+    for (mdtable_id_t id = mdtid_First; id < mdtid_End; ++id)
+    {
+        mdtable_id_t indirect = get_corresponding_indirection_table(id);
+        cxt->tables[id].has_indirect_table = indirect != mdtid_Unused && row_counts[indirect] != 0;
+    }
+
     mdtable_t* table;
     valid = valid_tables;
     for (size_t i = 0; valid; ++i)
@@ -276,8 +285,7 @@ bool initialize_tables(mdcxt_t* cxt)
             if (!consume_table_rows(table, &curr, &curr_len))
                 return false;
 
-            // Store the context on the table as an indication of fully initialized.
-            table->cxt = cxt;
+            table->is_initialized = true;
         }
         sorted_tables = sorted_tables >> 1;
         valid = valid >> 1;
