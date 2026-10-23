@@ -40,6 +40,28 @@ TEST(TypeDef, Define)
     import->CloseEnum(hEnum);
 }
 
+TEST(TypeDef, DefineImportInSameScope)
+{
+    dncp::com_ptr<IMetaDataEmit> emit;
+    ASSERT_NO_FATAL_FAILURE(CreateEmit(emit));
+
+    mdTypeDef typeDef;
+    mdToken implements = mdTokenNil;
+    WSTR_string name = W("Existing");
+    ASSERT_EQ(S_OK, emit->DefineTypeDef(name.c_str(), 0, mdTypeDefNil, &implements, &typeDef));
+
+    dncp::com_ptr<IMetaDataImport> import;
+    ASSERT_EQ(S_OK, emit->QueryInterface(IID_IMetaDataImport, (void**)&import));
+    dncp::com_ptr<IMetaDataAssemblyImport> assemblyImport;
+    ASSERT_EQ(S_OK, emit->QueryInterface(IID_IMetaDataAssemblyImport, (void**)&assemblyImport));
+    dncp::com_ptr<IMetaDataAssemblyEmit> assemblyEmit;
+    ASSERT_EQ(S_OK, emit->QueryInterface(IID_IMetaDataAssemblyEmit, (void**)&assemblyEmit));
+
+    mdTypeRef imported = mdTypeRefNil;
+    ASSERT_EQ(S_OK, emit->DefineImportType(assemblyImport, nullptr, 0, import, typeDef, assemblyEmit, &imported));
+    EXPECT_EQ(typeDef, imported);
+}
+
 TEST(TypeDef, DefineWithInterfaces)
 {
     WSTR_string name = W("Foo");

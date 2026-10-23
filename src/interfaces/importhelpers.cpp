@@ -783,6 +783,7 @@ HRESULT ImportReferenceToTypeDef(
             if (!targetCursor)
                 return CLDB_E_FILE_CORRUPT;
 
+            *targetTypeDef = targetCursor;
             return S_OK;
         }
         resolutionScope = dnmd::md_create_cursor<mdtid_Module>(targetModule);
