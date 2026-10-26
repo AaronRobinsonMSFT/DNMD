@@ -8,9 +8,6 @@
 #include <string.h>
 #include <corhdr.h>
 #include <dnmd.h>
-#ifdef DNMD_PORTABLE_PDB
-#include <dnmd_pdb.h>
-#endif
 
 // Implementations for missing bounds checking APIs.
 // See https://en.cppreference.com/w/c/error#Bounds_checking
@@ -87,6 +84,8 @@ void free_mdmem(mdcxt_t* cxt, void* mem);
 
 // Merge the supplied delta into the context.
 bool merge_in_delta(mdcxt_t* cxt, mdcxt_t* delta);
+bool initialize_minimal_table_rows(mdcxt_t* cxt);
+bool dump_tables(mdcxt_t* cxt, int32_t table);
 
 //
 // Streams
@@ -263,9 +262,6 @@ static col_index_t index_to_col(uint8_t idx, mdtable_id_t table_id)
 #pragma GCC diagnostic pop
 #endif
 
-// Copy data from a cursor to one row to a cursor to another row.
-bool copy_cursor(mdcursor_t dest, mdcursor_t src);
-
 // Single column access
 typedef struct access_cxt__
 {
@@ -352,9 +348,6 @@ bool insert_row_into_table(mdcxt_t* cxt, mdtable_id_t table_id, uint32_t row_ind
 #ifdef DNMD_PORTABLE_PDB
 bool update_referenced_type_system_table_row_count(mdcxt_t* cxt, mdtable_id_t updated_table, uint32_t new_max_row_count);
 #endif // DNMD_PORTABLE_PDB
-
-// Sort a row list (like FieldList, MethodList, ParamList, etc.) by the values specified in the given constant column on the target table.
-bool sort_list_by_column(mdcursor_t parent, col_index_t list_col, col_index_t col);
 
 // Add the heap with the specified id from the delta image to the cxt image.
 bool append_heap(mdcxt_t* cxt, mdcxt_t* delta, mdtcol_t heap_id);

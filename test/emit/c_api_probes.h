@@ -9,6 +9,7 @@ extern "C" {
 
 bool test_c_token_is_valid(mdhandle_t handle, mdToken token);
 size_t test_c_table_size(void);
+uint8_t test_c_column_count(mdtable_id_t table);
 bool test_c_table_is_initialized(mdhandle_t handle, mdtable_id_t table);
 bool test_c_first_cursor(mdhandle_t handle, mdtable_id_t table, mdToken* token, uint32_t* count);
 bool test_c_column_token(mdhandle_t handle, mdToken row, col_index_t column, mdToken* token);

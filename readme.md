@@ -4,7 +4,7 @@ DNMD represents a suites of tools for manipulating [ECMA-335][ecma_335] defined 
 
 DNMD provides the following tools:
 
-- `dnmd` - A static library with no external dependencies that represents the lowest level of reading ECMA-335.
+- `dnmd` - A static library with no third-party library dependencies that represents the lowest level of reading ECMA-335. Its C storage backend and C++ algorithms require the C and C++ runtimes.
 - `dnmd_interfaces` - A shared library (`.dll`|`.dylib`|`.so`) that consumes `dnmd` and provides higher level .NET APIs. At present the following interfaces are provided:
   - [`IMetaDataDispenser`][api_dispenser]
   - [`IMetaDataImport`][api_import] / [`IMetaDataImport2`][api_import2]
@@ -24,6 +24,11 @@ The primary goal of DNMD is to explore the benefits of a rewrite of the metadata
 
 - C11 and C++17 compliant compilers
 
+Both core libraries contain C and C++ objects. C clients can continue to compile
+their sources as C11 and use the cursor-free entrypoints and low-level APIs in
+`dnmd.h`, but must link with the C++ linker/runtime. CMake consumers should enable
+both C and CXX languages and link the exported `dnmd::dnmd` or `dnmd::pdb` target.
+
 ## C++ API
 
 `dnmd.hpp` provides typed cursors and column descriptors in the `dnmd` namespace.
@@ -39,6 +44,10 @@ organized into these headers:
 | `dnmd_read.hpp` | Row readers and read-only column iterators |
 | `dnmd_write.hpp` | Row writers, cursor write methods, and typed row-add guards |
 | `dnmd_search.hpp` | Typed searches and cursor parent lookup |
+| `dnmd_result.hpp` | Minimal C++17 expected-style value/error results |
+
+`dnmd_pdb.hpp`, used with the `dnmd::pdb` target, provides native C++ Portable PDB
+blob parsers and their result types.
 
 Each header includes its dependencies. When using individual headers instead of
 the umbrella, include `dnmd_write.hpp` for cursor `set_column_value` methods and
@@ -48,7 +57,7 @@ the umbrella, include `dnmd_write.hpp` for cursor `set_column_value` methods and
 default-constructed or constructed directly from a C cursor.
 `dnmd::raw_cursor<TableIds...>` and `dnmd::indirect_cursor<DirectTableId, IndirectTableId>`
 represent positions, including nil and one-past-the-end positions. Test a position
-before calling `as()` to obtain a row; calling `as()` on a non-dereferenceable
+before calling `value()` to obtain a row; calling `value()` on a non-dereferenceable
 position violates its precondition.
 Positions check dereferenceability inline using their table and RID bounds,
 without calling a C API predicate.
@@ -88,7 +97,7 @@ dnmd::handle_ptr handle{md_create_new_handle()};
 auto types = dnmd::md_create_cursor<mdtid_TypeDef>(handle.get());
 if (types)
 {
-    auto type = types.as();
+    auto type = types.value();
     dnmd::row_reader<mdtid_TypeDef> reader{type};
     uint32_t flags;
     char const* name;
@@ -100,8 +109,8 @@ if (types)
 
 Pass a `uint32_t*` as the second argument when the row count is also needed.
 
-Only single-table raw cursors expose `as()`. Narrow a multi-table position with
-`get_as<TableId>()`, which returns a single-table raw cursor, or use `visit()` to
+Only single-table raw cursors expose `value()`. Narrow a multi-table position with
+`as<TableId>()`, which returns a single-table raw cursor, or use `visit()` to
 dispatch to the matching row type. `visit()` returns false without invoking the
 callable for nil or end positions.
 
@@ -143,7 +152,7 @@ Parent searches use typed list columns and Ptr reverse lookup, preserve empty
 runs and nil starts, and project Event/Property maps back to TypeDef positions.
 Loaded direct runs use `std::upper_bound` with nil-boundary normalization;
 edited or indirected runs use a linear fallback rather than assume partitioning.
-The legacy C entrypoints remain available for the C core.
+The legacy query/write entrypoints remain available for the C storage backend.
 
 `dnmd::row_reader<TableId>` is a borrowed, read-only row access context
 constructed from a dereferenceable `cursor<TableId>`. Reuse it across columns of
@@ -191,7 +200,7 @@ Key writes compare the row lexicographically against both neighbors; non-key
 writes do not affect sortedness, and an unsorted table is not marked sorted again.
 Validation is deferred while initializing a new row. Acquire a noncopyable
 `dnmd::added_row<TableId>` using `append(handle)`, `insert(relative, after)`, or
-typed list-add factories, access the pending row with asserted `as()`, and commit
+typed list-add factories, access the pending row with asserted `value()`, and commit
 on destruction or explicitly with `commit()`. Explicit commit consumes the guard
 to a bound nil; a previously saved row cursor remains a normal borrowed row.
 Moves transfer ownership and leave the source bound nil. A failed acquisition
@@ -202,7 +211,7 @@ not rolled back.
 auto added = dnmd::added_row<mdtid_TypeRef>::append(handle.get());
 if (!added)
     return false;
-auto row = added.as();
+auto row = added.value();
 if (!row.set_column_value(dnmd::columns::TypeRef_TypeName, "Example"))
     return false;
 added.commit();
@@ -216,7 +225,10 @@ Native typed guards never expose C output pointers.
 
 Binary searches use only an ascending first
 key from these same sequences, never a secondary key in isolation.
-Legacy C validation and delta-only physical list sorting remain in the C core.
+Initialization, table validation/dumping, and EnC application use the typed C++
+API internally. The cursor-free C entrypoints retain their signatures. Delta row
+copying preserves already-merged heap indices and skips list boundaries; parameter
+ordering uses Ptr-table entries without changing element tokens.
 
 Raw and indirect cursors expose `get_token(mdToken&)`, including for sentinel
 positions. An indirect cursor additionally exposes `get_target_token(mdToken&)`
@@ -229,6 +241,47 @@ edits that affect their source or target positions. Advance positions with
 `dnmd::md_cursor_next` or `dnmd::md_cursor_move`, not row cursors. Typed row searches return a
 raw cursor in the searched table, rather than the table referenced by the column.
 The metadata handle must outlive its cursors, readers, and writers.
+
+### Portable PDB blobs
+
+All Portable PDB blob parsing and dump presentation are implemented in C++.
+The C buffer-based parsers and flexible-array results in `dnmd_pdb.h` have been
+replaced by native APIs in `dnmd_pdb.hpp`:
+
+| Parser | Parsed value | Ownership |
+| --- | --- | --- |
+| `parse_document_name(handle, blob, length)` | UTF-8 `std::string` | Owns the name, including its terminator |
+| `parse_local_constant_signature(handle, blob, length)` | Primitive, enum, or general-constant variant and custom modifiers | Owns the modifier vector; value bytes borrow the input blob |
+| `parse_imports(handle, blob, length)` | Vector of typed import records | Owns the records; alias/namespace views borrow the metadata image |
+| `parse_sequence_points(method, blob, length)` | Typed sequence-point records | Owns the records; document cursors borrow the metadata image |
+
+Each parser returns an expected-style result. Test `has_value()` or its explicit
+boolean conversion before using `*`/`->`, and inspect `error()` only on failure.
+`pdb_parse_error` distinguishes `invalid_argument`, `invalid_blob`, and
+`out_of_memory`; allocation exceptions do not escape the parser entrypoints.
+The existing `sequence_point_parse_error` name aliases this common error type.
+Keep borrowed blob bytes and metadata storage alive and unmoved while consuming
+their views, and follow the usual edit-invalidation rules for metadata views.
+
+The sequence-point parser takes a dereferenceable
+`dnmd::cursor<mdtid_MethodDebugInformation>`, a blob pointer, and its length.
+It returns `dnmd::sequence_points_result`.
+
+The move-only result owns a vector of `document_change`, `sequence_point`, and
+`hidden_sequence_point` variants. Document cursors borrow the metadata image and
+follow the usual cursor lifetime/edit rules; the input blob is not retained.
+The result's `document` field contains the blob's InitialDocument, or a bound nil
+when the document is supplied by the MethodDebugInformation row. Numeric record
+fields retain their encoded delta/rolling-field interpretation.
+
+None of these APIs requires a caller buffer or size-query pass. Unknown import
+kinds, malformed/truncated fields, invalid encoded token tags, overflowing RIDs,
+and incomplete custom modifiers are reported as invalid blobs. Local-constant
+modifiers are consumed before the type/value; trailing bytes after an enum's
+encoded type are rejected.
+The shared C++17 result compatibility types can be replaced by `std::expected`
+and `std::unexpected` when C++23 is available; ordinary column reads still use
+their bool/out-parameter shape.
 
 ## Build
 

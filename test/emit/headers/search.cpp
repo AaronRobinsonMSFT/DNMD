@@ -24,14 +24,14 @@ namespace
 
 TEST_F(CppHeader, StandaloneSearch)
 {
-    auto type = dnmd::raw_cursor<mdtid_TypeDef>{Row<mdtid_TypeDef>()}.as();
+    auto type = dnmd::raw_cursor<mdtid_TypeDef>{Row<mdtid_TypeDef>()}.value();
     auto added = dnmd::added_row<mdtid_GenericParam>::append(handle);
     ASSERT_TRUE(added);
     mdToken owner;
     ASSERT_TRUE(type.get_token(owner));
-    ASSERT_TRUE(added.as().set_column_value(dnmd::columns::GenericParam_Owner, owner));
+    ASSERT_TRUE(added.value().set_column_value(dnmd::columns::GenericParam_Owner, owner));
     added.commit();
-    auto first = dnmd::md_create_cursor<mdtid_GenericParam>(handle).as();
+    auto first = dnmd::md_create_cursor<mdtid_GenericParam>(handle).value();
     EXPECT_TRUE(dnmd::md_find_row_from_cursor(first, dnmd::columns::GenericParam_Owner, type));
     dnmd::raw_cursor<mdtid_GenericParam> start = dnmd::raw_cursor<mdtid_GenericParam>::nil(handle);
     uint32_t count;

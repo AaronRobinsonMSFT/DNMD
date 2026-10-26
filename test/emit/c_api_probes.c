@@ -1,6 +1,12 @@
 #include "c_api_probes.h"
 
 extern mdcxt_t* extract_mdcxt(mdhandle_t handle);
+extern uint8_t get_table_column_count(mdtable_id_t table);
+
+uint8_t test_c_column_count(mdtable_id_t table)
+{
+    return get_table_column_count(table);
+}
 
 static bool position(mdhandle_t handle, mdToken token, mdcursor_t* cursor)
 {

@@ -33,7 +33,7 @@ namespace
 
 TEST_F(CppHeader, StandaloneWrite)
 {
-    auto type = dnmd::raw_cursor<mdtid_TypeDef>{Row<mdtid_TypeDef>()}.as();
+    auto type = dnmd::raw_cursor<mdtid_TypeDef>{Row<mdtid_TypeDef>()}.value();
     dnmd::row_writer writer{type};
     ASSERT_TRUE(writer.write(dnmd::columns::TypeDef_Flags, 0x1234));
     ASSERT_TRUE(type.set_column_value(dnmd::columns::TypeDef_TypeName, "Standalone"));
@@ -46,7 +46,7 @@ TEST_F(CppHeader, StandaloneWrite)
 
     auto added = dnmd::added_row<mdtid_GenericParam>::append(handle);
     ASSERT_TRUE(added);
-    auto parameter = added.as();
+    auto parameter = added.value();
     ASSERT_TRUE(parameter.set_column_value(dnmd::columns::GenericParam_Owner, type));
     ASSERT_TRUE(parameter.set_column_value(dnmd::columns::GenericParam_Number, 0));
     added.commit();

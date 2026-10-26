@@ -71,9 +71,10 @@ template<mdtable_id_t TableId>
 struct row_writer final
 {
 private:
+    friend struct detail::row_storage_access;
     cursor<TableId> _cursor;
 
-    template<bool TrackOrder, typename ColumnType>
+    template<bool TrackOrder, bool CheckWidth = false, typename ColumnType>
     bool write_raw(column<TableId, ColumnType> col, uint32_t value) const noexcept
     {
         auto table = detail::CursorTable(_cursor);
@@ -83,6 +84,11 @@ private:
 
         // Heap growth can change both the row layout and its storage.
         auto details = table->column_details[static_cast<uint8_t>(col.column_index)];
+        if constexpr (CheckWidth)
+        {
+            if (!(details & mdtc_b4) && value > UINT16_MAX)
+                return false;
+        }
         data += size_t{detail::CursorRow(_cursor) - 1} * table->row_size_bytes
             + ((static_cast<uint32_t>(details) & mdtc_comask) >> 8);
 #ifdef _MSC_VER

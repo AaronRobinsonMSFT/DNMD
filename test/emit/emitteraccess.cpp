@@ -58,7 +58,7 @@ TEST(CppEmitterAccess, DeleteClassLayoutResolvesDirectAndIndirectFields)
         for (uint32_t i = 0; i < layout_count; ++i, dnmd::md_cursor_next(layouts))
         {
             mdToken parent;
-            ASSERT_TRUE(layouts.as().get_column_value(dnmd::columns::FieldLayout_Field, parent));
+            ASSERT_TRUE(layouts.value().get_column_value(dnmd::columns::FieldLayout_Field, parent));
             EXPECT_NE(first, parent);
             EXPECT_NE(second, parent);
             if (parent == mdFieldDefNil)

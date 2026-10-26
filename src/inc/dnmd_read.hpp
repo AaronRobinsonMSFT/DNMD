@@ -26,6 +26,7 @@ struct row_reader final
 {
 private:
     friend struct cursor<TableId>;
+    friend struct detail::row_storage_access;
     template<mdtable_id_t, typename, typename>
     friend struct column_iterator;
 

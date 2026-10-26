@@ -48,6 +48,8 @@ struct added_row;
 
 namespace detail
 {
+struct row_storage_access;
+
 struct stored_column_value {};
 struct list_boundary_value {};
 

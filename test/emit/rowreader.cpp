@@ -75,7 +75,7 @@ namespace
         dnmd::cursor<TableId> GetRow()
         {
             auto position = dnmd::md_create_cursor<TableId>(handle.get());
-            return position ? position.as() : AppendRow<TableId>();
+            return position ? position.value() : AppendRow<TableId>();
         }
 
         template<mdtable_id_t TableId, typename ColumnType>
@@ -201,8 +201,8 @@ namespace
                     EXPECT_EQ(expected, actual);
                     if (position)
                     {
-                        EXPECT_EQ(handle.get(), position.as().get_handle());
-                        EXPECT_EQ(expected, dnmd_test::Token(position.as()));
+                        EXPECT_EQ(handle.get(), position.value().get_handle());
+                        EXPECT_EQ(expected, dnmd_test::Token(position.value()));
                     }
                 }
                 else
@@ -317,7 +317,7 @@ namespace
             ASSERT_TRUE(owner.get_token(owner_token));
             auto loaded_owner = dnmd::md_token_to_cursor<OwnerTableId>(loaded.get(), owner_token);
             ASSERT_TRUE(loaded_owner);
-            dnmd::row_reader loaded_reader{loaded_owner.as()};
+            dnmd::row_reader loaded_reader{loaded_owner.value()};
             EXPECT_TRUE(loaded_reader.read(list, actual_source));
             EXPECT_EQ(expected_source, actual_source);
 
@@ -586,7 +586,7 @@ TEST_F(CppRowReader, LoadingFlagsIndirectionWithAnEmptyElementTable)
     auto context = dnmd::detail::CursorTable(owner)->cxt;
     EXPECT_EQ(0u, context->tables[mdtid_Field].row_count);
     EXPECT_TRUE(context->tables[mdtid_Field].has_indirect_table);
-    dnmd::row_reader reader{owner.as()};
+    dnmd::row_reader reader{owner.value()};
     dnmd::indirect_cursor<mdtid_Field, mdtid_FieldPtr> field = dnmd::indirect_cursor<mdtid_Field, mdtid_FieldPtr>::nil(loaded.get());
     ASSERT_TRUE(reader.read(TypeDef_FieldList, field));
     EXPECT_FALSE(field);

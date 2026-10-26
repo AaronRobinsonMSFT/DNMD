@@ -30,7 +30,7 @@ protected:
     dnmd::cursor<TableId> Row()
     {
         auto row = dnmd::md_create_cursor<TableId>(handle);
-        return row ? row.as() : dnmd_test::AppendRow<TableId>(handle);
+        return row ? row.value() : dnmd_test::AppendRow<TableId>(handle);
     }
 };
 

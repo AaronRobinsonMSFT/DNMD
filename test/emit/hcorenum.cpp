@@ -20,16 +20,16 @@ namespace
         {
             if constexpr (Owner == mdtid_MethodDef)
             {
-                auto type = dnmd::md_create_cursor<mdtid_TypeDef>(handle.get()).as();
+                auto type = dnmd::md_create_cursor<mdtid_TypeDef>(handle.get()).value();
                 auto added = dnmd::md_add_new_row_to_list(type, dnmd::columns::TypeDef_MethodList);
                 EXPECT_TRUE(added);
-                return added.as();
+                return added.value();
             }
             else
             {
                 auto added = dnmd::added_row<Owner>::append(handle.get());
                 EXPECT_TRUE(added);
-                return added.as();
+                return added.value();
             }
         }
 
@@ -68,9 +68,9 @@ namespace
             ASSERT_EQ(2u, count);
             ASSERT_EQ(Ptr, dnmd::detail::CursorTable(source)->table_id);
             auto pointer_position = dnmd::raw_cursor<Ptr>{source};
-            ASSERT_TRUE(pointer_position.as().set_column_value(dnmd::detail::pointer_column<Ptr>(), expected[0]));
+            ASSERT_TRUE(pointer_position.value().set_column_value(dnmd::detail::pointer_column<Ptr>(), expected[0]));
             ASSERT_TRUE(pointer_position.move(1));
-            ASSERT_TRUE(pointer_position.as().set_column_value(dnmd::detail::pointer_column<Ptr>(), expected[1]));
+            ASSERT_TRUE(pointer_position.value().set_column_value(dnmd::detail::pointer_column<Ptr>(), expected[1]));
             auto enumeration = Enumerator(source, count);
             mdToken tokens[2];
             ULONG read;
@@ -101,7 +101,7 @@ namespace
                 }
             }
 
-            auto pointer = dnmd::raw_cursor<Ptr>{source}.as();
+            auto pointer = dnmd::raw_cursor<Ptr>{source}.value();
             for (mdToken target : targets)
             {
                 ASSERT_TRUE(pointer.set_column_value(dnmd::detail::pointer_column<Ptr>(), target));

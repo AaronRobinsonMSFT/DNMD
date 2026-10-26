@@ -46,7 +46,7 @@ namespace
         {
             auto position = dnmd::md_create_cursor<TableId>(handle.get());
             EXPECT_TRUE(dnmd::md_cursor_move(position, index - 1));
-            return position.as();
+            return position.value();
         }
 
         template<mdtable_id_t TableId>
@@ -59,7 +59,7 @@ namespace
         {
             auto added = dnmd::added_row<mdtid_GenericParam>::append(handle.get());
             ASSERT_TRUE(added);
-            dnmd::row_writer writer{dnmd::raw_cursor<mdtid_GenericParam>{added}.as()};
+            dnmd::row_writer writer{dnmd::raw_cursor<mdtid_GenericParam>{added}.value()};
             ASSERT_TRUE(writer.write(dnmd::columns::GenericParam_Owner, CreateTokenType(mdtid_TypeDef) | owner));
             ASSERT_TRUE(writer.write(dnmd::columns::GenericParam_Number, number));
         }
@@ -70,7 +70,7 @@ namespace
             {
                 auto added = dnmd::added_row<mdtid_ClassLayout>::append(handle.get());
                 ASSERT_TRUE(added);
-                auto row = dnmd::raw_cursor<mdtid_ClassLayout>{added}.as();
+                auto row = dnmd::raw_cursor<mdtid_ClassLayout>{added}.value();
                 ASSERT_TRUE(row.set_column_value(dnmd::columns::ClassLayout_Parent, CreateTokenType(mdtid_TypeDef) | parent));
             }
         }
@@ -80,7 +80,7 @@ namespace
         {
             auto added = dnmd::added_row<mdtid_LocalScope>::append(handle.get());
             ASSERT_TRUE(added);
-            dnmd::row_writer writer{dnmd::raw_cursor<mdtid_LocalScope>{added}.as()};
+            dnmd::row_writer writer{dnmd::raw_cursor<mdtid_LocalScope>{added}.value()};
             ASSERT_TRUE(writer.write(dnmd::columns::LocalScope_Method, CreateTokenType(mdtid_MethodDef) | method));
             ASSERT_TRUE(writer.write(dnmd::columns::LocalScope_StartOffset, start));
             ASSERT_TRUE(writer.write(dnmd::columns::LocalScope_Length, length));
@@ -194,7 +194,7 @@ TEST_F(CppRowSorting, NewRowValidationIsDeferredUntilAllKeysAreInitialized)
     {
         auto added = dnmd::added_row<mdtid_GenericParam>::append(handle.get());
         ASSERT_TRUE(added);
-        auto row = dnmd::raw_cursor<mdtid_GenericParam>{added}.as();
+        auto row = dnmd::raw_cursor<mdtid_GenericParam>{added}.value();
         dnmd::row_writer writer{row};
         auto table = dnmd::detail::CursorTable(row);
         ASSERT_TRUE(writer.write(GenericParam_Owner, CreateTokenType(mdtid_TypeDef) | 1));
@@ -218,7 +218,7 @@ TEST_F(CppRowSorting, InsertedRowCommitChecksBothNeighbors)
         {
             auto added = dnmd::added_row<mdtid_ClassLayout>::insert(Row<mdtid_ClassLayout>(2), false);
             ASSERT_TRUE(added);
-            auto row = dnmd::raw_cursor<mdtid_ClassLayout>{added}.as();
+            auto row = dnmd::raw_cursor<mdtid_ClassLayout>{added}.value();
             ASSERT_TRUE(row.set_column_value(ClassLayout_Parent, CreateTokenType(mdtid_TypeDef) | parent));
             EXPECT_TRUE(Sorted<mdtid_ClassLayout>());
         }
@@ -237,7 +237,7 @@ TEST_F(CppRowSorting, TypedCommitChecksAppendAndPrependEdges)
             ? dnmd::added_row<mdtid_ClassLayout>::append(handle.get())
             : dnmd::added_row<mdtid_ClassLayout>::insert(Row<mdtid_ClassLayout>(), false);
         ASSERT_TRUE(added);
-        auto row = added.as();
+        auto row = added.value();
         ASSERT_TRUE(row.set_column_value(ClassLayout_Parent, CreateTokenType(mdtid_TypeDef) | (append ? 2 : 6)));
         EXPECT_TRUE(Sorted<mdtid_ClassLayout>());
         added.commit();
@@ -276,7 +276,7 @@ TEST_F(CppRowSorting, CodedIndexSortOrderUsesStoredRidAndTagValues)
     {
         auto added = dnmd::added_row<mdtid_CustomAttribute>::append(handle.get());
         ASSERT_TRUE(added);
-        auto row = dnmd::raw_cursor<mdtid_CustomAttribute>{added}.as();
+        auto row = dnmd::raw_cursor<mdtid_CustomAttribute>{added}.value();
         ASSERT_TRUE(row.set_column_value(CustomAttribute_Parent, token));
     }
     ASSERT_TRUE(Sorted<mdtid_CustomAttribute>());
@@ -293,7 +293,7 @@ TEST_F(CppRowSorting, EmptyMovedAndUnkeyedGuards)
     {
         auto added = dnmd::added_row<mdtid_ENCLog>::append(handle.get());
         ASSERT_TRUE(added);
-        auto row = dnmd::raw_cursor<mdtid_ENCLog>{added}.as();
+        auto row = dnmd::raw_cursor<mdtid_ENCLog>{added}.value();
         table = dnmd::detail::CursorTable(row);
         EXPECT_FALSE(table->is_sorted);
         ASSERT_TRUE(row.set_column_value(ENCLog_Token, 0xffffffff));
@@ -312,7 +312,7 @@ TEST_F(CppRowSorting, ConsumingCommitDoesNotFinishANewerPendingRow)
 {
     auto first = dnmd::added_row<mdtid_GenericParam>::append(handle.get());
     ASSERT_TRUE(first);
-    auto row = first.as();
+    auto row = first.value();
     first.commit();
     EXPECT_FALSE(first);
     EXPECT_EQ(handle.get(), first.get_handle());
@@ -329,7 +329,7 @@ TEST_F(CppRowSorting, FailedSecondAcquisitionDoesNotCommitTheFirst)
 {
     auto first = dnmd::added_row<mdtid_GenericParam>::append(handle.get());
     ASSERT_TRUE(first);
-    auto table = dnmd::detail::CursorTable(first.as());
+    auto table = dnmd::detail::CursorTable(first.value());
     {
         auto failed = dnmd::added_row<mdtid_GenericParam>::append(handle.get());
         EXPECT_FALSE(failed);
@@ -354,8 +354,8 @@ TEST_F(CppRowSorting, SelfMoveRetainsOwnershipAndMoveAssignmentCommitsTheDestina
     ASSERT_NO_FATAL_FAILURE(FillLayouts({4}));
     auto destination = dnmd::added_row<mdtid_ClassLayout>::append(handle.get());
     ASSERT_TRUE(destination);
-    ASSERT_TRUE(destination.as().set_column_value(ClassLayout_Parent, CreateTokenType(mdtid_TypeDef) | 2));
-    auto destination_table = dnmd::detail::CursorTable(destination.as());
+    ASSERT_TRUE(destination.value().set_column_value(ClassLayout_Parent, CreateTokenType(mdtid_TypeDef) | 2));
+    auto destination_table = dnmd::detail::CursorTable(destination.value());
     auto& alias = destination;
     destination = std::move(alias);
     EXPECT_TRUE(destination);
@@ -363,7 +363,7 @@ TEST_F(CppRowSorting, SelfMoveRetainsOwnershipAndMoveAssignmentCommitsTheDestina
     EXPECT_TRUE(destination_table->is_sorted);
     auto source = dnmd::added_row<mdtid_ClassLayout>::append(other.get());
     ASSERT_TRUE(source);
-    auto source_table = dnmd::detail::CursorTable(source.as());
+    auto source_table = dnmd::detail::CursorTable(source.value());
     auto token = dnmd_test::Token(source.position());
     destination = std::move(source);
     EXPECT_FALSE(source);
@@ -407,7 +407,7 @@ TEST_F(CppRowSorting, SortedListFactoryInfersTheChildAndInitializesItsSortColumn
         static_assert(std::is_same_v<decltype(added), dnmd::added_row<mdtid_Param>>);
         ASSERT_TRUE(added);
         uint32_t actual;
-        ASSERT_TRUE(added.as().get_column_value(Param_Sequence, &actual));
+        ASSERT_TRUE(added.value().get_column_value(Param_Sequence, &actual));
         EXPECT_EQ(sequence, actual);
     }
     auto parameters = dnmd::indirect_cursor<mdtid_Param, mdtid_ParamPtr>::nil(handle.get());
@@ -418,7 +418,7 @@ TEST_F(CppRowSorting, SortedListFactoryInfersTheChildAndInitializesItsSortColumn
     {
         ASSERT_TRUE(parameters);
         uint32_t actual;
-        ASSERT_TRUE(parameters.as().get_column_value(Param_Sequence, &actual));
+        ASSERT_TRUE(parameters.value().get_column_value(Param_Sequence, &actual));
         EXPECT_EQ(expected, actual);
         ASSERT_TRUE(dnmd::md_cursor_next(parameters));
     }
@@ -435,7 +435,7 @@ TEST_F(CppRowSorting, PointerInsertionFailureFinishesOnlyItsOwnPartialRow)
     auto pending_pointer = dnmd::added_row<mdtid_MethodPtr>::append(handle.get());
     ASSERT_TRUE(pending_pointer);
     auto direct_table = &dnmd::detail::context(handle.get()).tables[mdtid_MethodDef];
-    auto pointer_table = dnmd::detail::CursorTable(pending_pointer.as());
+    auto pointer_table = dnmd::detail::CursorTable(pending_pointer.value());
     auto before = direct_table->row_count;
     {
         auto failed = dnmd::md_add_new_row_to_list(second, TypeDef_MethodList);
@@ -455,7 +455,7 @@ TEST_F(CppRowSorting, InsertAfterFactoryOwnsAndCommitsItsRow)
     auto added = dnmd::added_row<mdtid_ClassLayout>::insert(Row<mdtid_ClassLayout>(), true);
     ASSERT_TRUE(added);
     EXPECT_EQ(CreateTokenType(mdtid_ClassLayout) | 2, dnmd_test::Token(added.position()));
-    ASSERT_TRUE(added.as().set_column_value(ClassLayout_Parent, CreateTokenType(mdtid_TypeDef) | 4));
+    ASSERT_TRUE(added.value().set_column_value(ClassLayout_Parent, CreateTokenType(mdtid_TypeDef) | 4));
     added.commit();
     EXPECT_TRUE(Sorted<mdtid_ClassLayout>());
     EXPECT_EQ(3u, dnmd::detail::CursorTable(Row<mdtid_ClassLayout>())->row_count);
@@ -482,11 +482,11 @@ TEST_F(CppRowSorting, CompositeSortedStateRoundTripsAndDrivesPrimaryRanges)
     EXPECT_TRUE(dnmd::detail::CursorTable(first)->is_sorted);
     dnmd::raw_cursor<mdtid_GenericParam> start = dnmd::raw_cursor<mdtid_GenericParam>::nil(loaded.get());
     uint32_t count;
-    ASSERT_EQ(dnmd::range_result::found, dnmd::md_find_range_from_cursor(first.as(), GenericParam_Owner,
+    ASSERT_EQ(dnmd::range_result::found, dnmd::md_find_range_from_cursor(first.value(), GenericParam_Owner,
         CreateTokenType(mdtid_TypeDef) | 1, start, &count));
     EXPECT_EQ(2u, count);
     EXPECT_EQ(1u, dnmd::detail::CursorRow(start));
-    EXPECT_EQ(dnmd::range_result::not_supported, dnmd::md_find_range_from_cursor(first.as(), GenericParam_Number,
+    EXPECT_EQ(dnmd::range_result::not_supported, dnmd::md_find_range_from_cursor(first.value(), GenericParam_Number,
         10, start, &count));
     EXPECT_EQ(2u, count);
 }
@@ -518,7 +518,7 @@ TEST_F(CppRowSorting, DescendingScopeCommitChecksBothNeighbors)
         {
             auto added = dnmd::added_row<mdtid_LocalScope>::insert(Row<mdtid_LocalScope>(2), false);
             ASSERT_TRUE(added);
-            dnmd::row_writer writer{dnmd::raw_cursor<mdtid_LocalScope>{added}.as()};
+            dnmd::row_writer writer{dnmd::raw_cursor<mdtid_LocalScope>{added}.value()};
             ASSERT_TRUE(writer.write(LocalScope_Method, CreateTokenType(mdtid_MethodDef) | 1));
             ASSERT_TRUE(writer.write(LocalScope_StartOffset, 10));
             ASSERT_TRUE(writer.write(LocalScope_Length, length));

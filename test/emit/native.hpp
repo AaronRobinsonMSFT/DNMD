@@ -31,7 +31,7 @@ namespace dnmd_test
     {
         auto added = dnmd::added_row<TableId>::append(handle);
         EXPECT_TRUE(added);
-        auto row = added.as();
+        auto row = added.value();
         added.commit();
         return row;
     }
@@ -42,7 +42,7 @@ namespace dnmd_test
     {
         auto added = dnmd::md_add_new_row_to_list(owner, column);
         EXPECT_TRUE(added);
-        auto row = added.as();
+        auto row = added.value();
         added.commit();
         return row;
     }
@@ -54,7 +54,7 @@ namespace dnmd_test
         auto added = dnmd::added_row<Direct>::in_list(
             owner, column.column_index, false, column.column_index, 0);
         EXPECT_TRUE(added);
-        auto row = added.as();
+        auto row = added.value();
         added.commit();
         return row;
     }

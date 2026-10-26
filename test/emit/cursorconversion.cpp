@@ -42,14 +42,14 @@ namespace
         {
             auto added = dnmd::added_row<mdtid_TypeDef>::append(handle.get());
             EXPECT_TRUE(added);
-            return added.as();
+            return added.value();
         }
 
         dnmd::cursor<mdtid_MethodDef> AddMethod(dnmd::cursor<mdtid_TypeDef> owner)
         {
             auto added = dnmd::md_add_new_row_to_list(owner, dnmd::columns::TypeDef_MethodList);
             EXPECT_TRUE(added);
-            return added.as();
+            return added.value();
         }
     };
 }

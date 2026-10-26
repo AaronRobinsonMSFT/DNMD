@@ -19,7 +19,7 @@ TEST_F(CppHeader, ExplicitRowGuardCommits)
 {
     auto added = dnmd::added_row<mdtid_ClassLayout>::append(handle);
     ASSERT_TRUE(added);
-    auto row = added.as();
+    auto row = added.value();
     dnmd::raw_cursor<mdtid_ClassLayout> live{added};
     dnmd::raw_cursor<mdtid_Module> mismatch{added};
     EXPECT_TRUE(live);
@@ -43,7 +43,7 @@ TEST_F(CppHeader, MixedIncludeOrderAndUmbrellaLifetimeWrappers)
     {
         auto added = dnmd::added_row<mdtid_ClassLayout>::append(owned.get());
         ASSERT_TRUE(added);
-        auto row = added.as();
+        auto row = added.value();
         dnmd::row_writer writer{row};
         ASSERT_TRUE(writer.write(dnmd::columns::ClassLayout_Parent, CreateTokenType(mdtid_TypeDef) | 1));
         ASSERT_TRUE(row.set_column_value(dnmd::columns::ClassLayout_ClassSize, 32));
@@ -51,7 +51,7 @@ TEST_F(CppHeader, MixedIncludeOrderAndUmbrellaLifetimeWrappers)
     auto position = dnmd::md_create_cursor<mdtid_ClassLayout>(owned.get());
     ASSERT_TRUE(position);
     EXPECT_FALSE(dnmd::detail::CursorTable(position)->is_adding_new_row);
-    EXPECT_TRUE(dnmd::md_find_row_from_cursor(position.as(), dnmd::columns::ClassLayout_Parent,
+    EXPECT_TRUE(dnmd::md_find_row_from_cursor(position.value(), dnmd::columns::ClassLayout_Parent,
         CreateTokenType(mdtid_TypeDef) | 1));
 }
 

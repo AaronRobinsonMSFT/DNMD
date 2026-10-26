@@ -10,7 +10,7 @@ namespace
     struct has_as : std::false_type {};
 
     template<typename T>
-    struct has_as<T, std::void_t<decltype(std::declval<T const&>().as())>> : std::true_type {};
+    struct has_as<T, std::void_t<decltype(std::declval<T const&>().value())>> : std::true_type {};
 
     template<typename T, typename = void>
     struct can_advance : std::false_type {};
@@ -41,8 +41,8 @@ namespace
     static_assert(!can_advance<type_row>::value);
     static_assert(can_advance<type_position>::value);
     static_assert(can_advance<method_position>::value);
-    static_assert(std::is_same_v<decltype(std::declval<type_position>().as()), type_row>);
-    static_assert(std::is_same_v<decltype(std::declval<method_position>().as()), dnmd::cursor<mdtid_MethodDef>>);
+    static_assert(std::is_same_v<decltype(std::declval<type_position>().value()), type_row>);
+    static_assert(std::is_same_v<decltype(std::declval<method_position>().value()), dnmd::cursor<mdtid_MethodDef>>);
     using type_reader = dnmd::row_reader<mdtid_TypeDef>;
     static_assert(!std::is_default_constructible_v<type_reader>);
     static_assert(std::is_trivially_copyable_v<type_reader>);
@@ -67,15 +67,15 @@ namespace
             auto added = dnmd::added_row<mdtid_TypeDef>::append(handle.get());
             ASSERT_TRUE(added);
             row = added.position();
-            ASSERT_TRUE(row.as().set_column_value(dnmd::columns::TypeDef_TypeName, name));
+            ASSERT_TRUE(row.value().set_column_value(dnmd::columns::TypeDef_TypeName, name));
             added.commit();
         }
 
         void AddMethod(type_position owner, char const* name)
         {
-            auto added = dnmd::md_add_new_row_to_list(owner.as(), dnmd::columns::TypeDef_MethodList);
+            auto added = dnmd::md_add_new_row_to_list(owner.value(), dnmd::columns::TypeDef_MethodList);
             ASSERT_TRUE(added);
-            ASSERT_TRUE(added.as().set_column_value(dnmd::columns::MethodDef_Name, name));
+            ASSERT_TRUE(added.value().set_column_value(dnmd::columns::MethodDef_Name, name));
             added.commit();
         }
 
@@ -159,7 +159,7 @@ TEST_F(CppCursor, CreateCursorWithoutCount)
     static_assert(noexcept(dnmd::md_create_cursor<mdtid_TypeDef>(nullptr)));
     ASSERT_TRUE(position);
     char const* name;
-    ASSERT_TRUE(position.as().get_column_value(TypeDef_TypeName, &name));
+    ASSERT_TRUE(position.value().get_column_value(TypeDef_TypeName, &name));
     EXPECT_STREQ("<Module>", name);
 
     EXPECT_FALSE(dnmd::md_create_cursor<mdtid_MethodDef>(handle.get()));
@@ -171,7 +171,7 @@ TEST_F(CppCursor, RawRowAndEndPositions)
     auto position = dnmd::md_create_cursor<mdtid_TypeDef>(handle.get(), &count);
     ASSERT_TRUE(position);
     ASSERT_EQ(1u, count);
-    auto row = position.as();
+    auto row = position.value();
 
     char const* name;
     ASSERT_TRUE(row.get_column_value(TypeDef_TypeName, &name));
@@ -190,7 +190,7 @@ TEST_F(CppCursor, RawRowAndEndPositions)
     int visits = 0;
     EXPECT_FALSE(position.visit([&](auto) { ++visits; }));
     EXPECT_EQ(0, visits);
-    auto narrowed_end = position.get_as<mdtid_TypeDef>();
+    auto narrowed_end = position.as<mdtid_TypeDef>();
     EXPECT_FALSE(narrowed_end);
     ASSERT_TRUE(narrowed_end.get_token(token));
     EXPECT_EQ(CreateTokenType(mdtid_TypeDef) | 2, token);
@@ -207,13 +207,13 @@ TEST_F(CppCursor, RawNilAndEndReferences)
     auto position = dnmd::md_create_cursor<mdtid_TypeDef>(handle.get(), &count);
     ASSERT_TRUE(position);
     type_reference reference = type_reference::nil(handle.get());
-    ASSERT_TRUE(position.as().get_column_value(TypeDef_Extends, reference));
+    ASSERT_TRUE(position.value().get_column_value(TypeDef_Extends, reference));
     EXPECT_FALSE(reference);
 
     mdToken token;
     ASSERT_TRUE(reference.get_token(token));
     EXPECT_EQ(CreateTokenType(mdtid_TypeDef), token);
-    auto nil = reference.get_as<mdtid_TypeDef>();
+    auto nil = reference.as<mdtid_TypeDef>();
     EXPECT_FALSE(nil);
     ASSERT_TRUE(nil.get_token(token));
     EXPECT_EQ(CreateTokenType(mdtid_TypeDef), token);
@@ -227,8 +227,8 @@ TEST_F(CppCursor, RawNilAndEndReferences)
     EXPECT_EQ(0, visits);
 
     mdToken end_token = CreateTokenType(mdtid_TypeDef) | (count + 1);
-    ASSERT_TRUE(position.as().set_column_value(TypeDef_Extends, end_token));
-    ASSERT_TRUE(position.as().get_column_value(TypeDef_Extends, reference));
+    ASSERT_TRUE(position.value().set_column_value(TypeDef_Extends, end_token));
+    ASSERT_TRUE(position.value().get_column_value(TypeDef_Extends, reference));
     EXPECT_FALSE(reference);
     ASSERT_TRUE(reference.get_token(token));
     EXPECT_EQ(end_token, token);
@@ -243,11 +243,11 @@ TEST_F(CppCursor, NarrowingAndVisitingRows)
     ASSERT_TRUE(position);
     type_reference reference{position};
 
-    EXPECT_FALSE(reference.get_as<mdtid_TypeRef>());
-    auto narrowed = reference.get_as<mdtid_TypeDef>();
+    EXPECT_FALSE(reference.as<mdtid_TypeRef>());
+    auto narrowed = reference.as<mdtid_TypeDef>();
     ASSERT_TRUE(narrowed);
     char const* name;
-    ASSERT_TRUE(narrowed.as().get_column_value(TypeDef_TypeName, &name));
+    ASSERT_TRUE(narrowed.value().get_column_value(TypeDef_TypeName, &name));
     EXPECT_STREQ("<Module>", name);
 
     int visits = 0;
@@ -263,8 +263,8 @@ TEST_F(CppCursor, TokenFactoriesAndValidation)
     mdToken token = CreateTokenType(mdtid_TypeDef) | 1;
     auto position = dnmd::md_token_to_cursor<mdtid_TypeDef, mdtid_TypeRef>(handle.get(), token);
     ASSERT_TRUE(position);
-    EXPECT_TRUE(position.get_as<mdtid_TypeDef>());
-    EXPECT_FALSE(position.get_as<mdtid_TypeRef>());
+    EXPECT_TRUE(position.as<mdtid_TypeDef>());
+    EXPECT_FALSE(position.as<mdtid_TypeRef>());
     EXPECT_TRUE(dnmd::md_is_valid_token(handle.get(), token));
     EXPECT_FALSE(dnmd::md_is_valid_token(handle.get(), CreateTokenType(mdtid_TypeDef)));
     EXPECT_FALSE(dnmd::md_is_valid_token(nullptr, token));
@@ -276,7 +276,7 @@ TEST_F(CppCursor, ReadContextWidths)
 {
     auto type = type_position::nil(handle.get());
     ASSERT_NO_FATAL_FAILURE(AddType("Reader", type));
-    auto row = type_position{type}.as();
+    auto row = type_position{type}.value();
     ASSERT_TRUE(row.set_column_value(TypeDef_Flags, 0x89abcdef));
     dnmd::row_reader<mdtid_TypeDef> reader{row};
     uint32_t value;
@@ -291,7 +291,7 @@ TEST_F(CppCursor, ReadContextWidths)
     ASSERT_TRUE(reader.read(TypeDef_TypeName, &name));
     EXPECT_STREQ("Reader", name);
 
-    auto field_row = dnmd_test::AddListRow(type.as(), TypeDef_FieldList);
+    auto field_row = dnmd_test::AddListRow(type.value(), TypeDef_FieldList);
     ASSERT_TRUE(field_row.set_column_value(Field_Flags, 0x1234));
     dnmd::row_reader<mdtid_Field> field_reader{field_row};
     EXPECT_TRUE(ColumnDetails(field_row, Field_Flags) & mdtc_b2);
@@ -301,7 +301,7 @@ TEST_F(CppCursor, ReadContextWidths)
 
 TEST_F(CppCursor, ReadContextHeapBounds)
 {
-    auto module = dnmd::md_create_cursor<mdtid_Module>(handle.get()).as();
+    auto module = dnmd::md_create_cursor<mdtid_Module>(handle.get()).value();
     ASSERT_TRUE(module.set_column_value(Module_Name, "Reader.dll"));
     dnmd::row_reader<mdtid_Module> reader{module};
     char const* name;
@@ -351,7 +351,7 @@ TEST_F(CppCursor, ReadContextReferenceValidation)
 
 TEST_F(CppCursor, ReadContextLargeHeapIndices)
 {
-    auto module = dnmd::md_create_cursor<mdtid_Module>(handle.get()).as();
+    auto module = dnmd::md_create_cursor<mdtid_Module>(handle.get()).value();
     std::string large_name(70000, 'x');
     ASSERT_TRUE(module.set_column_value(Module_Name, large_name.c_str()));
     ASSERT_TRUE(module.set_column_value(Module_Name, "AfterLargeString"));
@@ -381,47 +381,47 @@ TEST_F(CppCursor, ReadContextRangeGapsAndDescendingBounds)
     ASSERT_NO_FATAL_FAILURE(AddIndirectMethods(first));
     auto last = type_position::nil(handle.get());
     ASSERT_NO_FATAL_FAILURE(AddType("Last", last));
-    auto first_row = type_position{first}.as();
-    auto middle = dnmd::md_token_to_cursor<mdtid_TypeDef>(handle.get(), CreateTokenType(mdtid_TypeDef) | 3).as();
+    auto first_row = type_position{first}.value();
+    auto middle = dnmd::md_token_to_cursor<mdtid_TypeDef>(handle.get(), CreateTokenType(mdtid_TypeDef) | 3).value();
     CorruptColumn(middle, TypeDef_MethodList, 0);
     method_position range = method_position::nil(handle.get());
     uint32_t count;
     ASSERT_TRUE(first_row.get_column_value_as_range(TypeDef_MethodList, range, &count));
     EXPECT_EQ(3u, count);
     CorruptColumn(first_row, TypeDef_MethodList, 2);
-    CorruptColumn(type_position{last}.as(), TypeDef_MethodList, 1);
+    CorruptColumn(type_position{last}.value(), TypeDef_MethodList, 1);
     EXPECT_FALSE(first_row.get_column_value_as_range(TypeDef_MethodList, range, &count));
 }
 
 TEST_F(CppCursor, ReadContextBulkLimits)
 {
-    auto owner = dnmd::md_create_cursor<mdtid_TypeDef>(handle.get()).as();
+    auto owner = dnmd::md_create_cursor<mdtid_TypeDef>(handle.get()).value();
     for (uint32_t i = 0; i < 130; ++i)
     {
         auto added = dnmd::added_row<mdtid_MemberRef>::append(handle.get());
         ASSERT_TRUE(added);
-        ASSERT_TRUE(added.as().set_column_value(MemberRef_Class, owner));
+        ASSERT_TRUE(added.value().set_column_value(MemberRef_Class, owner));
         added.commit();
     }
     auto rows = dnmd::md_create_cursor<mdtid_MemberRef>(handle.get());
     ASSERT_TRUE(rows);
     std::array<mdToken, 66> values;
     values.fill(0x12345678);
-    ASSERT_EQ(64, rows.as().get_column_values(MemberRef_Class, 64, values.data()));
+    ASSERT_EQ(64, rows.value().get_column_values(MemberRef_Class, 64, values.data()));
     EXPECT_TRUE(std::all_of(values.begin(), values.begin() + 64,
         [](mdToken value) { return value == (CreateTokenType(mdtid_TypeDef) | 1); }));
     EXPECT_EQ(0x12345678u, values[64]);
     ASSERT_TRUE(dnmd::md_cursor_move(rows, 129));
     values.fill(0x12345678);
-    ASSERT_EQ(1, rows.as().get_column_values(MemberRef_Class, 64, values.data()));
+    ASSERT_EQ(1, rows.value().get_column_values(MemberRef_Class, 64, values.data()));
     EXPECT_EQ(CreateTokenType(mdtid_TypeDef) | 1, values[0]);
     EXPECT_EQ(0x12345678u, values[1]);
-    EXPECT_EQ(0, rows.as().get_column_values(MemberRef_Class, 0, nullptr));
+    EXPECT_EQ(0, rows.value().get_column_values(MemberRef_Class, 0, nullptr));
 }
 
 TEST_F(CppCursor, WriteScalarColumns)
 {
-    auto const module = dnmd::md_create_cursor<mdtid_Module>(handle.get()).as();
+    auto const module = dnmd::md_create_cursor<mdtid_Module>(handle.get()).value();
     ASSERT_TRUE(module.set_column_value(Module_Name, "Written.dll"));
     char const* name;
     ASSERT_TRUE(module.get_column_value(Module_Name, &name));
@@ -438,7 +438,7 @@ TEST_F(CppCursor, WriteScalarColumns)
 
     auto type = type_position::nil(handle.get());
     ASSERT_NO_FATAL_FAILURE(AddType("WrittenType", type));
-    auto row = type_position{type}.as();
+    auto row = type_position{type}.value();
     ASSERT_TRUE(row.set_column_value(TypeDef_Flags, tdPublic));
     uint32_t flags;
     ASSERT_TRUE(row.get_column_value(TypeDef_Flags, &flags));
@@ -468,11 +468,11 @@ TEST_F(CppCursor, WriteReferenceColumns)
     auto derived = type_position::nil(handle.get());
     ASSERT_NO_FATAL_FAILURE(AddType("Base", base));
     ASSERT_NO_FATAL_FAILURE(AddType("Derived", derived));
-    auto row = type_position{derived}.as();
+    auto row = type_position{derived}.value();
     auto base_position = type_position{base};
     mdToken base_token;
     ASSERT_TRUE(base_position.get_token(base_token));
-    ASSERT_TRUE(row.set_column_value(TypeDef_Extends, base_position.as()));
+    ASSERT_TRUE(row.set_column_value(TypeDef_Extends, base_position.value()));
     mdToken actual;
     ASSERT_TRUE(row.get_column_value(TypeDef_Extends, actual));
     EXPECT_EQ(base_token, actual);
@@ -487,7 +487,7 @@ TEST_F(CppCursor, WriteReferenceColumns)
     type_reference nil = type_reference::nil(handle.get());
     ASSERT_TRUE(row.get_column_value(TypeDef_Extends, nil));
     EXPECT_FALSE(nil);
-    ASSERT_TRUE(row.set_column_value(TypeDef_Extends, nil.get_as<mdtid_TypeDef>()));
+    ASSERT_TRUE(row.set_column_value(TypeDef_Extends, nil.as<mdtid_TypeDef>()));
     ASSERT_TRUE(row.get_column_value(TypeDef_Extends, actual));
     EXPECT_EQ(CreateTokenType(mdtid_TypeDef), actual);
     ASSERT_TRUE(row.set_column_value(TypeDef_Extends, dnmd::raw_cursor<mdtid_TypeRef>::nil(handle.get())));
@@ -502,15 +502,15 @@ TEST_F(CppCursor, WriteDirectListPositions)
     ASSERT_NO_FATAL_FAILURE(AddType("Owner", owner));
     ASSERT_NO_FATAL_FAILURE(AddMethod(owner, "Method"));
     ASSERT_NO_FATAL_FAILURE(AddType("Empty", empty));
-    auto row = type_position{owner}.as();
-    auto empty_row = type_position{empty}.as();
+    auto row = type_position{owner}.value();
+    auto empty_row = type_position{empty}.value();
     method_position first = method_position::nil(handle.get());
     method_position end = method_position::nil(handle.get());
     ASSERT_TRUE(row.get_column_value(TypeDef_MethodList, first));
     ASSERT_TRUE(empty_row.get_column_value(TypeDef_MethodList, end));
     ASSERT_TRUE(first);
     EXPECT_FALSE(end);
-    ASSERT_TRUE(row.set_column_value(TypeDef_MethodList, first.as()));
+    ASSERT_TRUE(row.set_column_value(TypeDef_MethodList, first.value()));
     ASSERT_TRUE(row.set_column_value(TypeDef_MethodList,
         dnmd::raw_cursor<mdtid_MethodDef>{first}));
     ASSERT_TRUE(empty_row.set_column_value(TypeDef_MethodList, end));
@@ -539,7 +539,7 @@ TEST_F(CppCursor, WriteIndirectSourcesAndTargets)
 {
     auto owner = type_position::nil(handle.get());
     ASSERT_NO_FATAL_FAILURE(AddIndirectMethods(owner));
-    auto row = type_position{owner}.as();
+    auto row = type_position{owner}.value();
     method_position methods = method_position::nil(handle.get());
     ASSERT_TRUE(row.get_column_value(TypeDef_MethodList, methods));
     ASSERT_TRUE(methods);
@@ -552,7 +552,7 @@ TEST_F(CppCursor, WriteIndirectSourcesAndTargets)
     ASSERT_TRUE(row.set_column_value(TypeDef_MethodList,
         dnmd::raw_cursor<mdtid_MethodDef, mdtid_MethodPtr>{methods}));
     ASSERT_TRUE(row.set_column_value(TypeDef_MethodList,
-        dnmd::raw_cursor<mdtid_MethodPtr>{methods}.as()));
+        dnmd::raw_cursor<mdtid_MethodPtr>{methods}.value()));
     method_position read = method_position::nil(handle.get());
     ASSERT_TRUE(row.get_column_value(TypeDef_MethodList, read));
     mdToken token;
@@ -561,10 +561,10 @@ TEST_F(CppCursor, WriteIndirectSourcesAndTargets)
 
     auto implementation = dnmd::added_row<mdtid_MethodImpl>::append(handle.get());
     ASSERT_TRUE(implementation);
-    auto impl = implementation.as();
+    auto impl = implementation.value();
     ASSERT_TRUE(impl.set_column_value(MethodImpl_Class, row));
     ASSERT_TRUE(impl.set_column_value(MethodImpl_MethodBody, methods));
-    ASSERT_TRUE(impl.set_column_value(MethodImpl_MethodDeclaration, methods.as()));
+    ASSERT_TRUE(impl.set_column_value(MethodImpl_MethodDeclaration, methods.value()));
     implementation.commit();
     ASSERT_TRUE(impl.get_column_value(MethodImpl_MethodBody, token));
     EXPECT_EQ(target, token);
@@ -607,7 +607,7 @@ TEST_F(CppCursor, DirectListPositions)
     auto type = dnmd::md_create_cursor<mdtid_TypeDef>(handle.get(), &count);
     ASSERT_TRUE(type);
     method_position methods = method_position::nil(handle.get());
-    ASSERT_TRUE(type.as().get_column_value_as_range(TypeDef_MethodList, methods, &count));
+    ASSERT_TRUE(type.value().get_column_value_as_range(TypeDef_MethodList, methods, &count));
     EXPECT_EQ(0u, count);
     EXPECT_FALSE(methods);
 
@@ -619,14 +619,14 @@ TEST_F(CppCursor, DirectListPositions)
     EXPECT_EQ(source_token, target_token);
 
     ASSERT_NO_FATAL_FAILURE(AddMethod(type, "Method"));
-    ASSERT_TRUE(type.as().get_column_value_as_range(TypeDef_MethodList, methods, &count));
+    ASSERT_TRUE(type.value().get_column_value_as_range(TypeDef_MethodList, methods, &count));
     ASSERT_EQ(1u, count);
     ASSERT_TRUE(methods);
     char const* name;
-    ASSERT_TRUE(methods.as().get_column_value(MethodDef_Name, &name));
+    ASSERT_TRUE(methods.value().get_column_value(MethodDef_Name, &name));
     EXPECT_STREQ("Method", name);
     mdToken owner;
-    ASSERT_TRUE(methods.as().get_parent_token(owner));
+    ASSERT_TRUE(methods.value().get_parent_token(owner));
     EXPECT_EQ(CreateTokenType(mdtid_TypeDef) | 1, owner);
 
     ASSERT_TRUE(dnmd::md_cursor_next(methods));
@@ -644,7 +644,7 @@ TEST_F(CppCursor, IndirectTargetsAreCachedAndRefreshedOnMovement)
 {
     auto first_type = type_position::nil(handle.get());
     ASSERT_NO_FATAL_FAILURE(AddIndirectMethods(first_type));
-    auto type = type_position{first_type}.as();
+    auto type = type_position{first_type}.value();
     method_position methods = method_position::nil(handle.get());
     uint32_t count;
     ASSERT_TRUE(type.get_column_value_as_range(TypeDef_MethodList, methods, &count));
@@ -663,11 +663,11 @@ TEST_F(CppCursor, IndirectTargetsAreCachedAndRefreshedOnMovement)
 
     auto pointer = dnmd::raw_cursor<mdtid_MethodPtr>{methods};
     ASSERT_TRUE(pointer);
-    ASSERT_TRUE(pointer.as().set_column_value(dnmd::detail::pointer_column<mdtid_MethodPtr>(),
+    ASSERT_TRUE(pointer.value().set_column_value(dnmd::detail::pointer_column<mdtid_MethodPtr>(),
         CreateTokenType(mdtid_MethodDef) | 2));
     ASSERT_TRUE(methods.get_target_token(target_token));
     EXPECT_EQ(cached_token, target_token);
-    ASSERT_TRUE(methods.as().get_token(target_token));
+    ASSERT_TRUE(methods.value().get_token(target_token));
     EXPECT_EQ(cached_token, target_token);
 
     method_position refreshed{methods};
@@ -692,9 +692,9 @@ TEST_F(CppCursor, NilIndirectionPosition)
 {
     auto first_type = type_position::nil(handle.get());
     ASSERT_NO_FATAL_FAILURE(AddIndirectMethods(first_type));
-    ASSERT_TRUE(first_type.as().set_column_value(TypeDef_MethodList, CreateTokenType(mdtid_MethodPtr)));
+    ASSERT_TRUE(first_type.value().set_column_value(TypeDef_MethodList, CreateTokenType(mdtid_MethodPtr)));
     method_position methods = method_position::nil(handle.get());
-    ASSERT_TRUE(type_position{first_type}.as().get_column_value(TypeDef_MethodList, methods));
+    ASSERT_TRUE(type_position{first_type}.value().get_column_value(TypeDef_MethodList, methods));
     EXPECT_FALSE(methods);
 
     mdToken token;
@@ -713,13 +713,13 @@ TEST_F(CppCursor, IndirectionToNilEndAndInvalidRows)
     auto first_type = type_position::nil(handle.get());
     ASSERT_NO_FATAL_FAILURE(AddIndirectMethods(first_type));
     method_position methods = method_position::nil(handle.get());
-    ASSERT_TRUE(type_position{first_type}.as().get_column_value(TypeDef_MethodList, methods));
+    ASSERT_TRUE(type_position{first_type}.value().get_column_value(TypeDef_MethodList, methods));
     ASSERT_TRUE(methods);
     auto source = dnmd::raw_cursor<mdtid_MethodDef, mdtid_MethodPtr>{methods};
-    auto pointer = source.get_as<mdtid_MethodPtr>();
+    auto pointer = source.as<mdtid_MethodPtr>();
     ASSERT_TRUE(pointer);
 
-    ASSERT_TRUE(pointer.as().set_column_value(dnmd::detail::pointer_column<mdtid_MethodPtr>(),
+    ASSERT_TRUE(pointer.value().set_column_value(dnmd::detail::pointer_column<mdtid_MethodPtr>(),
         CreateTokenType(mdtid_MethodDef)));
     methods = method_position{source};
     EXPECT_FALSE(methods);
@@ -727,14 +727,14 @@ TEST_F(CppCursor, IndirectionToNilEndAndInvalidRows)
     ASSERT_TRUE(methods.get_target_token(token));
     EXPECT_EQ(CreateTokenType(mdtid_MethodDef), token);
 
-    ASSERT_TRUE(pointer.as().set_column_value(dnmd::detail::pointer_column<mdtid_MethodPtr>(),
+    ASSERT_TRUE(pointer.value().set_column_value(dnmd::detail::pointer_column<mdtid_MethodPtr>(),
         CreateTokenType(mdtid_MethodDef) | 4));
     methods = method_position{source};
     EXPECT_FALSE(methods);
     ASSERT_TRUE(methods.get_target_token(token));
     EXPECT_EQ(CreateTokenType(mdtid_MethodDef) | 4, token);
 
-    ASSERT_TRUE(pointer.as().set_column_value(dnmd::detail::pointer_column<mdtid_MethodPtr>(),
+    ASSERT_TRUE(pointer.value().set_column_value(dnmd::detail::pointer_column<mdtid_MethodPtr>(),
         CreateTokenType(mdtid_MethodDef) | 100));
     methods = method_position{source};
     EXPECT_FALSE(methods);
@@ -750,46 +750,46 @@ TEST_F(CppCursor, FindRowsReturnsTheSearchedTable)
     uint32_t count;
     auto types = dnmd::md_create_cursor<mdtid_TypeDef>(handle.get(), &count);
     ASSERT_TRUE(types);
-    auto constant_match = dnmd::md_find_row_from_cursor(types.as(), TypeDef_Flags, 0);
+    auto constant_match = dnmd::md_find_row_from_cursor(types.value(), TypeDef_Flags, 0);
     EXPECT_TRUE(constant_match);
-    EXPECT_FALSE(dnmd::md_find_row_from_cursor(types.as(), TypeDef_Flags, 0x12345678));
+    EXPECT_FALSE(dnmd::md_find_row_from_cursor(types.value(), TypeDef_Flags, 0x12345678));
 
     auto child = type_position::nil(handle.get());
     ASSERT_NO_FATAL_FAILURE(AddType("Child", child));
     auto nested = dnmd::added_row<mdtid_NestedClass>::append(handle.get());
     ASSERT_TRUE(nested);
-    ASSERT_TRUE(nested.as().set_column_value(NestedClass_NestedClass, child));
-    ASSERT_TRUE(nested.as().set_column_value(NestedClass_EnclosingClass, types));
+    ASSERT_TRUE(nested.value().set_column_value(NestedClass_NestedClass, child));
+    ASSERT_TRUE(nested.value().set_column_value(NestedClass_EnclosingClass, types));
     nested.commit();
 
     auto rows = dnmd::md_create_cursor<mdtid_NestedClass>(handle.get(), &count);
     ASSERT_TRUE(rows);
     mdToken child_token;
     ASSERT_TRUE(child.get_token(child_token));
-    auto match = dnmd::md_find_row_from_cursor(rows.as(), NestedClass_NestedClass, child_token);
+    auto match = dnmd::md_find_row_from_cursor(rows.value(), NestedClass_NestedClass, child_token);
     static_assert(std::is_same_v<decltype(match), dnmd::raw_cursor<mdtid_NestedClass>>);
     ASSERT_TRUE(match);
     type_position enclosing = type_position::nil(handle.get());
-    ASSERT_TRUE(match.as().get_column_value(NestedClass_EnclosingClass, enclosing));
+    ASSERT_TRUE(match.value().get_column_value(NestedClass_EnclosingClass, enclosing));
     ASSERT_TRUE(enclosing);
     mdToken token;
     ASSERT_TRUE(enclosing.get_token(token));
     EXPECT_EQ(CreateTokenType(mdtid_TypeDef) | 1, token);
-    EXPECT_TRUE(dnmd::md_find_row_from_cursor(rows.as(), NestedClass_NestedClass, type_position{child}.as()));
-    EXPECT_FALSE(dnmd::md_find_row_from_cursor(rows.as(), NestedClass_NestedClass, CreateTokenType(mdtid_TypeDef) | 100));
-    EXPECT_FALSE(dnmd::md_find_row_from_cursor(rows.as(), NestedClass_NestedClass, CreateTokenType(mdtid_MethodDef) | 2));
+    EXPECT_TRUE(dnmd::md_find_row_from_cursor(rows.value(), NestedClass_NestedClass, type_position{child}.value()));
+    EXPECT_FALSE(dnmd::md_find_row_from_cursor(rows.value(), NestedClass_NestedClass, CreateTokenType(mdtid_TypeDef) | 100));
+    EXPECT_FALSE(dnmd::md_find_row_from_cursor(rows.value(), NestedClass_NestedClass, CreateTokenType(mdtid_MethodDef) | 2));
 
     dnmd::raw_cursor<mdtid_NestedClass> range = dnmd::raw_cursor<mdtid_NestedClass>::nil(handle.get());
-    ASSERT_EQ(dnmd::range_result::found, dnmd::md_find_range_from_cursor(rows.as(), NestedClass_NestedClass, child_token, range, &count));
+    ASSERT_EQ(dnmd::range_result::found, dnmd::md_find_range_from_cursor(rows.value(), NestedClass_NestedClass, child_token, range, &count));
     EXPECT_EQ(1u, count);
     ASSERT_TRUE(range);
-    EXPECT_EQ(dnmd::range_result::not_found, dnmd::md_find_range_from_cursor(rows.as(), NestedClass_NestedClass,
+    EXPECT_EQ(dnmd::range_result::not_found, dnmd::md_find_range_from_cursor(rows.value(), NestedClass_NestedClass,
         CreateTokenType(mdtid_TypeDef) | 100, range, &count));
-    EXPECT_EQ(dnmd::range_result::not_found, dnmd::md_find_range_from_cursor(rows.as(), NestedClass_NestedClass,
+    EXPECT_EQ(dnmd::range_result::not_found, dnmd::md_find_range_from_cursor(rows.value(), NestedClass_NestedClass,
         CreateTokenType(mdtid_MethodDef) | 2, range, &count));
 
     mdToken tokens[2] = {mdTokenNil, 0x12345678};
-    ASSERT_EQ(1, rows.as().get_column_values(NestedClass_NestedClass, 2, tokens));
+    ASSERT_EQ(1, rows.value().get_column_values(NestedClass_NestedClass, 2, tokens));
     EXPECT_EQ(child_token, tokens[0]);
     EXPECT_EQ(0x12345678u, tokens[1]);
 }
@@ -798,7 +798,7 @@ TEST_F(CppCursor, FindCodedIndexRows)
 {
     auto reference = dnmd::added_row<mdtid_TypeRef>::append(handle.get());
     ASSERT_TRUE(reference);
-    ASSERT_TRUE(reference.as().set_column_value(TypeRef_ResolutionScope, CreateTokenType(mdtid_Module) | 1));
+    ASSERT_TRUE(reference.value().set_column_value(TypeRef_ResolutionScope, CreateTokenType(mdtid_Module) | 1));
     reference.commit();
 
     uint32_t count;
@@ -806,13 +806,13 @@ TEST_F(CppCursor, FindCodedIndexRows)
     auto modules = dnmd::md_create_cursor<mdtid_Module>(handle.get(), &count);
     ASSERT_TRUE(rows);
     ASSERT_TRUE(modules);
-    auto match = dnmd::md_find_row_from_cursor(rows.as(), TypeRef_ResolutionScope, modules.as());
+    auto match = dnmd::md_find_row_from_cursor(rows.value(), TypeRef_ResolutionScope, modules.value());
     static_assert(std::is_same_v<decltype(match), dnmd::raw_cursor<mdtid_TypeRef>>);
     EXPECT_TRUE(match);
-    EXPECT_TRUE(dnmd::md_find_row_from_cursor(rows.as(), TypeRef_ResolutionScope, CreateTokenType(mdtid_Module) | 1));
-    EXPECT_FALSE(dnmd::md_find_row_from_cursor(rows.as(), TypeRef_ResolutionScope, CreateTokenType(mdtid_AssemblyRef) | 1));
+    EXPECT_TRUE(dnmd::md_find_row_from_cursor(rows.value(), TypeRef_ResolutionScope, CreateTokenType(mdtid_Module) | 1));
+    EXPECT_FALSE(dnmd::md_find_row_from_cursor(rows.value(), TypeRef_ResolutionScope, CreateTokenType(mdtid_AssemblyRef) | 1));
     dnmd::raw_cursor<mdtid_TypeRef> range = dnmd::raw_cursor<mdtid_TypeRef>::nil(handle.get());
-    EXPECT_EQ(dnmd::range_result::not_supported, dnmd::md_find_range_from_cursor(rows.as(), TypeRef_ResolutionScope,
+    EXPECT_EQ(dnmd::range_result::not_supported, dnmd::md_find_range_from_cursor(rows.value(), TypeRef_ResolutionScope,
         CreateTokenType(mdtid_Module) | 1, range, &count));
 }
 
@@ -821,15 +821,15 @@ TEST_F(CppCursor, FindIndirectListRowsUsesTheSourcePosition)
     auto first_type = type_position::nil(handle.get());
     ASSERT_NO_FATAL_FAILURE(AddIndirectMethods(first_type));
     method_position methods = method_position::nil(handle.get());
-    ASSERT_TRUE(type_position{first_type}.as().get_column_value(TypeDef_MethodList, methods));
+    ASSERT_TRUE(type_position{first_type}.value().get_column_value(TypeDef_MethodList, methods));
     uint32_t count;
     auto types = dnmd::md_create_cursor<mdtid_TypeDef>(handle.get(), &count);
     ASSERT_TRUE(types);
-    auto match = dnmd::md_find_row_from_cursor(types.as(), TypeDef_MethodList, methods);
+    auto match = dnmd::md_find_row_from_cursor(types.value(), TypeDef_MethodList, methods);
     ASSERT_TRUE(match);
-    EXPECT_FALSE(dnmd::md_find_row_from_cursor(types.as(), TypeDef_MethodList, method_position::nil(handle.get())));
+    EXPECT_FALSE(dnmd::md_find_row_from_cursor(types.value(), TypeDef_MethodList, method_position::nil(handle.get())));
     char const* name;
-    ASSERT_TRUE(match.as().get_column_value(TypeDef_TypeName, &name));
+    ASSERT_TRUE(match.value().get_column_value(TypeDef_TypeName, &name));
     EXPECT_STREQ("FirstType", name);
 }
 

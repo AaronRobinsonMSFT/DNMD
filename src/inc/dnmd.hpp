@@ -7,6 +7,7 @@
 #include "dnmd_read.hpp"
 #include "dnmd_write.hpp"
 #include "dnmd_search.hpp"
+#include "dnmd_result.hpp"
 #include <memory>
 #include <utility>
 

@@ -4,7 +4,7 @@
 
 TEST_F(CppHeader, StandaloneRead)
 {
-    auto module = dnmd::raw_cursor<mdtid_Module>{Row<mdtid_Module>()}.as();
+    auto module = dnmd::raw_cursor<mdtid_Module>{Row<mdtid_Module>()}.value();
     dnmd::row_reader reader{module};
     uint32_t generation;
     ASSERT_TRUE(reader.read(dnmd::columns::Module_Generation, &generation));
