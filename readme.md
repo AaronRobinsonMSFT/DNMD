@@ -222,6 +222,12 @@ additions also require a constant sort column from that child table.
 Only the global `md_added_row_t` retains C-cursor construction/conversion and the
 C output-pointer hook, delegating its cleanup to the legacy C commit API.
 Native typed guards never expose C output pointers.
+The inline C++ factories and the legacy C row-add APIs share the same
+table-pointer/RID editing core. The factories call it through `extern "C"`
+declarations in `dnmd::detail`, without C-cursor adapters or a separate bridge.
+If a list addition fails during an indirection-table step, the core finishes its
+owned child/Ptr additions and returns no pending row to the caller. This does not
+roll back the inserted rows or finish another edit's pending Ptr row.
 
 Binary searches use only an ascending first
 key from these same sequences, never a secondary key in isolation.

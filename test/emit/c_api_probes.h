@@ -20,6 +20,11 @@ bool test_c_resolve(mdhandle_t handle, mdToken source, mdToken* target);
 md_range_result_t test_c_find_range(mdhandle_t handle, mdToken row, col_index_t column,
     uint32_t key, mdToken* start, uint32_t* count);
 bool test_c_move(mdhandle_t handle, mdToken source, int32_t delta, mdToken* target);
+bool test_c_append(mdhandle_t handle, mdtable_id_t table, mdToken* added);
+bool test_c_insert(mdhandle_t handle, mdToken relative, bool after, mdToken* added);
+bool test_c_add_list(mdhandle_t handle, mdToken owner, col_index_t list, bool sorted,
+    col_index_t sort_column, uint32_t sort_value, mdToken* added);
+bool test_c_commit(mdhandle_t handle, mdToken token);
 
 #ifdef __cplusplus
 }

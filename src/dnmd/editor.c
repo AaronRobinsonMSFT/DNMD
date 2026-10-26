@@ -421,9 +421,11 @@ bool allocate_new_table(mdcxt_t* cxt, mdtable_id_t table_id)
     return true;
 }
 
-bool insert_row_into_table(mdcxt_t* cxt, mdtable_id_t table_id, uint32_t row_index, mdcursor_t* new_row)
+bool insert_row_into_table(mdtable_t* table, uint32_t row_index, uint32_t* new_row)
 {
     assert(row_index != 0); // Row indexes are 1-based.
+    mdcxt_t* cxt = table->cxt;
+    mdtable_id_t table_id = (mdtable_id_t)table->table_id;
     mdeditor_t* editor = get_editor(cxt);
     if (editor == NULL)
         return false;
@@ -471,7 +473,7 @@ bool insert_row_into_table(mdcxt_t* cxt, mdtable_id_t table_id, uint32_t row_ind
     target_table_editor->table->row_count++;
     target_table_editor->table->is_adding_new_row = true;
 
-    *new_row = create_cursor(target_table_editor->table, row_index);
+    *new_row = row_index;
     return true;
 }
 

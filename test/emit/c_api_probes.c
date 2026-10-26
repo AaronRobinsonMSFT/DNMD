@@ -105,3 +105,48 @@ bool test_c_move(mdhandle_t handle, mdToken source, int32_t delta, mdToken* targ
         return false;
     return moved;
 }
+
+bool test_c_append(mdhandle_t handle, mdtable_id_t table, mdToken* added)
+{
+    mdcursor_t row = { 0 };
+    bool result = md_append_row(handle, table, &row);
+    if (row._reserved1 != 0)
+        md_cursor_to_token(row, added);
+    return result;
+}
+
+bool test_c_insert(mdhandle_t handle, mdToken relative, bool after, mdToken* added)
+{
+    mdcursor_t position_cursor;
+    if (!position(handle, relative, &position_cursor))
+        return false;
+    mdcursor_t row = { 0 };
+    bool result = after ? md_insert_row_after(position_cursor, &row) : md_insert_row_before(position_cursor, &row);
+    if (row._reserved1 != 0)
+        md_cursor_to_token(row, added);
+    return result;
+}
+
+bool test_c_add_list(mdhandle_t handle, mdToken owner, col_index_t list, bool sorted,
+    col_index_t sort_column, uint32_t sort_value, mdToken* added)
+{
+    mdcursor_t parent;
+    if (!position(handle, owner, &parent))
+        return false;
+    mdcursor_t row = { 0 };
+    bool result = sorted
+        ? md_add_new_row_to_sorted_list(parent, list, sort_column, sort_value, &row)
+        : md_add_new_row_to_list(parent, list, &row);
+    if (row._reserved1 != 0)
+        md_cursor_to_token(row, added);
+    return result;
+}
+
+bool test_c_commit(mdhandle_t handle, mdToken token)
+{
+    mdcursor_t row;
+    if (!position(handle, token, &row) || !((mdtable_t*)row._reserved1)->is_adding_new_row)
+        return false;
+    md_commit_row_add(row);
+    return true;
+}

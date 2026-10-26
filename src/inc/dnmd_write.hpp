@@ -2,7 +2,6 @@
 #define _SRC_INC_DNMD_WRITE_HPP_
 
 #include "dnmd_read.hpp"
-#include "dnmd_edit.h"
 #include <cstring>
 #include <memory>
 
@@ -19,6 +18,14 @@ uint32_t add_to_string_heap(::mdcxt__* context, char const* value);
 uint32_t add_to_blob_heap(::mdcxt__* context, uint8_t const* value, uint32_t length);
 uint32_t add_to_guid_heap(::mdcxt__* context, mdguid_t value);
 uint32_t add_to_user_string_heap(::mdcxt__* context, char16_t const* value);
+// A nonzero RID on failure identifies an owned partial row that must be finished.
+bool append_row_to_table(mdtable_t* table, uint32_t* new_row);
+bool insert_row_relative(mdtable_t* table, uint32_t row, bool after, uint32_t* new_row);
+// Indirection failures finish owned child/Ptr additions and clear both outputs.
+// Other failures can still return an owned pending child row.
+bool add_row_to_list(mdtable_t* owner, uint32_t row, col_index_t list,
+    bool sorted, col_index_t sort_column, uint32_t sort_value,
+    mdtable_t** added_table, uint32_t* added_row);
 extern mdguid_t const empty_guid;
 #ifdef DNMD_PORTABLE_PDB
 bool has_pdb(::mdcxt__* context);
@@ -346,9 +353,9 @@ private:
         assert(row == 0 || (row <= table.row_count && table.is_adding_new_row));
     }
 
-    static added_row finish_acquisition(mdhandle_t handle, bool success, uint32_t row) noexcept
+    static added_row finish_acquisition(mdtable_t& table, bool success, uint32_t row) noexcept
     {
-        added_row result{detail::context(handle).tables[TableId], row};
+        added_row result{table, row};
         if (!success)
             result.commit();
         return result;
@@ -392,30 +399,35 @@ public:
     static added_row append(mdhandle_t handle) noexcept
     {
         static_assert(TableId >= mdtid_First && TableId < mdtid_End);
+        auto& table = detail::context(handle).tables[TableId];
         uint32_t row = 0;
-        bool success = md_cpp_append_row(handle, TableId, &row);
-        return finish_acquisition(handle, success, row);
+        bool success = detail::append_row_to_table(&table, &row);
+        assert(success == (row != 0));
+        return finish_acquisition(table, success, row);
     }
 
     static added_row insert(cursor<TableId> relative, bool after) noexcept
     {
+        auto table = detail::CursorTable(relative);
         uint32_t row = 0;
-        bool success = md_cpp_insert_row(detail::CursorTable(relative), detail::CursorRow(relative), after, &row);
-        return finish_acquisition(relative.get_handle(), success, row);
+        bool success = detail::insert_row_relative(table, detail::CursorRow(relative), after, &row);
+        assert(success == (row != 0));
+        return finish_acquisition(*table, success, row);
     }
 
     template<mdtable_id_t Owner>
     static added_row in_list(cursor<Owner> owner, col_index_t list, bool sorted,
         col_index_t sort_column, uint32_t sort_value) noexcept
     {
+        auto& target = detail::context(owner.get_handle()).tables[TableId];
         if (!detail::list_column_matches<Owner, TableId>(list))
-            return finish_acquisition(owner.get_handle(), false, 0);
+            return finish_acquisition(target, false, 0);
         uint32_t row = 0;
-        mdtable_id_t table = TableId;
-        bool success = md_cpp_add_list_row(detail::CursorTable(owner), detail::CursorRow(owner),
+        mdtable_t* table = nullptr;
+        bool success = detail::add_row_to_list(detail::CursorTable(owner), detail::CursorRow(owner),
             list, sorted, sort_column, sort_value, &table, &row);
-        assert(row == 0 || table == TableId);
-        return finish_acquisition(owner.get_handle(), success, row);
+        assert(row == 0 || table == &target);
+        return finish_acquisition(target, success, row);
     }
 };
 
