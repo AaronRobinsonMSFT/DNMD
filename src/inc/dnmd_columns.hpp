@@ -410,6 +410,21 @@ inline constexpr column<mdtid_CustomDebugInformation, column_type_blob> CustomDe
 
 namespace detail
 {
+template<mdtable_id_t TableId>
+constexpr auto list_columns() noexcept
+{
+    using namespace columns;
+    if constexpr (TableId == mdtid_TypeDef) return std::tuple{TypeDef_FieldList, TypeDef_MethodList};
+    else if constexpr (TableId == mdtid_MethodDef) return std::tuple{MethodDef_ParamList};
+    else if constexpr (TableId == mdtid_EventMap) return std::tuple{EventMap_EventList};
+    else if constexpr (TableId == mdtid_PropertyMap) return std::tuple{PropertyMap_PropertyList};
+#ifdef DNMD_PORTABLE_PDB
+    else if constexpr (TableId == mdtid_LocalScope)
+        return std::tuple{LocalScope_VariableList, LocalScope_ConstantList};
+#endif
+    else return std::tuple{};
+}
+
 template<typename Column>
 struct sort_key final
 {

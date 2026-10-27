@@ -343,17 +343,10 @@ bool create_and_fill_indirect_table(mdcxt_t* cxt, mdtable_id_t original_table, m
 bool allocate_new_table(mdcxt_t* cxt, mdtable_id_t table_id);
 uint8_t* get_writable_table_data(mdtable_t* table, bool make_writable);
 bool initialize_new_table_details(mdcxt_t* cxt, mdtable_id_t id, mdtable_t* table);
-int32_t update_shifted_row_references(mdcursor_t* c, uint32_t count, uint8_t col_index, mdtable_id_t updated_table, uint32_t original_starting_table_index, uint32_t new_starting_table_index);
-// Row acquisition reports a nonzero RID even if later initialization fails.
-// The caller owns that pending row and must finish it.
+bool set_column_size_for_max_row_count(mdtable_t* table, mdtable_id_t updated_table, mdtcol_t updated_heap, uint32_t new_max_row_count);
+bool update_table_references_for_shifted_rows(mdcxt_t* cxt, mdtable_id_t updated_table, uint32_t changed_row_start, int64_t shift);
+// Physical insertion publishes the RID after acquiring a pending row.
 bool insert_row_into_table(mdtable_t* table, uint32_t row_index, uint32_t* new_row);
-bool append_row_to_table(mdtable_t* table, uint32_t* new_row);
-bool insert_row_relative(mdtable_t* table, uint32_t row, bool after, uint32_t* new_row);
-// Indirection failures finish owned child/Ptr additions and clear both outputs.
-// Other failures can still return an owned pending child row.
-bool add_row_to_list(mdtable_t* owner, uint32_t row, col_index_t list,
-    bool sorted, col_index_t sort_column, uint32_t sort_value,
-    mdtable_t** added_table, uint32_t* added_row);
 #ifdef DNMD_PORTABLE_PDB
 bool update_referenced_type_system_table_row_count(mdcxt_t* cxt, mdtable_id_t updated_table, uint32_t new_max_row_count);
 #endif // DNMD_PORTABLE_PDB

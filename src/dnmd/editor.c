@@ -163,15 +163,16 @@ uint8_t* get_writable_table_data(mdtable_t* table, bool make_writable)
 }
 
 // Copy a row from one table to another.
-// The rows must have an identical number of columns and the columns must have the same definition other than column width.
+// The rows must have identical column definitions; storage widths and offsets may differ.
 // This function does not ensure that the destination table is still sorted after the copy, so this should only be used in cases
 // where a table will keep the same sort order after the copy (such as resizing a table).
 static bool copy_row(uint8_t** dest, size_t* dest_len, mdtcol_t const* dest_cols, uint8_t const** src, size_t* src_len, mdtcol_t const* src_cols, uint8_t num_cols)
 {
     for (uint8_t col_index = 0; col_index < num_cols; col_index++)
     {
-        // The source and destination column details can only differ by storage width.
-        assert((src_cols[col_index] & ~mdtc_widthmask) == (dest_cols[col_index] & ~mdtc_widthmask));
+        // Offsets are derived from the storage widths of preceding columns.
+        assert((src_cols[col_index] & ~(mdtc_widthmask | mdtc_comask))
+            == (dest_cols[col_index] & ~(mdtc_widthmask | mdtc_comask)));
 
         uint32_t data = 0;
 
@@ -201,8 +202,11 @@ static bool copy_row(uint8_t** dest, size_t* dest_len, mdtcol_t const* dest_cols
     return true;
 }
 
-static bool set_column_size_for_max_row_count(mdeditor_t* editor, mdtable_t* table, mdtable_id_t updated_table, mdtcol_t updated_heap, uint32_t new_max_row_count)
+bool set_column_size_for_max_row_count(mdtable_t* table, mdtable_id_t updated_table, mdtcol_t updated_heap, uint32_t new_max_row_count)
 {
+    mdeditor_t* editor = get_editor(table->cxt);
+    if (editor == NULL)
+        return false;
     assert(table->column_count <= MDTABLE_MAX_COLUMN_COUNT);
     assert((mdtid_First <= updated_table && updated_table <= mdtid_End) || (updated_table == mdtid_Unused && (ExtractHeapType(updated_heap) != 0)));
     mdtcol_t new_column_details[MDTABLE_MAX_COLUMN_COUNT];
@@ -285,6 +289,7 @@ static bool set_column_size_for_max_row_count(mdeditor_t* editor, mdtable_t* tab
     uint8_t new_row_size = 0;
     for (uint8_t col_index = 0; col_index < table->column_count; col_index++)
     {
+        new_column_details[col_index] = (new_column_details[col_index] & ~mdtc_comask) | InsertOffset(new_row_size);
         new_row_size += (new_column_details[col_index] & mdtc_b2) == mdtc_b2 ? 2 : 4;
     }
 
@@ -331,37 +336,6 @@ static bool set_column_size_for_max_row_count(mdeditor_t* editor, mdtable_t* tab
     return true;
 }
 
-static bool update_table_references_for_shifted_rows(mdeditor_t* editor, mdtable_id_t updated_table, uint32_t changed_row_start, int64_t shift)
-{
-    assert(updated_table != mdtid_Unused);
-    // Make sure we aren't shifting into negative row ids or shifting above the max row id. That isn't legal.
-    assert(changed_row_start + shift > 0 && changed_row_start + shift < 0x00ffffff);
-    for (mdtable_id_t table_id = mdtid_First; table_id < mdtid_End; table_id++)
-    {
-        mdtable_t* table = &editor->cxt->tables[table_id];
-        if (!table->is_initialized) // This table is not used in the current image
-            continue;
-
-        // Update all columns in the table that can refer to the updated table
-        // to be the correct width for the updated table's new size.
-        if (!set_column_size_for_max_row_count(editor, table, updated_table, mdtc_none, (uint32_t)(table->row_count + shift)))
-            return false;
-
-        for (uint8_t i = 0; i < table->column_count; i++)
-        {
-            mdtcol_t col_details = table->column_details[i];
-            if (((col_details & mdtc_idx_table) == mdtc_idx_table && ExtractTable(col_details) == updated_table)
-                || ((col_details & mdtc_idx_coded) == mdtc_idx_coded && is_coded_index_target(col_details, updated_table)))
-            {
-                // We've found a column that will need updating.
-                mdcursor_t c = create_cursor(table, 1);
-                update_shifted_row_references(&c, table->row_count, i, updated_table, changed_row_start, (uint32_t)(changed_row_start + shift));
-            }
-        }
-    }
-    return true;
-}
-
 static bool allocate_more_editable_space(mdcxt_t* cxt, mddata_t* editable_data, mdcdata_t* data, size_t minimum_size)
 {
     size_t new_size = minimum_size > data->size * 2 ? minimum_size : data->size * 2;
@@ -390,6 +364,43 @@ static bool allocate_more_editable_space(mdcxt_t* cxt, mddata_t* editable_data, 
     editable_data->size = new_size;
     data->ptr = new_ptr;
     // We don't update data->size as the space has been allocated, but it is not in use in the image yet.
+    return true;
+}
+
+bool initialize_new_table_details(
+    mdcxt_t* cxt,
+    mdtable_id_t id,
+    mdtable_t* table
+)
+{
+    assert(table->cxt == cxt && !table->is_initialized);
+    // Use the real table row counts to ensure that when saving, we can
+    // directly write out table memory without any required post-processing.
+    uint32_t table_row_counts[MDTABLE_MAX_COUNT];
+    for (size_t i = 0; i < MDTABLE_MAX_COUNT; i++)
+    {
+        table_row_counts[i] = cxt->tables[i].row_count;
+    }
+
+    // Set the new table's row count temporarily to 1 to ensure that we initialize the table.
+    table_row_counts[id] = 1;
+
+    // We'll treat any new table that has keys as sorted.
+    // We only want to do this for tables with keys as tables without keys
+    // never use the is_sorted bit.
+    md_key_info_t const* keys;
+    uint8_t key_count = get_table_keys(id, &keys);
+    bool has_keys = key_count != 0;
+
+    if (!initialize_table_details(
+        table_row_counts,
+        cxt->context_flags,
+        id,
+        has_keys,
+        table))
+        return false;
+
+    table->row_count = 0;
     return true;
 }
 
@@ -466,7 +477,7 @@ bool insert_row_into_table(mdtable_t* table, uint32_t row_index, uint32_t* new_r
     // Update table references
     // We may have columns that are pointing to the row just after the end of the table, so we need to do this in all cases,
     // not just the "in the middle" case.
-    if (!update_table_references_for_shifted_rows(editor, table_id, row_index, 1))
+    if (!update_table_references_for_shifted_rows(cxt, table_id, row_index, 1))
         return false;
 
     target_table_editor->table->data.size += target_table_editor->table->row_size_bytes;
@@ -503,7 +514,7 @@ bool update_referenced_type_system_table_row_count(mdcxt_t* cxt, mdtable_id_t up
 
         // Update all columns in the table that can refer to the updated table
         // to be the correct width for the updated table's new size.
-        if (!set_column_size_for_max_row_count(editor, table, updated_table, mdtc_none, new_max_row_count))
+        if (!set_column_size_for_max_row_count(table, updated_table, mdtc_none, new_max_row_count))
             return false;
     }
 
@@ -631,7 +642,7 @@ static bool reserve_heap_space(mdeditor_t* editor, uint32_t space_size, mdtcol_t
 
         // Update all columns in the table that can refer to the updated heap
         // to be the correct width for the updated heap's new size.
-        if (!set_column_size_for_max_row_count(editor, table, mdtid_Unused, heap_id, new_heap_size / index_scale))
+        if (!set_column_size_for_max_row_count(table, mdtid_Unused, heap_id, new_heap_size / index_scale))
             return false;
     }
 

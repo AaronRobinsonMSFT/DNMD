@@ -13,12 +13,17 @@ bool merge_in_delta(mdcxt_t* context, mdcxt_t* delta);
 bool dump_tables(mdcxt_t* context, int32_t table);
 bool append_heap(mdcxt_t* context, mdcxt_t* delta, mdtcol_t heap);
 bool create_and_fill_indirect_table(mdcxt_t* context, mdtable_id_t direct, mdtable_id_t indirect);
+bool update_table_references_for_shifted_rows(mdcxt_t* context, mdtable_id_t updated_table,
+    uint32_t changed_row_start, int64_t shift);
 bool decompress_u32(uint8_t const** data, size_t* length, uint32_t* value);
 bool decompress_i32(uint8_t const** data, size_t* length, int32_t* value);
 }
 
 namespace dnmd::detail
 {
+extern "C" bool set_column_size_for_max_row_count(mdtable_t* table, mdtable_id_t updated_table,
+    mdtcol_t updated_heap, uint32_t new_max_row_count);
+
 inline bool table_storage_valid(mdtable_t const& table, size_t columns) noexcept
 {
     if (!table.is_initialized || table.column_count != columns || table.column_details == nullptr

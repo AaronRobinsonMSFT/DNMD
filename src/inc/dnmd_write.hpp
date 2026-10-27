@@ -10,7 +10,7 @@ namespace dnmd
 
 namespace detail
 {
-// Shared core helpers while its implementation remains C.
+// Shared storage helpers.
 extern "C"
 {
 uint8_t* get_writable_table_data(mdtable_t* table, bool make_writable);
@@ -18,20 +18,48 @@ uint32_t add_to_string_heap(::mdcxt__* context, char const* value);
 uint32_t add_to_blob_heap(::mdcxt__* context, uint8_t const* value, uint32_t length);
 uint32_t add_to_guid_heap(::mdcxt__* context, mdguid_t value);
 uint32_t add_to_user_string_heap(::mdcxt__* context, char16_t const* value);
-// A nonzero RID on failure identifies an owned partial row that must be finished.
-bool append_row_to_table(mdtable_t* table, uint32_t* new_row);
-bool insert_row_relative(mdtable_t* table, uint32_t row, bool after, uint32_t* new_row);
-// Indirection failures finish owned child/Ptr additions and clear both outputs.
-// Other failures can still return an owned pending child row.
-bool add_row_to_list(mdtable_t* owner, uint32_t row, col_index_t list,
-    bool sorted, col_index_t sort_column, uint32_t sort_value,
-    mdtable_t** added_table, uint32_t* added_row);
+bool allocate_new_table(::mdcxt__* context, mdtable_id_t table);
+bool initialize_new_table_details(::mdcxt__* context, mdtable_id_t id, mdtable_t* table);
+bool insert_row_into_table(mdtable_t* table, uint32_t row, uint32_t* added_row);
 extern mdguid_t const empty_guid;
 #ifdef DNMD_PORTABLE_PDB
 bool has_pdb(::mdcxt__* context);
 bool update_referenced_type_system_table_row_count(::mdcxt__* context, mdtable_id_t table, uint32_t row);
 #endif
 }
+
+// Indirection failures finish owned child/Ptr additions and clear both outputs.
+// Other failures can still return an owned pending child row.
+bool add_row_to_list(cursor<mdtid_TypeDef> owner, decltype(columns::TypeDef_FieldList) list,
+    mdtable_t** added_table, uint32_t* added_row);
+bool add_row_to_list(cursor<mdtid_TypeDef> owner, decltype(columns::TypeDef_FieldList) list,
+    column<mdtid_Field, column_type_constant> sort, uint32_t value, mdtable_t** added_table, uint32_t* added_row);
+bool add_row_to_list(cursor<mdtid_TypeDef> owner, decltype(columns::TypeDef_MethodList) list,
+    mdtable_t** added_table, uint32_t* added_row);
+bool add_row_to_list(cursor<mdtid_TypeDef> owner, decltype(columns::TypeDef_MethodList) list,
+    column<mdtid_MethodDef, column_type_constant> sort, uint32_t value, mdtable_t** added_table, uint32_t* added_row);
+bool add_row_to_list(cursor<mdtid_MethodDef> owner, decltype(columns::MethodDef_ParamList) list,
+    mdtable_t** added_table, uint32_t* added_row);
+bool add_row_to_list(cursor<mdtid_MethodDef> owner, decltype(columns::MethodDef_ParamList) list,
+    column<mdtid_Param, column_type_constant> sort, uint32_t value, mdtable_t** added_table, uint32_t* added_row);
+bool add_row_to_list(cursor<mdtid_EventMap> owner, decltype(columns::EventMap_EventList) list,
+    mdtable_t** added_table, uint32_t* added_row);
+bool add_row_to_list(cursor<mdtid_EventMap> owner, decltype(columns::EventMap_EventList) list,
+    column<mdtid_Event, column_type_constant> sort, uint32_t value, mdtable_t** added_table, uint32_t* added_row);
+bool add_row_to_list(cursor<mdtid_PropertyMap> owner, decltype(columns::PropertyMap_PropertyList) list,
+    mdtable_t** added_table, uint32_t* added_row);
+bool add_row_to_list(cursor<mdtid_PropertyMap> owner, decltype(columns::PropertyMap_PropertyList) list,
+    column<mdtid_Property, column_type_constant> sort, uint32_t value, mdtable_t** added_table, uint32_t* added_row);
+#ifdef DNMD_PORTABLE_PDB
+bool add_row_to_list(cursor<mdtid_LocalScope> owner, decltype(columns::LocalScope_VariableList) list,
+    mdtable_t** added_table, uint32_t* added_row);
+bool add_row_to_list(cursor<mdtid_LocalScope> owner, decltype(columns::LocalScope_VariableList) list,
+    column<mdtid_LocalVariable, column_type_constant> sort, uint32_t value, mdtable_t** added_table, uint32_t* added_row);
+bool add_row_to_list(cursor<mdtid_LocalScope> owner, decltype(columns::LocalScope_ConstantList) list,
+    mdtable_t** added_table, uint32_t* added_row);
+bool add_row_to_list(cursor<mdtid_LocalScope> owner, decltype(columns::LocalScope_ConstantList) list,
+    column<mdtid_LocalConstant, column_type_constant> sort, uint32_t value, mdtable_t** added_table, uint32_t* added_row);
+#endif
 
 template<size_t Key = 0, mdtable_id_t TableId>
 inline bool rows_sorted(cursor<TableId> first, cursor<TableId> second) noexcept
@@ -323,19 +351,130 @@ inline bool cursor<TableId>::set_column_value(column<TableId, indirect_cursor<Di
 
 namespace detail
 {
-template<mdtable_id_t Owner, mdtable_id_t Child>
-constexpr bool list_column_matches(col_index_t col) noexcept
+template<mdtable_id_t Owner, typename Kind, mdtable_id_t... Targets>
+inline bool initialize_list_column(cursor<Owner> owner, column<Owner, Kind> col,
+    raw_cursor<Targets...> target_position) noexcept
 {
-    if constexpr (Owner == mdtid_TypeDef && Child == mdtid_Field) return col == mdtTypeDef_FieldList;
-    else if constexpr (Owner == mdtid_TypeDef && Child == mdtid_MethodDef) return col == mdtTypeDef_MethodList;
-    else if constexpr (Owner == mdtid_MethodDef && Child == mdtid_Param) return col == mdtMethodDef_ParamList;
-    else if constexpr (Owner == mdtid_EventMap && Child == mdtid_Event) return col == mdtEventMap_EventList;
-    else if constexpr (Owner == mdtid_PropertyMap && Child == mdtid_Property) return col == mdtPropertyMap_PropertyList;
+    auto target = CursorTable(target_position);
+    bool initialized = target->is_initialized;
+    if (!initialized
+        && !initialize_new_table_details(target->cxt, static_cast<mdtable_id_t>(target->table_id), target))
+        return false;
+    // Initialize list columns to nil for absent tables, otherwise one-past the end.
+    auto end = raw_cursor<Targets...>::at(target->cxt, initialized ? target->row_count + 1 : 0,
+        static_cast<mdtable_id_t>(target->table_id));
+    return row_writer{owner}.write(col, end);
+}
+
+template<mdtable_id_t Owner, mdtable_id_t Direct, mdtable_id_t Ptr>
+inline bool initialize_list_column(cursor<Owner> owner,
+    column<Owner, indirect_cursor<Direct, Ptr>> col) noexcept
+{
+    auto source = CursorTable(owner);
+    auto target = list_target_table<Direct, Ptr>(source);
+    return initialize_list_column(owner, col, raw_cursor<Direct, Ptr>::at(source->cxt, 0, target));
+}
+
+template<mdtable_id_t Owner, mdtable_id_t Direct>
+inline bool initialize_list_column(cursor<Owner> owner, column<Owner, raw_cursor<Direct>> col) noexcept
+{
+    return initialize_list_column(owner, col, raw_cursor<Direct>::nil(owner.get_handle()));
+}
+
+template<mdtable_id_t Table>
+inline bool initialize_list_columns(cursor<Table> row) noexcept
+{
+    if constexpr (Table == mdtid_TypeDef || Table == mdtid_MethodDef
+        || Table == mdtid_EventMap || Table == mdtid_PropertyMap)
+    {
+        return std::apply([&](auto... columns) {
+            return (initialize_list_column(row, columns) && ...);
+        }, list_columns<Table>());
+    }
+    else
+        return true;
+}
+
+template<mdtable_id_t Table>
+inline bool append_row(mdcxt_t* context, uint32_t* row) noexcept
+{
+    // Append to the end of an already initialized table.
+    auto& table = context->tables[Table];
+    assert(table.is_initialized);
+    if (!insert_row_into_table(&table, table.row_count + 1, row))
+        return false;
+    return initialize_list_columns(raw_cursor<Table>::at(context, *row).value());
+}
+
+template<mdtable_id_t Table>
+inline bool append_row_to_table(mdcxt_t* context, uint32_t* row) noexcept
+{
+    static_assert(Table >= mdtid_First && Table < mdtid_End);
+    if (row == nullptr)
+        return false;
+    *row = 0;
+    if (context == nullptr)
+        return false;
+    if constexpr (pointer_table_id<Table>() != mdtid_Unused
 #ifdef DNMD_PORTABLE_PDB
-    else if constexpr (Owner == mdtid_LocalScope && Child == mdtid_LocalVariable) return col == mdtLocalScope_VariableList;
-    else if constexpr (Owner == mdtid_LocalScope && Child == mdtid_LocalConstant) return col == mdtLocalScope_ConstantList;
+        || (Table > mdtid_GenericParamConstraint && Table < mdtid_FirstPdb)
 #endif
-    else { (void)col; return false; }
+        )
+    {
+        // Child rows must be added through their parent's list.
+        return false;
+    }
+    else
+    {
+        auto& table = context->tables[Table];
+        if (!table.is_initialized)
+        {
+            if constexpr (Table == mdtid_FieldPtr || Table == mdtid_MethodPtr
+                || Table == mdtid_ParamPtr || Table == mdtid_EventPtr || Table == mdtid_PropertyPtr)
+                return false;
+            else if (!allocate_new_table(context, Table))
+                return false;
+        }
+        return append_row<Table>(context, row);
+    }
+}
+
+template<mdtable_id_t Table>
+inline bool insert_row_relative(raw_cursor<Table> relative, bool after, uint32_t* row) noexcept
+{
+    if (row == nullptr)
+        return false;
+    *row = 0;
+    auto table = CursorTable(relative);
+    uint32_t index = CursorRow(relative);
+    // We can't turn an insert into a "create table" operation.
+    if (!table->is_initialized || index == 0 || index > 0x00ffffff)
+        return false;
+    if constexpr (pointer_table_id<Table>() != mdtid_Unused)
+    {
+        // Child tables must be edited through their parent's list.
+        return false;
+    }
+    else
+    {
+        index += after ? 1 : 0;
+        if (uint64_t{index} > uint64_t{table->row_count} + 1
+            || !insert_row_into_table(table, index, row))
+            return false;
+        auto added = raw_cursor<Table>::at(table->cxt, *row).value();
+        // At the end, initialize empty lists; in the middle, copy the next row's boundaries.
+        if (*row == table->row_count)
+            return initialize_list_columns(added);
+        auto next = raw_cursor<Table>::at(table->cxt, *row + 1).value();
+        return std::apply([&](auto... columns) {
+            auto copy = [&](auto col) {
+                mdToken token;
+                return row_reader{next}.read(col, token) && row_writer{added}.write(col, token);
+            };
+            (void)copy;
+            return (copy(columns) && ...);
+        }, list_columns<Table>());
+    }
 }
 }
 
@@ -401,7 +540,7 @@ public:
         static_assert(TableId >= mdtid_First && TableId < mdtid_End);
         auto& table = detail::context(handle).tables[TableId];
         uint32_t row = 0;
-        bool success = detail::append_row_to_table(&table, &row);
+        bool success = detail::append_row_to_table<TableId>(table.cxt, &row);
         assert(success == (row != 0));
         return finish_acquisition(table, success, row);
     }
@@ -410,22 +549,34 @@ public:
     {
         auto table = detail::CursorTable(relative);
         uint32_t row = 0;
-        bool success = detail::insert_row_relative(table, detail::CursorRow(relative), after, &row);
+        bool success = detail::insert_row_relative(raw_cursor<TableId>{relative}, after, &row);
         assert(success == (row != 0));
         return finish_acquisition(*table, success, row);
     }
 
-    template<mdtable_id_t Owner>
-    static added_row in_list(cursor<Owner> owner, col_index_t list, bool sorted,
-        col_index_t sort_column, uint32_t sort_value) noexcept
+    template<mdtable_id_t Owner, typename Kind>
+    static added_row in_list(cursor<Owner> owner, column<Owner, Kind> list) noexcept
     {
+        static_assert(std::is_same_v<Kind, raw_cursor<TableId>>
+            || std::is_same_v<Kind, indirect_cursor<TableId, detail::pointer_table_id<TableId>()>>);
         auto& target = detail::context(owner.get_handle()).tables[TableId];
-        if (!detail::list_column_matches<Owner, TableId>(list))
-            return finish_acquisition(target, false, 0);
         uint32_t row = 0;
         mdtable_t* table = nullptr;
-        bool success = detail::add_row_to_list(detail::CursorTable(owner), detail::CursorRow(owner),
-            list, sorted, sort_column, sort_value, &table, &row);
+        bool success = detail::add_row_to_list(owner, list, &table, &row);
+        assert(row == 0 || table == &target);
+        return finish_acquisition(target, success, row);
+    }
+
+    template<mdtable_id_t Owner, typename Kind>
+    static added_row in_list(cursor<Owner> owner, column<Owner, Kind> list,
+        column<TableId, column_type_constant> sort, uint32_t value) noexcept
+    {
+        static_assert(std::is_same_v<Kind, raw_cursor<TableId>>
+            || std::is_same_v<Kind, indirect_cursor<TableId, detail::pointer_table_id<TableId>()>>);
+        auto& target = detail::context(owner.get_handle()).tables[TableId];
+        uint32_t row = 0;
+        mdtable_t* table = nullptr;
+        bool success = detail::add_row_to_list(owner, list, sort, value, &table, &row);
         assert(row == 0 || table == &target);
         return finish_acquisition(target, success, row);
     }
@@ -436,7 +587,7 @@ inline added_row<Direct> md_add_new_row_to_list(cursor<Owner> owner,
     column<Owner, indirect_cursor<Direct, Ptr>> list) noexcept
 {
     static_assert(Ptr == detail::pointer_table_id<Direct>());
-    return added_row<Direct>::in_list(owner, list.column_index, false, list.column_index, 0);
+    return added_row<Direct>::in_list(owner, list);
 }
 template<mdtable_id_t Owner, mdtable_id_t Direct, mdtable_id_t Ptr>
 inline added_row<Direct> md_add_new_row_to_sorted_list(cursor<Owner> owner,
@@ -444,7 +595,7 @@ inline added_row<Direct> md_add_new_row_to_sorted_list(cursor<Owner> owner,
     column<Direct, column_type_constant> sort, uint32_t value) noexcept
 {
     static_assert(Ptr == detail::pointer_table_id<Direct>());
-    return added_row<Direct>::in_list(owner, list.column_index, true, sort.column_index, value);
+    return added_row<Direct>::in_list(owner, list, sort, value);
 }
 } // namespace dnmd
 #endif // _SRC_INC_DNMD_WRITE_HPP_

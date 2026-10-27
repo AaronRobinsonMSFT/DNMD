@@ -7,6 +7,7 @@ set(SOURCES
   entry.c
   initialize.cpp
   query.c
+  row.cpp
   streams.c
   tables.c
   validate.cpp

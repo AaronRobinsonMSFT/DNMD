@@ -2,9 +2,36 @@
 #define _SRC_DNMD_SCHEMA_HPP_
 
 #include "internal.hpp"
+#include <utility>
 
 namespace dnmd::detail
 {
+using table_indices = std::make_index_sequence<mdtid_End>;
+
+template<typename Kind>
+struct list_traits
+{
+    static constexpr bool supported = false;
+};
+
+template<mdtable_id_t Direct, mdtable_id_t Ptr>
+struct list_traits<indirect_cursor<Direct, Ptr>>
+{
+    static constexpr bool supported = true;
+    static constexpr mdtable_id_t direct = Direct;
+    static constexpr mdtable_id_t pointer = Ptr;
+    using position_type = raw_cursor<Direct, Ptr>;
+};
+
+template<mdtable_id_t Direct>
+struct list_traits<raw_cursor<Direct>>
+{
+    static constexpr bool supported = true;
+    static constexpr mdtable_id_t direct = Direct;
+    static constexpr mdtable_id_t pointer = mdtid_Unused;
+    using position_type = raw_cursor<Direct>;
+};
+
 template<mdtable_id_t Table>
 constexpr auto table_columns() noexcept
 {
@@ -122,7 +149,11 @@ constexpr auto table_columns() noexcept
 #endif
     else
     {
-        static_assert(Table == mdtid_Unused, "The table has no typed column schema.");
+        static_assert(Table == mdtid_Unused
+#ifdef DNMD_PORTABLE_PDB
+            || (Table > mdtid_GenericParamConstraint && Table < mdtid_FirstPdb)
+#endif
+            , "The table has no typed column schema.");
         return std::tuple{};
     }
 }
@@ -130,23 +161,10 @@ constexpr auto table_columns() noexcept
 template<mdtable_id_t Table, typename ColumnType>
 constexpr bool is_list_column(column<Table, ColumnType> col) noexcept
 {
-    if constexpr (Table == mdtid_TypeDef)
-        return col.column_index == mdtTypeDef_FieldList || col.column_index == mdtTypeDef_MethodList;
-    else if constexpr (Table == mdtid_MethodDef)
-        return col.column_index == mdtMethodDef_ParamList;
-    else if constexpr (Table == mdtid_EventMap)
-        return col.column_index == mdtEventMap_EventList;
-    else if constexpr (Table == mdtid_PropertyMap)
-        return col.column_index == mdtPropertyMap_PropertyList;
-#ifdef DNMD_PORTABLE_PDB
-    else if constexpr (Table == mdtid_LocalScope)
-        return col.column_index == mdtLocalScope_VariableList || col.column_index == mdtLocalScope_ConstantList;
-#endif
-    else
-    {
+    return std::apply([col](auto... lists) {
         (void)col;
-        return false;
-    }
+        return ((col.column_index == lists.column_index) || ...);
+    }, list_columns<Table>());
 }
 }
 

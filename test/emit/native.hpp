@@ -51,8 +51,7 @@ namespace dnmd_test
     dnmd::cursor<Direct> AddListRow(dnmd::cursor<Owner> owner,
         dnmd::column<Owner, dnmd::raw_cursor<Direct>> column)
     {
-        auto added = dnmd::added_row<Direct>::in_list(
-            owner, column.column_index, false, column.column_index, 0);
+        auto added = dnmd::added_row<Direct>::in_list(owner, column);
         EXPECT_TRUE(added);
         auto row = added.value();
         added.commit();

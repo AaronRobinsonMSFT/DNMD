@@ -385,11 +385,8 @@ TEST_F(CppRowSorting, SortedListFailureCommitsThePartiallyAcquiredRow)
     auto first_parameter = dnmd_test::AddListRow(first_method, MethodDef_ParamList);
     auto second_method = dnmd_test::AddListRow(owner, TypeDef_MethodList);
     auto table = dnmd::detail::CursorTable(first_parameter);
-    auto& details = table->column_details[static_cast<uint8_t>(Param_Sequence.column_index)];
-    auto saved = details;
-    details = static_cast<mdtcol_t>(details & ~mdtc_constant);
-    auto failed = dnmd::md_add_new_row_to_sorted_list(second_method, MethodDef_ParamList, Param_Sequence, 7);
-    details = saved;
+    auto invalid_sort = dnmd::column<mdtid_Param, dnmd::column_type_constant>{mdtParam_Name};
+    auto failed = dnmd::md_add_new_row_to_sorted_list(second_method, MethodDef_ParamList, invalid_sort, 7);
     EXPECT_FALSE(failed);
     EXPECT_EQ(handle.get(), failed.get_handle());
     EXPECT_EQ(CreateTokenType(mdtid_Param), dnmd_test::Token(failed.position()));

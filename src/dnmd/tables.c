@@ -756,43 +756,6 @@ bool initialize_table_details(
     return true;
 }
 
-bool initialize_new_table_details(
-    mdcxt_t* cxt,
-    mdtable_id_t id,
-    mdtable_t* table
-)
-{
-    assert(table->cxt == cxt && !table->is_initialized);
-    // Use the real table row counts to ensure that when saving, we can
-    // directly write out table memory without any required post-processing.
-    uint32_t table_row_counts[MDTABLE_MAX_COUNT];
-    for (size_t i = 0; i < MDTABLE_MAX_COUNT; i++)
-    {
-        table_row_counts[i] = cxt->tables[i].row_count;
-    }
-
-    // Set the new table's row count temporarily to 1 to ensure that we initialize the table.
-    table_row_counts[id] = 1;
-
-    // We'll treat any new table that has keys as sorted.
-    // We only want to do this for tables with keys as tables without keys
-    // never use the is_sorted bit.
-    md_key_info_t const* keys;
-    uint8_t key_count = get_table_keys(id, &keys);
-    bool has_keys = key_count != 0;
-
-    if (!initialize_table_details(
-        table_row_counts,
-        cxt->context_flags,
-        id,
-        has_keys,
-        table))
-        return false;
-
-    table->row_count = 0;
-    return true;
-}
-
 bool consume_table_rows(mdtable_t* table, uint8_t const** data, size_t* data_len)
 {
     assert(table != NULL && data != NULL && data_len != NULL);

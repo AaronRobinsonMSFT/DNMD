@@ -222,9 +222,23 @@ additions also require a constant sort column from that child table.
 Only the global `md_added_row_t` retains C-cursor construction/conversion and the
 C output-pointer hook, delegating its cleanup to the legacy C commit API.
 Native typed guards never expose C output pointers.
-The inline C++ factories and the legacy C row-add APIs share the same
-table-pointer/RID editing core. The factories call it through `extern "C"`
-declarations in `dnmd::detail`, without C-cursor adapters or a separate bridge.
+The inline C++ factories and the legacy C row-add APIs share the same editing
+core, without C-cursor adapters or a separate bridge in the native path.
+Append and relative insertion are fully implemented in `dnmd_write.hpp`,
+including table preparation, empty-list initialization, and copying insertion
+boundaries. They call the `editor.c` storage APIs through `extern "C"`
+declarations in `dnmd::detail`. Table identities remain compile-time types
+through this boundary, without runtime table dispatch in native callers.
+List addition uses separate C++ overloads for unsorted lists and sorted lists;
+the latter also takes a typed constant-column descriptor.
+List and sort columns remain typed through the C++ implementation. Only the
+public C compatibility path converts raw column indices to descriptors.
+List algorithms, reference shifting, and the C compatibility entrypoints live
+in `src\dnmd\row.cpp`. Row creation there uses the typed header implementation
+for appending and inserting rows.
+Reference shifting enumerates `detail::table_indices` and expands typed column
+schemas at compile time, without runtime table dispatch. Runtime table dispatch
+and legacy cursor adaptation remain confined to the public C compatibility path.
 If a list addition fails during an indirection-table step, the core finishes its
 owned child/Ptr additions and returns no pending row to the caller. This does not
 roll back the inserted rows or finish another edit's pending Ptr row.

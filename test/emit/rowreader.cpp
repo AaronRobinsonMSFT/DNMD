@@ -1,6 +1,7 @@
 #include <dnmd.hpp>
 #include "native.hpp"
 #include <gtest/gtest.h>
+#include <algorithm>
 #include <array>
 #include <vector>
 
@@ -67,7 +68,10 @@ namespace
             }
             else
             {
-                return dnmd_test::AppendRow<TableId>(handle.get());
+                auto row = dnmd_test::AppendRow<TableId>(handle.get());
+                if constexpr (TableId == mdtid_CustomAttribute)
+                    EXPECT_TRUE(row.set_column_value(dnmd::columns::CustomAttribute_Type, CreateTokenType(mdtid_MethodDef)));
+                return row;
             }
         }
 
@@ -135,6 +139,10 @@ namespace
                     }
                 }
             }
+            // Leave a valid nil reference before the next family allocates rows.
+            auto nil = std::find_if(expected.begin(), expected.end(), [](auto target) { return target != mdtid_Unused; });
+            ASSERT_NE(expected.end(), nil);
+            SetRaw(row, column, static_cast<uint32_t>(nil - expected.begin()));
         }
 
         template<mdtable_id_t TableId, typename ColumnType>
