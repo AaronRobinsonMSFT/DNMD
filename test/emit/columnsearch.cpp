@@ -114,15 +114,7 @@ namespace
             uint32_t count = 0;
             ASSERT_EQ(dnmd::range_result::found, dnmd::md_find_range_from_cursor(row, col, nil, start, &count));
             EXPECT_EQ(1u, count);
-            mdToken c_start;
-            uint32_t c_count = 0;
-            uint32_t c_key = nil;
-            if constexpr (sizeof...(TargetTableIds) == 1)
-                c_key = (dnmd::detail::RidFromToken)(nil);
-            ASSERT_EQ(MD_RANGE_FOUND, test_c_find_range(handle.get(), dnmd_test::Token(row),
-                col.column_index, c_key, &c_start, &c_count));
-            EXPECT_EQ(c_count, count);
-            EXPECT_EQ(c_start, dnmd_test::Token(start));
+            EXPECT_EQ(dnmd_test::Token(row), dnmd_test::Token(start));
             EXPECT_EQ(handle.get(), start.get_handle());
         }
 

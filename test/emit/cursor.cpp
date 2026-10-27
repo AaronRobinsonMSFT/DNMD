@@ -283,10 +283,6 @@ TEST_F(CppCursor, ReadContextWidths)
     ASSERT_TRUE(reader.read(TypeDef_Flags, &value));
     EXPECT_EQ(0x89abcdefu, value);
     EXPECT_TRUE(ColumnDetails(row, TypeDef_Flags) & mdtc_b4);
-    uint32_t c_value;
-    ASSERT_TRUE(test_c_column_constant(handle.get(), dnmd_test::Token(type), mdtTypeDef_Flags, &c_value));
-    ASSERT_TRUE(reader.read(TypeDef_Flags, &value));
-    EXPECT_EQ(c_value, value);
     char const* name;
     ASSERT_TRUE(reader.read(TypeDef_TypeName, &name));
     EXPECT_STREQ("Reader", name);
@@ -322,7 +318,6 @@ TEST_F(CppCursor, ReadContextHeapBounds)
     ASSERT_EQ(sizeof(signature), length);
     const_cast<uint8_t*>(blob)[-1] = 0x7f;
     EXPECT_FALSE(spec.get_column_value(TypeSpec_Signature, &blob, &length));
-    EXPECT_FALSE(test_c_column_blob_is_valid(handle.get(), dnmd_test::Token(spec), mdtTypeSpec_Signature));
     CorruptColumn(spec, TypeSpec_Signature, 0xffff);
     EXPECT_FALSE(spec.get_column_value(TypeSpec_Signature, &blob, &length));
 }

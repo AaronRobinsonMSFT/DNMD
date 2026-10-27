@@ -76,6 +76,22 @@ bool try_get_user_string(mdcxt_t* cxt, size_t offset, mduserstring_t* str, size_
     return true;
 }
 
+bool md_walk_user_string_heap(mdhandle_t handle, mduserstringcursor_t* cursor, mduserstring_t* str, uint32_t* offset)
+{
+    mdcxt_t* cxt = extract_mdcxt(handle);
+    if (cxt == NULL)
+        return false;
+
+    assert(cursor != NULL);
+    *offset = (uint32_t)*cursor;
+    size_t next_offset;
+    if (!try_get_user_string(cxt, *offset, str, &next_offset))
+        return false;
+
+    *cursor = (mduserstringcursor_t)next_offset;
+    return true;
+}
+
 bool validate_user_string_heap(mdcxt_t* cxt)
 {
     assert(cxt != NULL);

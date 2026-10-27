@@ -107,26 +107,23 @@ namespace
                     SCOPED_TRACE(testing::Message() << "table=" << TableId << " row=" << index << " tag=" << tag);
                     SetRaw(row, column, (index << tag_bits) | tag);
                     mdToken value = 0x12345678;
-                    mdToken c_value = 0x12345678;
                     bool valid = tag < Size && expected[tag] != mdtid_Unused;
                     EXPECT_EQ(valid, reader.read(column, value));
-                    EXPECT_EQ(valid, test_c_column_token(handle.get(), dnmd_test::Token(row), column.column_index, &c_value));
-                    EXPECT_EQ(c_value, value);
                     if (valid)
                         EXPECT_EQ(CreateTokenType(expected[tag]) | index, value);
                     else
                         EXPECT_EQ(0x12345678u, value);
 
                     dnmd::raw_cursor<Targets...> position = dnmd::raw_cursor<Targets...>::nil(handle.get());
-                    mdToken c_position = 0x12345678;
-                    bool c_success = test_c_column_cursor(handle.get(), dnmd_test::Token(row), column.column_index, &c_position);
-                    ASSERT_EQ(c_success, reader.read(column, position));
-                    if (c_success)
+                    bool position_valid = valid && uint64_t{index}
+                        <= uint64_t{dnmd::detail::context(handle.get()).tables[expected[tag]].row_count} + 1;
+                    ASSERT_EQ(position_valid, reader.read(column, position));
+                    if (position_valid)
                     {
                         EXPECT_EQ(handle.get(), position.get_handle());
-                        EXPECT_EQ(c_position, dnmd_test::Token(position));
+                        EXPECT_EQ(CreateTokenType(expected[tag]) | index, dnmd_test::Token(position));
                         EXPECT_TRUE(position.get_token(value));
-                        EXPECT_EQ(c_value, value);
+                        EXPECT_EQ(CreateTokenType(expected[tag]) | index, value);
                         bool visited = position.visit([&](auto target) {
                             static_assert(dnmd::cursor_tableid_v<decltype(target)> != mdtid_Unused);
                             EXPECT_EQ(expected[tag], dnmd::cursor_tableid_v<decltype(target)>);
@@ -189,7 +186,7 @@ namespace
             constexpr auto target_column = dnmd::detail::pointer_column<IndirectTableId>();
             ASSERT_TRUE(pointer.set_column_value(target_column, dnmd::raw_cursor<DirectTableId>{direct}));
 
-            auto check = [&](auto source, bool expected_row) {
+            auto check = [&](auto source, bool expected_row, mdToken expected, bool resolved = true) {
                 position_type position{source};
                 EXPECT_EQ(expected_row, static_cast<bool>(position));
                 EXPECT_EQ(handle.get(), position.get_handle());
@@ -201,8 +198,6 @@ namespace
                 EXPECT_EQ(ExtractTokenType(dnmd_test::Token(source)) == DirectTableId
                     ? dnmd_test::Token(source) : CreateTokenType(DirectTableId), dnmd_test::Token(narrowed));
                 mdToken actual = 0x12345678;
-                mdToken expected = 0x12345678;
-                bool resolved = test_c_resolve(handle.get(), dnmd_test::Token(source), &expected);
                 ASSERT_EQ(resolved, position.get_target_token(actual));
                 if (resolved)
                 {
@@ -218,22 +213,22 @@ namespace
                     EXPECT_EQ(0x12345678u, actual);
                 }
             };
-            ASSERT_NO_FATAL_FAILURE(check(direct, true));
+            ASSERT_NO_FATAL_FAILURE(check(direct, true, dnmd_test::Token(direct)));
             auto source = dnmd::raw_cursor<IndirectTableId>{pointer};
             uint32_t target_end = dnmd::detail::CursorTable(direct)->row_count + 1;
             uint32_t source_end = dnmd::detail::CursorTable(source)->row_count + 1;
-            ASSERT_NO_FATAL_FAILURE(check(source, true));
+            ASSERT_NO_FATAL_FAILURE(check(source, true, dnmd_test::Token(direct)));
             for (uint32_t row : {0u, target_end, target_end + 1})
             {
                 ASSERT_TRUE(pointer.set_column_value(target_column, CreateTokenType(DirectTableId) | row));
-                ASSERT_NO_FATAL_FAILURE(check(source, false));
+                ASSERT_NO_FATAL_FAILURE(check(source, false, CreateTokenType(DirectTableId) | row, row <= target_end));
             }
             for (bool is_end : {false, true})
             {
                 ASSERT_NO_FATAL_FAILURE(check(dnmd::raw_cursor<IndirectTableId>::at(
-                    handle.get(), is_end ? source_end : 0), false));
+                    handle.get(), is_end ? source_end : 0), false, CreateTokenType(DirectTableId) | (is_end ? target_end : 0)));
                 ASSERT_NO_FATAL_FAILURE(check(dnmd::raw_cursor<DirectTableId>::at(
-                    handle.get(), is_end ? target_end : 0), false));
+                    handle.get(), is_end ? target_end : 0), false, CreateTokenType(DirectTableId) | (is_end ? target_end : 0)));
             }
 
             mdToken direct_token;
@@ -253,9 +248,13 @@ namespace
                 {
                     EXPECT_EQ(CreateTokenType(source_table) | index, dnmd_test::Token(position));
                     EXPECT_EQ(handle.get(), position.get_handle());
-                    mdToken expected_target;
+                    mdToken expected_target = CreateTokenType(DirectTableId) | (index == rows + 1 ? target_end : index);
                     mdToken actual_target;
-                    ASSERT_TRUE(test_c_resolve(handle.get(), dnmd_test::Token(position), &expected_target));
+                    if (source_table == IndirectTableId && index != 0 && index <= rows)
+                    {
+                        auto pointer_row = dnmd::raw_cursor<IndirectTableId>::at(handle.get(), index).value();
+                        ASSERT_TRUE(pointer_row.get_column_value(target_column, expected_target));
+                    }
                     ASSERT_TRUE(position.get_target_token(actual_target));
                     EXPECT_EQ(expected_target, actual_target);
                     if (index <= rows)
@@ -273,8 +272,6 @@ namespace
             auto saved = table->column_details[0];
             table->column_details[0] = static_cast<mdtcol_t>(saved & (mdtc_widthmask | mdtc_comask));
             position_type typed{source};
-            mdToken c_target;
-            EXPECT_FALSE(test_c_resolve(handle.get(), dnmd_test::Token(source), &c_target));
             EXPECT_TRUE(typed);
             mdToken token;
             EXPECT_TRUE(typed.get_target_token(token));

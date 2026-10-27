@@ -4,13 +4,6 @@
 
 namespace
 {
-    template<typename T, typename = void>
-    struct accepts_c_token_conversion : std::false_type {};
-
-    template<typename T>
-    struct accepts_c_token_conversion<T, std::void_t<decltype(
-        ::md_cursor_to_token(std::declval<T>(), std::declval<mdToken*>()))>> : std::true_type {};
-
     using row = dnmd::cursor<mdtid_TypeDef>;
     using position = dnmd::raw_cursor<mdtid_TypeDef>;
     using indirect = dnmd::indirect_cursor<mdtid_MethodDef, mdtid_MethodPtr>;
@@ -47,9 +40,6 @@ namespace
     static_assert(std::is_trivially_copyable_v<indirect>);
     static_assert(sizeof(row) == 2 * sizeof(void*));
     static_assert(sizeof(position) == 2 * sizeof(void*));
-    static_assert(!accepts_c_token_conversion<row>::value);
-    static_assert(!accepts_c_token_conversion<position>::value);
-    static_assert(!accepts_c_token_conversion<indirect>::value);
     static_assert(std::is_constructible_v<dnmd::raw_cursor<mdtid_Module, mdtid_TypeDef>, row>);
     static_assert(std::is_constructible_v<position, dnmd::raw_cursor<mdtid_Module, mdtid_TypeDef>>);
     static_assert(std::is_constructible_v<position, guard const&>);
@@ -82,7 +72,7 @@ TEST_F(CppHeader, HeaderDereferenceability)
     EXPECT_EQ(CreateTokenType(mdtid_TypeDef), dnmd_test::Token(wrong_table));
 }
 
-TEST_F(CppHeader, NativeMovementMatchesCAndPreservesFailures)
+TEST_F(CppHeader, NativeMovementPreservesFailures)
 {
     (void)Row<mdtid_TypeDef>();
     (void)dnmd_test::AppendRow<mdtid_TypeDef>(handle);
@@ -93,10 +83,12 @@ TEST_F(CppHeader, NativeMovementMatchesCAndPreservesFailures)
         {
             auto value = position::at(handle, index);
             mdToken before = dnmd_test::Token(value);
-            mdToken expected = 0x12345678;
-            bool c_moved = test_c_move(handle, before, delta, &expected);
+            int64_t next = int64_t{index} + delta;
+            bool expected_move = next > 0 && next <= int64_t{table->row_count} + 1;
             bool moved = dnmd::md_cursor_move(value, delta);
-            EXPECT_EQ(c_moved, moved) << index << ":" << delta;
+            EXPECT_EQ(expected_move, moved) << index << ":" << delta;
+            mdToken expected = expected_move
+                ? CreateTokenType(mdtid_TypeDef) | static_cast<uint32_t>(next) : before;
             EXPECT_EQ(expected, dnmd_test::Token(value));
             EXPECT_EQ(handle, value.get_handle());
             if (!moved)
@@ -191,7 +183,7 @@ TEST_F(CppHeader, NilAndEndAsRequireLiveRows)
 }
 #endif
 
-TEST_F(CppHeader, TokenConstructionMatchesCForAllowedRows)
+TEST_F(CppHeader, TokenConstructionAcceptsAllowedRows)
 {
     using allowed = dnmd::raw_cursor<mdtid_TypeDef, mdtid_Module>;
     static_assert(std::is_nothrow_constructible_v<allowed, mdhandle_t, mdToken>);
@@ -202,7 +194,6 @@ TEST_F(CppHeader, TokenConstructionMatchesCForAllowedRows)
     for (mdToken token : {CreateTokenType(mdtid_Module) | 1, CreateTokenType(mdtid_TypeDef) | 1,
         CreateTokenType(mdtid_TypeDef) | 2, CreateTokenType(mdtid_TypeDef) | 3})
     {
-        ASSERT_TRUE(test_c_token_is_valid(handle, token));
         allowed actual{handle, token};
         ASSERT_TRUE(actual);
         EXPECT_EQ(token, dnmd_test::Token(actual));
@@ -230,7 +221,11 @@ TEST_F(CppHeader, InvalidTokensBecomeNilInTheFirstTable)
         EXPECT_FALSE(factory);
         EXPECT_EQ(first_table, dnmd::detail::CursorTable(factory));
         EXPECT_EQ(CreateTokenType(mdtid_TypeDef), dnmd_test::Token(factory));
-        EXPECT_EQ(test_c_token_is_valid(handle, token), dnmd::md_is_valid_token(handle, token));
+        auto table = ExtractTokenType(token);
+        auto rid = (dnmd::detail::RidFromToken)(token);
+        bool valid = table < mdtid_End && rid != 0
+            && rid <= dnmd::detail::context(handle).tables[table].row_count;
+        EXPECT_EQ(valid, dnmd::md_is_valid_token(handle, token));
     }
 }
 
@@ -248,7 +243,7 @@ TEST_F(CppHeader, TokenFallbackRespectsDeclaredTableOrder)
     EXPECT_TRUE(module_first);
 }
 
-TEST_F(CppHeader, TokenValidityMatchesCForEveryTableTag)
+TEST_F(CppHeader, TokenValidityChecksEveryTableTag)
 {
     using reserved = dnmd::raw_cursor<mdtid_Unused, mdtid_TypeDef, mdtid_Unused, mdtid_Module, mdtid_Unused>;
     (void)Row<mdtid_GenericParamConstraint>();
@@ -257,7 +252,8 @@ TEST_F(CppHeader, TokenValidityMatchesCForEveryTableTag)
         for (uint32_t index : {0u, 1u, 0x00ffffffu})
         {
             mdToken token = CreateTokenType(table) | index;
-            bool valid = test_c_token_is_valid(handle, token);
+            bool valid = table < mdtid_End && index != 0
+                && index <= dnmd::detail::context(handle).tables[table].row_count;
             EXPECT_EQ(valid, dnmd::md_is_valid_token(handle, token)) << table << ":" << index;
             dnmd::raw_cursor<mdtid_Module, mdtid_TypeDef> actual{handle, token};
             bool permitted = table == mdtid_Module || table == mdtid_TypeDef;
@@ -292,8 +288,6 @@ TEST_F(CppHeader, EmptyTokenFallbackDoesNotInitializeTableStorage)
     ASSERT_EQ(0u, table->row_count);
     ASSERT_EQ(&context, table->cxt);
     ASSERT_FALSE(table->is_initialized);
-    EXPECT_EQ(sizeof(mdtable_t), test_c_table_size());
-    EXPECT_FALSE(test_c_table_is_initialized(handle, mdtid_TypeRef));
     dnmd::raw_cursor<mdtid_TypeRef> actual{handle, CreateTokenType(mdtid_TypeRef) | 1};
     EXPECT_FALSE(actual);
     EXPECT_EQ(table, dnmd::detail::CursorTable(actual));
@@ -302,7 +296,6 @@ TEST_F(CppHeader, EmptyTokenFallbackDoesNotInitializeTableStorage)
     EXPECT_FALSE(table->is_initialized);
     (void)dnmd_test::AppendRow<mdtid_TypeRef>(handle);
     EXPECT_TRUE(table->is_initialized);
-    EXPECT_TRUE(test_c_table_is_initialized(handle, mdtid_TypeRef));
     ASSERT_TRUE(dnmd::md_cursor_next(actual));
     EXPECT_TRUE(actual);
 }
@@ -339,14 +332,14 @@ TEST_F(CppHeader, TokenConstructionAcceptsPortablePdbRows)
     EXPECT_TRUE(scope.is<mdtid_LocalScope>());
     EXPECT_FALSE(scope.is_nil());
     EXPECT_EQ(token, dnmd_test::Token(scope));
-    EXPECT_TRUE(test_c_token_is_valid(handle, token));
+    EXPECT_TRUE(dnmd::md_is_valid_token(handle, token));
     token = CreateTokenType(mdtid_CustomDebugInformation) | 1;
     dnmd::raw_cursor<mdtid_CustomDebugInformation> debug{handle, token};
     ASSERT_TRUE(debug);
     EXPECT_TRUE(debug.is<mdtid_CustomDebugInformation>());
     EXPECT_FALSE(debug.is_nil());
     EXPECT_EQ(token, dnmd_test::Token(debug));
-    EXPECT_TRUE(test_c_token_is_valid(handle, token));
+    EXPECT_TRUE(dnmd::md_is_valid_token(handle, token));
 }
 #endif
 
@@ -364,12 +357,9 @@ TEST_F(CppHeader, StandaloneCursors)
     EXPECT_EQ(mdtid_Field, ExtractTokenType(token));
     auto next = dnmd::md_create_cursor<mdtid_TypeDef>(handle);
     ASSERT_TRUE(next);
-    mdToken c_first;
-    uint32_t c_count;
-    ASSERT_TRUE(test_c_first_cursor(handle, mdtid_TypeDef, &c_first, &c_count));
     uint32_t count;
     auto counted = dnmd::md_create_cursor<mdtid_TypeDef>(handle, &count);
-    EXPECT_EQ(c_first, dnmd_test::Token(counted));
-    EXPECT_EQ(c_count, count);
+    EXPECT_EQ(CreateTokenType(mdtid_TypeDef) | 1, dnmd_test::Token(counted));
+    EXPECT_EQ(dnmd::detail::context(handle).tables[mdtid_TypeDef].row_count, count);
     EXPECT_TRUE(dnmd::md_cursor_next(next));
 }

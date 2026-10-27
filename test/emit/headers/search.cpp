@@ -6,11 +6,10 @@ namespace
 {
     static_assert(std::is_enum_v<dnmd::range_result>);
     static_assert(!std::is_convertible_v<dnmd::range_result, int>);
-    static_assert(!std::is_convertible_v<dnmd::range_result, md_range_result_t>);
-    static_assert(!std::is_convertible_v<md_range_result_t, dnmd::range_result>);
-    static_assert(static_cast<int>(dnmd::range_result::found) == MD_RANGE_FOUND);
-    static_assert(static_cast<int>(dnmd::range_result::not_found) == MD_RANGE_NOT_FOUND);
-    static_assert(static_cast<int>(dnmd::range_result::not_supported) == MD_RANGE_NOT_SUPPORTED);
+    static_assert(!std::is_convertible_v<int, dnmd::range_result>);
+    static_assert(static_cast<int>(dnmd::range_result::found) == 0);
+    static_assert(static_cast<int>(dnmd::range_result::not_found) == 1);
+    static_assert(static_cast<int>(dnmd::range_result::not_supported) == 2);
 
     template<typename Value>
     using range_return_type = decltype(dnmd::md_find_range_from_cursor(

@@ -1,6 +1,5 @@
 #include <dnmd.hpp>
 #include "schema.hpp"
-#include "c_api_probes.h"
 #include <gtest/gtest.h>
 #include <algorithm>
 #include <array>
@@ -8,6 +7,8 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
+
+extern "C" uint8_t get_table_column_count(mdtable_id_t table);
 
 namespace
 {
@@ -233,7 +234,7 @@ namespace
         auto check = [](auto table) {
             constexpr auto id = decltype(table)::value;
             auto columns = detail::table_columns<id>();
-            EXPECT_EQ(test_c_column_count(id), std::tuple_size_v<decltype(columns)>);
+            EXPECT_EQ(get_table_column_count(id), std::tuple_size_v<decltype(columns)>);
             uint8_t index = 0;
             auto check_index = [&](auto col) {
                 EXPECT_EQ(index++, static_cast<uint8_t>(col.column_index));
@@ -290,42 +291,49 @@ TEST_F(CoreAlgorithms, RawHeapIndexWritesPreserveHeapsAndCheckWidth)
     EXPECT_STREQ("AfterGrowth", name);
 }
 
-TEST_F(CoreAlgorithms, CursorAndCoordinateAppendAndInsertProduceIdenticalImages)
+TEST_F(CoreAlgorithms, AppendAndInsertPreserveExistingRows)
 {
-    auto compare_images = [&] {
-        EXPECT_EQ(Save(base.get()), Save(delta.get()));
-    };
     for (uint32_t row = 1; row <= 3; ++row)
     {
-        mdToken token = 0;
-        uint32_t added = 0;
-        ASSERT_TRUE(test_c_append(base.get(), mdtid_ModuleRef, &token));
-        ASSERT_TRUE(detail::append_row_to_table<mdtid_ModuleRef>(&detail::context(delta.get()), &added));
-        EXPECT_EQ(CreateTokenType(mdtid_ModuleRef) | added, token);
-        for (auto handle : {base.get(), delta.get()})
-        {
-            auto position = raw_cursor<mdtid_ModuleRef>{handle, token};
-            ASSERT_TRUE(position);
-            ASSERT_TRUE(position.value().set_column_value(ModuleRef_Name, row == 1 ? "First" : "Next"));
-            ASSERT_TRUE(test_c_commit(handle, token));
-        }
+        auto added = added_row<mdtid_ModuleRef>::append(base.get());
+        ASSERT_TRUE(added);
+        mdToken token;
+        ASSERT_TRUE(added.get_token(token));
+        EXPECT_EQ(CreateTokenType(mdtid_ModuleRef) | row, token);
+        ASSERT_TRUE(added.value().set_column_value(ModuleRef_Name, row == 1 ? "First" : "Next"));
     }
-    compare_images();
-    for (auto edit : {std::pair{1u, false}, std::pair{2u, true}, std::pair{6u, false}})
+    for (auto edit : {std::pair{1u, false}, std::pair{2u, true}})
     {
-        mdToken token = 0;
-        uint32_t added = 0;
-        ASSERT_TRUE(test_c_insert(base.get(), CreateTokenType(mdtid_ModuleRef) | edit.first, edit.second, &token));
-        auto relative = raw_cursor<mdtid_ModuleRef>::at(delta.get(), edit.first);
-        ASSERT_TRUE(detail::insert_row_relative(relative, edit.second, &added));
-        EXPECT_EQ(CreateTokenType(mdtid_ModuleRef) | added, token);
-        ASSERT_TRUE(test_c_commit(base.get(), token));
-        ASSERT_TRUE(test_c_commit(delta.get(), token));
-        compare_images();
+        auto relative = raw_cursor<mdtid_ModuleRef>::at(base.get(), edit.first);
+        ASSERT_TRUE(relative);
+        auto added = added_row<mdtid_ModuleRef>::insert(relative.value(), edit.second);
+        ASSERT_TRUE(added);
+        EXPECT_EQ(edit.first + (edit.second ? 1u : 0u), detail::CursorRow(added.position()));
+    }
+    auto last = added_row<mdtid_ModuleRef>::append(base.get());
+    ASSERT_TRUE(last);
+    last.commit();
+    auto bytes = Save(base.get());
+    mdhandle_t raw;
+    ASSERT_TRUE(md_create_handle(bytes.data(), bytes.size(), &raw));
+    handle_ptr loaded{raw};
+    for (auto handle : {base.get(), loaded.get()})
+    {
+        EXPECT_EQ(6u, detail::context(handle).tables[mdtid_ModuleRef].row_count);
+        auto position = md_create_cursor<mdtid_ModuleRef>(handle);
+        for (auto expected : {"", "First", "", "Next", "Next", ""})
+        {
+            ASSERT_TRUE(position);
+            char const* name;
+            ASSERT_TRUE(position.value().get_column_value(ModuleRef_Name, &name));
+            EXPECT_STREQ(expected, name);
+            ASSERT_TRUE(position.move(1));
+        }
+        EXPECT_FALSE(position);
     }
 }
 
-TEST_F(CoreAlgorithms, CursorAndCoordinateListOperationsSharePointerAndSortedInsertion)
+TEST_F(CoreAlgorithms, SortedListInsertionPreservesOwnerRangesAndKeys)
 {
     auto first = AddMethod(base.get());
     ASSERT_TRUE(first);
@@ -333,180 +341,132 @@ TEST_F(CoreAlgorithms, CursorAndCoordinateListOperationsSharePointerAndSortedIns
     auto second = AddMethod(base.get());
     ASSERT_TRUE(second);
     ASSERT_TRUE(AddParameter(second, 4));
-    auto other_first = AddMethod(delta.get());
-    ASSERT_TRUE(other_first);
-    ASSERT_TRUE(AddParameter(other_first, 5));
-    auto other_second = AddMethod(delta.get());
-    ASSERT_TRUE(other_second);
-    ASSERT_TRUE(AddParameter(other_second, 4));
     for (auto item : {std::pair{1u, 1u},
         std::pair{1u, 3u}, std::pair{2u, 0u}, std::pair{1u, 3u}})
     {
         SCOPED_TRACE(testing::Message() << "parent=" << item.first << " sequence=" << item.second);
-        mdToken token = 0;
-        mdtable_t* table = nullptr;
-        uint32_t added = 0;
         auto parent = CreateTokenType(mdtid_MethodDef) | item.first;
-        ASSERT_TRUE(test_c_add_list(base.get(), parent, MethodDef_ParamList.column_index, true,
-            Param_Sequence.column_index, item.second, &token));
-        auto native_parent = raw_cursor<mdtid_MethodDef>{delta.get(), parent};
+        auto native_parent = raw_cursor<mdtid_MethodDef>{base.get(), parent};
         ASSERT_TRUE(native_parent);
-        ASSERT_TRUE(detail::add_row_to_list(native_parent.value(), MethodDef_ParamList,
-            Param_Sequence, item.second, &table, &added));
-        ASSERT_NE(nullptr, table);
-        EXPECT_EQ(mdtid_Param, table->table_id);
-        EXPECT_EQ(CreateTokenType(table->table_id) | added, token);
-        for (auto handle : {base.get(), delta.get()})
-        {
-            auto parameter = raw_cursor<mdtid_Param>{handle, token};
-            ASSERT_TRUE(parameter);
-            uint32_t sequence;
-            ASSERT_TRUE(parameter.value().get_column_value(Param_Sequence, &sequence));
-            EXPECT_EQ(item.second, sequence);
-            ASSERT_TRUE(test_c_commit(handle, token));
-        }
+        auto added = md_add_new_row_to_sorted_list(native_parent.value(), MethodDef_ParamList,
+            Param_Sequence, item.second);
+        ASSERT_TRUE(added);
+        uint32_t sequence;
+        mdToken owner;
+        ASSERT_TRUE(added.value().get_column_value(Param_Sequence, &sequence));
+        EXPECT_EQ(item.second, sequence);
+        ASSERT_TRUE(added.value().get_parent_token(owner));
+        EXPECT_EQ(parent, owner);
     }
-    EXPECT_EQ(Save(base.get()), Save(delta.get()));
-    EXPECT_TRUE(detail::context(delta.get()).tables[mdtid_Param].has_indirect_table);
+    for (uint32_t owner : {1u, 2u})
+    {
+        auto parent = raw_cursor<mdtid_MethodDef>::at(base.get(), owner).value();
+        auto range = indirect_cursor<mdtid_Param, mdtid_ParamPtr>::nil(base.get());
+        uint32_t count;
+        ASSERT_TRUE(row_reader{parent}.read(MethodDef_ParamList, range, &count));
+        std::vector<uint32_t> sequences;
+        for (uint32_t index = 0; index < count; ++index, range.move(1))
+        {
+            ASSERT_TRUE(range);
+            uint32_t sequence;
+            ASSERT_TRUE(range.value().get_column_value(Param_Sequence, &sequence));
+            sequences.push_back(sequence);
+        }
+        std::sort(sequences.begin(), sequences.end());
+        EXPECT_EQ(owner == 1 ? (std::vector<uint32_t>{1, 3, 3, 5}) : (std::vector<uint32_t>{0, 4}), sequences);
+    }
+    EXPECT_TRUE(detail::context(base.get()).tables[mdtid_Param].has_indirect_table);
 }
 
-TEST_F(CoreAlgorithms, CursorAndCoordinateUnsortedListsSharePointerInsertion)
+TEST_F(CoreAlgorithms, UnsortedListInsertionPreservesOwners)
 {
-    for (auto handle : {base.get(), delta.get()})
-    {
-        auto owner = md_create_cursor<mdtid_TypeDef>(handle);
-        ASSERT_TRUE(owner);
-        auto field = md_add_new_row_to_list(owner.value(), TypeDef_FieldList);
-        ASSERT_TRUE(field);
-        field.commit();
-        ASSERT_TRUE(AddRow<mdtid_TypeDef>(handle));
-    }
+    auto first_owner = md_create_cursor<mdtid_TypeDef>(base.get());
+    ASSERT_TRUE(first_owner);
+    auto field = md_add_new_row_to_list(first_owner.value(), TypeDef_FieldList);
+    ASSERT_TRUE(field);
+    field.commit();
+    ASSERT_TRUE(AddRow<mdtid_TypeDef>(base.get()));
     for (uint32_t owner : {2u, 1u, 1u, 2u})
     {
-        mdToken token = 0;
-        uint32_t added = 0;
-        mdtable_t* table = nullptr;
-        ASSERT_TRUE(test_c_add_list(base.get(), CreateTokenType(mdtid_TypeDef) | owner,
-            TypeDef_FieldList.column_index, false, Field_Flags.column_index, 0, &token));
-        auto native_parent = raw_cursor<mdtid_TypeDef>::at(delta.get(), owner);
+        auto native_parent = raw_cursor<mdtid_TypeDef>::at(base.get(), owner);
         ASSERT_TRUE(native_parent);
-        ASSERT_TRUE(detail::add_row_to_list(native_parent.value(), TypeDef_FieldList, &table, &added));
-        ASSERT_NE(nullptr, table);
-        EXPECT_EQ(mdtid_Field, table->table_id);
-        EXPECT_EQ(CreateTokenType(table->table_id) | added, token);
-        ASSERT_TRUE(test_c_commit(base.get(), token));
-        ASSERT_TRUE(test_c_commit(delta.get(), token));
+        auto added = md_add_new_row_to_list(native_parent.value(), TypeDef_FieldList);
+        ASSERT_TRUE(added);
+        mdToken parent;
+        ASSERT_TRUE(added.value().get_parent_token(parent));
+        EXPECT_EQ(CreateTokenType(mdtid_TypeDef) | owner, parent);
     }
-    EXPECT_EQ(Save(base.get()), Save(delta.get()));
-    EXPECT_TRUE(detail::context(delta.get()).tables[mdtid_Field].has_indirect_table);
+    EXPECT_EQ(5u, detail::context(base.get()).tables[mdtid_Field].row_count);
+    EXPECT_TRUE(detail::context(base.get()).tables[mdtid_Field].has_indirect_table);
 }
 
-TEST_F(CoreAlgorithms, SharedEditFailuresPreservePendingOwnershipAndReportPartialRows)
+TEST_F(CoreAlgorithms, FailedAcquisitionsFinishTheirRowsWithoutCommittingAnotherGuard)
 {
-    for (auto handle : {base.get(), delta.get()})
-    {
-        auto method = AddMethod(handle);
-        ASSERT_TRUE(method);
-        ASSERT_TRUE(AddParameter(method, 0));
-        ASSERT_TRUE(AddMethod(handle));
-    }
-    mdToken token = 0;
-    uint32_t added = 0;
-    mdtable_t* table = nullptr;
-    EXPECT_FALSE(test_c_add_list(base.get(), CreateTokenType(mdtid_MethodDef) | 2,
-        MethodDef_ParamList.column_index, true, Param_Name.column_index, 7, &token));
+    auto method = AddMethod(base.get());
+    ASSERT_TRUE(method);
+    ASSERT_TRUE(AddParameter(method, 0));
+    ASSERT_TRUE(AddMethod(base.get()));
     auto invalid_sort = column<mdtid_Param, column_type_constant>{Param_Name.column_index};
-    auto native_parent = raw_cursor<mdtid_MethodDef>::at(delta.get(), 2);
+    auto native_parent = raw_cursor<mdtid_MethodDef>::at(base.get(), 2);
     ASSERT_TRUE(native_parent);
-    EXPECT_FALSE(detail::add_row_to_list(native_parent.value(), MethodDef_ParamList,
-        invalid_sort, 7, &table, &added));
-    ASSERT_NE(nullptr, table);
-    EXPECT_EQ(mdtid_Param, table->table_id);
-    EXPECT_EQ(2u, added);
-    EXPECT_EQ(CreateTokenType(mdtid_Param) | added, token);
-    for (auto handle : {base.get(), delta.get()})
-    {
-        auto& storage = detail::context(handle).tables[mdtid_Param];
-        EXPECT_TRUE(storage.is_adding_new_row);
-        ASSERT_TRUE(test_c_commit(handle, token));
-        EXPECT_FALSE(storage.is_adding_new_row);
-    }
-
-    mdToken pending = 0;
-    ASSERT_TRUE(test_c_append(base.get(), mdtid_ModuleRef, &pending));
-    ASSERT_TRUE(detail::append_row_to_table<mdtid_ModuleRef>(&detail::context(delta.get()), &added));
-    mdToken unchanged = 0x12345678;
-    added = 99;
-    EXPECT_FALSE(test_c_append(base.get(), mdtid_ModuleRef, &unchanged));
-    EXPECT_EQ(0x12345678u, unchanged);
-    EXPECT_FALSE(detail::append_row_to_table<mdtid_ModuleRef>(&detail::context(delta.get()), &added));
+    EXPECT_FALSE(added_row<mdtid_Param>::in_list(native_parent.value(), MethodDef_ParamList, invalid_sort, 7));
+    auto& context = detail::context(base.get());
+    EXPECT_EQ(2u, context.tables[mdtid_Param].row_count);
+    EXPECT_FALSE(context.tables[mdtid_Param].is_adding_new_row);
+    auto pending = added_row<mdtid_ModuleRef>::append(base.get());
+    ASSERT_TRUE(pending);
+    EXPECT_FALSE(added_row<mdtid_ModuleRef>::append(base.get()));
+    uint32_t added = 99;
+    EXPECT_FALSE(detail::append_row_to_table<mdtid_ModuleRef>(&context, &added));
     EXPECT_EQ(0u, added);
-    for (auto handle : {base.get(), delta.get()})
-    {
-        EXPECT_TRUE(detail::context(handle).tables[mdtid_ModuleRef].is_adding_new_row);
-        ASSERT_TRUE(test_c_commit(handle, pending));
-    }
+    EXPECT_TRUE(context.tables[mdtid_ModuleRef].is_adding_new_row);
+    pending.commit();
+    EXPECT_FALSE(context.tables[mdtid_ModuleRef].is_adding_new_row);
 }
 
 TEST_F(CoreAlgorithms, IndirectionFailureFinishesItsChildAndReturnsNoOwnedRow)
 {
-    for (auto handle : {base.get(), delta.get()})
-    {
-        auto first = md_create_cursor<mdtid_TypeDef>(handle);
-        ASSERT_TRUE(first);
-        auto first_method = md_add_new_row_to_list(first.value(), TypeDef_MethodList);
-        ASSERT_TRUE(first_method);
-        first_method.commit();
-        auto second = AddRow<mdtid_TypeDef>(handle);
-        ASSERT_TRUE(second);
-        auto second_method = md_add_new_row_to_list(second.value(), TypeDef_MethodList);
-        ASSERT_TRUE(second_method);
-        second_method.commit();
-        auto another = md_add_new_row_to_list(first.value(), TypeDef_MethodList);
-        ASSERT_TRUE(another);
-        another.commit();
-    }
-    mdToken pending = 0;
-    mdToken other_pending = 0;
-    ASSERT_TRUE(test_c_append(base.get(), mdtid_MethodPtr, &pending));
-    ASSERT_TRUE(test_c_append(delta.get(), mdtid_MethodPtr, &other_pending));
-    ASSERT_EQ(pending, other_pending);
-
-    mdToken output = 0x12345678;
-    EXPECT_FALSE(test_c_add_list(base.get(), CreateTokenType(mdtid_TypeDef) | 2,
-        TypeDef_MethodList.column_index, false, TypeDef_MethodList.column_index, 0, &output));
+    auto first = md_create_cursor<mdtid_TypeDef>(base.get());
+    ASSERT_TRUE(first);
+    auto first_method = md_add_new_row_to_list(first.value(), TypeDef_MethodList);
+    ASSERT_TRUE(first_method);
+    first_method.commit();
+    auto second = AddRow<mdtid_TypeDef>(base.get());
+    ASSERT_TRUE(second);
+    auto second_method = md_add_new_row_to_list(second.value(), TypeDef_MethodList);
+    ASSERT_TRUE(second_method);
+    second_method.commit();
+    auto another = md_add_new_row_to_list(first.value(), TypeDef_MethodList);
+    ASSERT_TRUE(another);
+    another.commit();
+    auto pending = added_row<mdtid_MethodPtr>::append(base.get());
+    ASSERT_TRUE(pending);
     mdtable_t* added_table = nullptr;
     uint32_t added_row = 0;
-    auto native_parent = raw_cursor<mdtid_TypeDef>::at(delta.get(), 2);
+    auto native_parent = raw_cursor<mdtid_TypeDef>::at(base.get(), 2);
     ASSERT_TRUE(native_parent);
     EXPECT_FALSE(detail::add_row_to_list(native_parent.value(), TypeDef_MethodList, &added_table, &added_row));
-    EXPECT_EQ(0x12345678u, output);
     EXPECT_EQ(nullptr, added_table);
     EXPECT_EQ(0u, added_row);
-    for (auto handle : {base.get(), delta.get()})
-    {
-        auto& context = detail::context(handle);
-        EXPECT_EQ(4u, context.tables[mdtid_MethodDef].row_count);
-        EXPECT_FALSE(context.tables[mdtid_MethodDef].is_adding_new_row);
-        EXPECT_EQ(pending & 0x00ffffffu, context.tables[mdtid_MethodPtr].row_count);
-        EXPECT_TRUE(context.tables[mdtid_MethodPtr].is_adding_new_row);
-        ASSERT_TRUE(test_c_commit(handle, pending));
-        EXPECT_FALSE(context.tables[mdtid_MethodPtr].is_adding_new_row);
-    }
+    auto& context = detail::context(base.get());
+    EXPECT_EQ(4u, context.tables[mdtid_MethodDef].row_count);
+    EXPECT_FALSE(context.tables[mdtid_MethodDef].is_adding_new_row);
+    EXPECT_EQ(detail::CursorRow(pending.position()), context.tables[mdtid_MethodPtr].row_count);
+    EXPECT_TRUE(context.tables[mdtid_MethodPtr].is_adding_new_row);
+    pending.commit();
+    EXPECT_FALSE(context.tables[mdtid_MethodPtr].is_adding_new_row);
 }
 
-TEST_F(CoreAlgorithms, CRowCommitUsesNativeCompositeKeyOrdering)
+TEST_F(CoreAlgorithms, RowCommitUsesCompositeKeyOrdering)
 {
     ASSERT_TRUE(AddRow<mdtid_TypeDef>(base.get()));
     auto append = [&](uint32_t owner, uint32_t number) {
-        mdToken token = 0;
-        ASSERT_TRUE(test_c_append(base.get(), mdtid_GenericParam, &token));
-        auto position = raw_cursor<mdtid_GenericParam>{base.get(), token};
-        ASSERT_TRUE(position);
-        row_writer writer{position.value()};
+        auto added = added_row<mdtid_GenericParam>::append(base.get());
+        ASSERT_TRUE(added);
+        row_writer writer{added.value()};
         ASSERT_TRUE(writer.write(GenericParam_Owner, CreateTokenType(mdtid_TypeDef) | owner));
         ASSERT_TRUE(writer.write(GenericParam_Number, number));
-        ASSERT_TRUE(test_c_commit(base.get(), token));
+        added.commit();
     };
     ASSERT_NO_FATAL_FAILURE(append(1, 9));
     ASSERT_NO_FATAL_FAILURE(append(2, 0));
@@ -523,10 +483,6 @@ TEST_F(CoreAlgorithms, CoordinateEditValidationClearsOnlyItsOutputs)
     uint32_t row = 99;
     EXPECT_FALSE(detail::append_row_to_table<mdtid_TypeDef>(nullptr, &row));
     EXPECT_EQ(0u, row);
-    mdToken token = 0x12345678;
-    EXPECT_FALSE(test_c_append(base.get(), mdtid_End, &token));
-    EXPECT_FALSE(test_c_append(base.get(), mdtid_Unused, &token));
-    EXPECT_EQ(0x12345678u, token);
     EXPECT_FALSE(added_row<mdtid_Field>::append(base.get()));
     EXPECT_FALSE(added_row<mdtid_FieldPtr>::append(base.get()));
     EXPECT_FALSE(detail::append_row_to_table<mdtid_TypeRef>(&detail::context(base.get()), nullptr));

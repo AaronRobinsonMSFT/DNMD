@@ -25,17 +25,19 @@ The primary goal of DNMD is to explore the benefits of a rewrite of the metadata
 - C11 and C++17 compliant compilers
 
 Both core libraries contain C and C++ objects. C clients can continue to compile
-their sources as C11 and use the cursor-free entrypoints and low-level APIs in
-`dnmd.h`, but must link with the C++ linker/runtime. CMake consumers should enable
+their sources as C11 and use the handle-based metadata and user-string heap APIs
+in `dnmd.h`, but must link with the C++ linker/runtime. CMake consumers should enable
 both C and CXX languages and link the exported `dnmd::dnmd` or `dnmd::pdb` target.
 
 ## C++ API
 
 `dnmd.hpp` provides typed cursors and column descriptors in the `dnmd` namespace.
 The C API names and types in `dnmd.h` remain global.
-It includes the complete C++ API, `dnmd::handle_ptr`, and the global
-`md_added_row_t` compatibility wrapper for C row additions. The typed API is
-organized into these headers:
+It includes the complete C++ API and `dnmd::handle_ptr`. Metadata table
+navigation, column access, searching, and row editing use the C++ API exclusively.
+The C API retains handle creation/destruction, version queries, validation,
+dumping, serialization, delta application, and user-string heap operations.
+The typed API is organized into these headers:
 
 | Header | Contents |
 | --- | --- |
@@ -54,15 +56,14 @@ the umbrella, include `dnmd_write.hpp` for cursor `set_column_value` methods and
 `dnmd_search.hpp` for `get_parent_token`.
 
 `dnmd::cursor<TableId>` represents an existing, dereferenceable row and cannot be
-default-constructed or constructed directly from a C cursor.
+default-constructed.
 `dnmd::raw_cursor<TableIds...>` and `dnmd::indirect_cursor<DirectTableId, IndirectTableId>`
 represent positions, including nil and one-past-the-end positions. Test a position
 before calling `value()` to obtain a row; calling `value()` on a non-dereferenceable
 position violates its precondition.
-Positions check dereferenceability inline using their table and RID bounds,
-without calling a C API predicate.
-Row, raw, and indirect cursors contain private table-pointer/RID state, not C
-cursors. They cannot be default-constructed or converted to/from `mdcursor_t`.
+Positions check dereferenceability inline using their table and RID bounds.
+Row, raw, and indirect cursors contain private table-pointer/RID state and cannot
+be default-constructed.
 Use `raw_cursor<TableIds...>::nil(handle)` or `end(handle)` for explicit
 table-bound sentinels. `position.is<TableId>()` tests the bound table independently
 of dereferenceability, including for nil and end positions. `position.is_nil()`
@@ -86,7 +87,7 @@ Indirect positions support nil/live/end source and target RIDs. `get_token`
 describes the source; `get_target_token` describes a successfully resolved target,
 including its nil/end sentinels. A malformed pointer reference fails resolution
 without creating an invalid row cursor. Indirect positions can be constructed
-from native raw positions; no C-cursor escape conversion is needed.
+from native raw positions.
 
 Every table slot retains its owning context, including empty tables.
 `mdtable_t::is_initialized`, not a null context, distinguishes materialized table
@@ -125,14 +126,13 @@ is empty, without allocating or fully initializing the table.
 valid handles. Like cursor constructors and factories, it requires a valid handle;
 there is no unbound default position to return for an invalid handle.
 Use `dnmd::md_is_valid_token` when only validation is needed. Both helpers use
-the C++ token bounds checks rather than the C token-lookup API. Rows provide
+the C++ token bounds checks. Rows provide
 `get_column_values` for bulk token reads and `get_parent_token` for list owners.
 Typed range searches use column descriptors and return a raw cursor in the
 searched table along with the range status and count. Their status type is
 `dnmd::range_result`, an enum class declared in `dnmd_search.hpp` with values
-`found`, `not_found`, and `not_supported`. Their numeric values match the C API's
-`MD_RANGE_FOUND`, `MD_RANGE_NOT_FOUND`, and `MD_RANGE_NOT_SUPPORTED`, respectively;
-the C API continues to use `md_range_result_t`.
+`found`, `not_found`, and `not_supported`, with numeric values 0, 1, and 2,
+respectively.
 
 The C++ `md_find_*` APIs search constant, reference, and list-position columns;
 heap columns are not searchable. Reference search values are full tokens or typed
@@ -152,15 +152,14 @@ Parent searches use typed list columns and Ptr reverse lookup, preserve empty
 runs and nil starts, and project Event/Property maps back to TypeDef positions.
 Loaded direct runs use `std::upper_bound` with nil-boundary normalization;
 edited or indirected runs use a linear fallback rather than assume partitioning.
-The legacy query/write entrypoints remain available for the C storage backend.
 
 `dnmd::row_reader<TableId>` is a borrowed, read-only row access context
 constructed from a dereferenceable `cursor<TableId>`. Reuse it across columns of
 that row with `reader.read(column, output)`; overload resolution enforces the
 source table, column value kind, and output type without category assertions.
 It contains no writable data pointer. Cursor reads, including ranges and bulk
-token reads, use this context rather than the C API's `create_access_context`
-path. Heap offsets, encoded tags, and referenced row bounds are still validated.
+token reads, use this context. Heap offsets, encoded tags, and referenced row
+bounds are validated.
 For list columns, `reader.read(column, position, &count)` returns the range
 without rebinding the reader.
 Recreate readers after metadata edits that can invalidate their borrowed storage.
@@ -219,11 +218,7 @@ added.commit();
 
 List additions infer the child table from the typed list column; sorted list
 additions also require a constant sort column from that child table.
-Only the global `md_added_row_t` retains C-cursor construction/conversion and the
-C output-pointer hook, delegating its cleanup to the legacy C commit API.
 Native typed guards never expose C output pointers.
-The inline C++ factories and the legacy C row-add APIs share the same editing
-core, without C-cursor adapters or a separate bridge in the native path.
 Append and relative insertion are fully implemented in `dnmd_write.hpp`,
 including table preparation, empty-list initialization, and copying insertion
 boundaries. They call the `editor.c` storage APIs through `extern "C"`
@@ -231,14 +226,12 @@ declarations in `dnmd::detail`. Table identities remain compile-time types
 through this boundary, without runtime table dispatch in native callers.
 List addition uses separate C++ overloads for unsorted lists and sorted lists;
 the latter also takes a typed constant-column descriptor.
-List and sort columns remain typed through the C++ implementation. Only the
-public C compatibility path converts raw column indices to descriptors.
-List algorithms, reference shifting, and the C compatibility entrypoints live
-in `src\dnmd\row.cpp`. Row creation there uses the typed header implementation
+List and sort columns remain typed through the C++ implementation.
+List algorithms and reference shifting live in `src\dnmd\row.cpp`.
+Row creation there uses the typed header implementation
 for appending and inserting rows.
 Reference shifting enumerates `detail::table_indices` and expands typed column
-schemas at compile time, without runtime table dispatch. Runtime table dispatch
-and legacy cursor adaptation remain confined to the public C compatibility path.
+schemas at compile time, without runtime table dispatch.
 If a list addition fails during an indirection-table step, the core finishes its
 owned child/Ptr additions and returns no pending row to the caller. This does not
 roll back the inserted rows or finish another edit's pending Ptr row.

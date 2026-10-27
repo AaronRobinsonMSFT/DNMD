@@ -1,17 +1,14 @@
 set(SOURCES
-  access.c
   bytes.c
   deltas.cpp
   dump.cpp
   editor.c
   entry.c
   initialize.cpp
-  query.c
   row.cpp
   streams.c
   tables.c
   validate.cpp
-  write.c
 )
 
 set(PUBLIC_HEADERS

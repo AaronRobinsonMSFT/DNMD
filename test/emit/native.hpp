@@ -3,7 +3,6 @@
 
 #include <dnmd_write.hpp>
 #include <gtest/gtest.h>
-#include "c_api_probes.h"
 
 namespace dnmd_test
 {

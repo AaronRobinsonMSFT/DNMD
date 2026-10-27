@@ -163,7 +163,6 @@ typedef enum
 
 // Manipulators for coded indices - II.24.2.6
 bool compose_coded_index(mdToken tk, mdtcol_t col_details, uint32_t* coded_index);
-bool decompose_coded_index(uint32_t cidx, mdtcol_t col_details, mdtable_id_t* table_id, uint32_t* table_row);
 bool is_coded_index_target(mdtcol_t col_details, mdtable_id_t table);
 
 // Get the column count for a table.
@@ -191,112 +190,8 @@ bool initialize_table_details(
 // Given the current table, consume the data stream assuming it contains the rows
 bool consume_table_rows(mdtable_t* table, uint8_t const** data, size_t* data_len);
 
-// Get whether or not the column in the table points into an indirect table
-bool table_is_indirect_table(mdtable_id_t table_id);
 // Get the indirection table for a given table
 mdtable_id_t get_corresponding_indirection_table(mdtable_id_t table_id);
-
-// Cursor manipulation
-
-
-// Internal function used to create a cursor.
-// Limited validation is done for the arguments.
-mdcursor_t create_cursor(mdtable_t* table, uint32_t row);
-
-// We declare these functions as static so they can be included in each translation unit.
-// Some units may not use them, so we ignore the unused function warning.
-#ifdef __GNUC__
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-function"
-#endif
-static mdtable_t* CursorTable(mdcursor_t* c)
-{
-    assert(c != NULL);
-    return (mdtable_t*)c->_reserved1;
-}
-
-static uint32_t CursorRow(mdcursor_t* c)
-{
-    assert(c != NULL);
-    return RidFromToken(c->_reserved2);
-}
-
-static bool CursorNull(mdcursor_t* c)
-{
-    return CursorRow(c) == 0;
-}
-
-static bool CursorEnd(mdcursor_t* c)
-{
-    return (CursorTable(c)->row_count + 1) == CursorRow(c);
-}
-
-static uint8_t col_to_index(col_index_t col_idx, mdtable_t const* table)
-{
-    assert(table != NULL);
-    uint32_t idx = (uint32_t)col_idx;
-#ifdef DEBUG_TABLE_COLUMN_LOOKUP
-    mdtable_id_t tgt_table_id = col_idx >> 8;
-    if (tgt_table_id != table->table_id)
-    {
-        assert(!"Unexpected table/column indexing");
-        return false;
-    }
-    idx = (col_idx & 0xff);
-#else
-    (void)table;
-#endif
-    return (uint8_t)idx;
-}
-
-static col_index_t index_to_col(uint8_t idx, mdtable_id_t table_id)
-{
-#ifdef DEBUG_TABLE_COLUMN_LOOKUP
-    return (col_index_t)((table_id << 8) | idx);
-#else
-    (void)table_id;
-    return (col_index_t)idx;
-#endif
-}
-#ifdef __GNUC__
-#pragma GCC diagnostic pop
-#endif
-
-// Single column access
-typedef struct access_cxt__
-{
-    mdtable_t* table;
-    mdtcol_t col_details;
-    uint8_t const* data;
-    uint8_t* writable_data;
-} access_cxt_t;
-
-bool create_access_context(mdcursor_t* cursor, col_index_t col_idx, bool make_writable, access_cxt_t* rcxt);
-bool write_column_data(access_cxt_t* acxt, uint32_t data);
-void update_column_sort_order(mdcursor_t row, col_index_t column);
-bool read_column_data(access_cxt_t* acxt, uint32_t* data);
-bool resolve_column_reference(mdtable_t const* source, mdtable_id_t table, uint32_t row, mdcursor_t* cursor);
-
-// Raw bulk table access
-typedef struct bulk_access_cxt__
-{
-    mdtable_t* table;
-    mdtcol_t col_details;
-    uint8_t const* start;
-    uint8_t const* data;
-    uint8_t const* end;
-    size_t data_len;
-    uint32_t data_len_col;
-    uint32_t next_row_stride;
-} bulk_access_cxt_t;
-
-bool create_bulk_access_context(mdcursor_t* cursor, col_index_t col_idx, uint32_t row_count, bulk_access_cxt_t* acxt);
-bool read_column_data_and_advance(bulk_access_cxt_t* acxt, uint32_t* data);
-bool next_row(bulk_access_cxt_t* acxt);
-
-// Internal functions used to read/write columns with minimal validation.
-bool get_column_value_as_heap_offset(mdcursor_t c, col_index_t col_idx, uint32_t* offset);
-bool set_column_value_as_heap_offset(mdcursor_t c, col_index_t col_idx, uint32_t offset);
 
 //
 // Manipulation of bits

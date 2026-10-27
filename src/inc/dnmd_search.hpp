@@ -10,9 +10,9 @@ namespace dnmd
 
 enum class range_result
 {
-    found = MD_RANGE_FOUND,
-    not_found = MD_RANGE_NOT_FOUND,
-    not_supported = MD_RANGE_NOT_SUPPORTED,
+    found = 0,
+    not_found = 1,
+    not_supported = 2,
 };
 
 namespace detail

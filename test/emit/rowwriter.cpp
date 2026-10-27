@@ -96,8 +96,6 @@ namespace
                     mdToken token = CreateTokenType(table) | index;
                     ASSERT_TRUE(writer.write(column, token));
                     mdToken actual;
-                    ASSERT_TRUE(test_c_column_token(handle.get(), dnmd_test::Token(row), column.column_index, &actual));
-                    EXPECT_EQ(token, actual);
                     ASSERT_TRUE(row.get_column_value(column, actual));
                     EXPECT_EQ(token, actual);
                 }

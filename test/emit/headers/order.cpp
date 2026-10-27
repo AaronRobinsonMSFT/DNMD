@@ -54,18 +54,3 @@ TEST_F(CppHeader, MixedIncludeOrderAndUmbrellaLifetimeWrappers)
     EXPECT_TRUE(dnmd::md_find_row_from_cursor(position.value(), dnmd::columns::ClassLayout_Parent,
         CreateTokenType(mdtid_TypeDef) | 1));
 }
-
-TEST_F(CppHeader, GlobalLegacyGuardUsesCAppendOutputHook)
-{
-    {
-        ::md_added_row_t empty;
-    }
-    {
-        ::md_added_row_t legacy;
-        ASSERT_TRUE(::md_append_row(handle, mdtid_ClassLayout, &legacy));
-        EXPECT_TRUE(dnmd::detail::context(handle).tables[mdtid_ClassLayout].is_adding_new_row);
-    }
-    auto row = dnmd::md_create_cursor<mdtid_ClassLayout>(handle);
-    ASSERT_TRUE(row);
-    EXPECT_FALSE(dnmd::detail::CursorTable(row)->is_adding_new_row);
-}

@@ -7,7 +7,6 @@ set(HEADER_TEST_SOURCES
 	headers/order.cpp)
 
 set(SOURCES
-	c_api_probes.c
 	cursor.cpp
 	cursorconversion.cpp
 	rowreader.cpp
@@ -32,29 +31,29 @@ set(SOURCES
 	fieldrva.cpp
 	${HEADER_TEST_SOURCES})
 
-set(HEADERS emit.hpp native.hpp c_api_probes.h)
+set(HEADERS emit.hpp native.hpp)
 
 add_executable(emit ${SOURCES} ${HEADERS})
 target_include_directories(emit PRIVATE ../../src/interfaces)
 target_link_libraries(emit PRIVATE dnmd::interfaces_static gtest_main gmock)
 
-add_executable(rowreader_pdb rowreader.cpp c_api_probes.c)
+add_executable(rowreader_pdb rowreader.cpp)
 target_link_libraries(rowreader_pdb PRIVATE dnmd::pdb gtest_main)
-add_executable(rowwriter_pdb rowwriter.cpp c_api_probes.c)
+add_executable(rowwriter_pdb rowwriter.cpp)
 target_link_libraries(rowwriter_pdb PRIVATE dnmd::pdb gtest_main)
-add_executable(columnsearch_pdb columnsearch.cpp c_api_probes.c)
+add_executable(columnsearch_pdb columnsearch.cpp)
 target_link_libraries(columnsearch_pdb PRIVATE dnmd::pdb gtest_main)
 add_executable(rowsorting_pdb rowsorting.cpp)
 target_link_libraries(rowsorting_pdb PRIVATE dnmd::pdb gtest_main)
-add_executable(headers_pdb ${HEADER_TEST_SOURCES} c_api_probes.c)
+add_executable(headers_pdb ${HEADER_TEST_SOURCES})
 target_link_libraries(headers_pdb PRIVATE dnmd::pdb gtest_main)
 add_executable(cursorconversion_pdb cursorconversion.cpp)
 target_link_libraries(cursorconversion_pdb PRIVATE dnmd::pdb gtest_main)
 
-add_executable(corealgorithms corealgorithms.cpp c_api_probes.c)
+add_executable(corealgorithms corealgorithms.cpp)
 target_include_directories(corealgorithms PRIVATE ../../src/dnmd)
 target_link_libraries(corealgorithms PRIVATE dnmd::dnmd gtest_main)
-add_executable(corealgorithms_pdb corealgorithms.cpp c_api_probes.c)
+add_executable(corealgorithms_pdb corealgorithms.cpp)
 target_include_directories(corealgorithms_pdb PRIVATE ../../src/dnmd)
 target_link_libraries(corealgorithms_pdb PRIVATE dnmd::pdb gtest_main)
 add_executable(pdbsequencepoints pdbsequencepoints.cpp)
