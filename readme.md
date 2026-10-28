@@ -171,7 +171,7 @@ For reference columns, a single table ID denotes a direct row index. Multiple
 table IDs specify a coded index in encoded tag order, including `mdtid_Unused`
 placeholders for reserved tags. Reserved and out-of-range tags fail the read.
 List columns select their direct or Ptr target from `mdtable_t::has_indirect_table`
-on the element table, not from column target bits. The flag is initialized when
+on the element table. The flag is initialized when
 loading an image and set when editing introduces its Ptr table. Keeping it on
 the element table lets TypeDef field and method lists select independently.
 
@@ -248,6 +248,11 @@ Image loading selects a typed initializer through a C-compatible adapter in
 heap-size flags, and sorted bits. Native creation prepares its known table type
 before calling C allocation; new-table sorted defaults come from typed sort keys.
 Schema-only preparation does not allocate storage or set `is_initialized`.
+Runtime `mdtcol_t` entries are 16-bit values containing only two width flags and
+an eight-bit byte offset. Value kinds, heaps, reference targets, and coded tags
+come from typed descriptors, not runtime column flags. Heap storage operations
+use a separate `mdheap_id_t`; serialized metadata and heap-size flags are unchanged.
+Native clients must use headers matching the library's runtime layout.
 Initialization and resizing share reference-sizing primitives, while initial heap
 widths continue to use image flags rather than the heap-growth policy.
 If a list addition fails during an indirection-table step, the core finishes its

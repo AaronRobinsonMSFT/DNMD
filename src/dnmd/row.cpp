@@ -17,7 +17,7 @@ namespace
 
     struct heap_size_change
     {
-        mdtcol_t heap;
+        mdheap_id_t heap;
         uint32_t count;
     };
 
@@ -84,7 +84,7 @@ namespace
     template<mdtable_id_t Table, typename Kind>
     mdtcol_t column_width(mdtable_t const& table, column<Table, Kind> col, heap_size_change change)
     {
-        if constexpr (detail::column_heap<Kind>() != mdtc_none)
+        if constexpr (detail::column_heap<Kind>() != mdhid_None)
         {
             if (detail::column_heap<Kind>() == change.heap)
                 return detail::reference_width(change.count, table.cxt->context_flags);
@@ -105,11 +105,10 @@ namespace
         detail::for_each_column<Table>([&](auto... cols) {
             auto update = [&](auto col) {
                 auto index = static_cast<uint8_t>(col.column_index);
-                auto previous = static_cast<uint32_t>(table.column_details[index]);
+                auto previous = table.column_details[index];
                 auto width = column_width(table, col, change);
-                auto next = (previous & ~(mdtc_widthmask | mdtc_comask))
-                    | static_cast<uint32_t>(width) | (detail::InsertOffset)(row_size);
-                details[index] = static_cast<mdtcol_t>(next);
+                auto next = static_cast<mdtcol_t>(width | (detail::InsertOffset)(row_size));
+                details[index] = next;
                 changed = changed || next != previous;
                 row_size += width == mdtc_b4 ? 4u : 2u;
             };
@@ -376,10 +375,6 @@ namespace
             // Inserting within a direct list requires a Ptr table.
             if (!detail::create_and_fill_indirect_table<child, traits::pointer>(direct->cxt))
                 return false;
-            auto table = detail::CursorTable(owner);
-            auto& details = table->column_details[static_cast<uint8_t>(col.column_index)];
-            details = static_cast<mdtcol_t>((static_cast<uint32_t>(details) & ~mdtc_timask)
-                | (static_cast<uint32_t>(traits::pointer) << 16));
             // New Ptr rows initially correspond to the same RIDs in the direct table.
             auto pointer = traits::position_type::at(owner.get_handle(),
                 detail::CursorRow(first), traits::pointer);
@@ -556,10 +551,10 @@ bool add_row_to_list(cursor<mdtid_LocalScope> owner, decltype(columns::LocalScop
 #endif
 }
 
-bool update_heap_column_sizes(mdcxt_t* context, mdtcol_t heap, uint32_t new_max_count)
+bool update_heap_column_sizes(mdcxt_t* context, mdheap_id_t heap, uint32_t new_max_count)
 {
     assert(context != nullptr);
-    if (heap != mdtc_hstring && heap != mdtc_hblob && heap != mdtc_hguid && heap != mdtc_hus)
+    if (heap != mdhid_String && heap != mdhid_Blob && heap != mdhid_Guid && heap != mdhid_UserString)
         return false;
     auto flag = detail::get_large_heap_flag(heap);
     if (flag != mdc_none)

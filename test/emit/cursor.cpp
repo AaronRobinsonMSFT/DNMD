@@ -117,7 +117,7 @@ namespace
         auto details = ColumnDetails(row, column);
         auto bytes = const_cast<uint8_t*>(table->data.ptr)
             + size_t{dnmd::detail::CursorRow(row) - 1} * table->row_size_bytes
-            + ((static_cast<uint32_t>(details) & mdtc_comask) >> 8);
+            + (dnmd::detail::ExtractOffset)(details);
         uint32_t width = (details & mdtc_b4) ? 4 : 2;
         for (uint32_t i = 0; i < width; ++i)
             bytes[i] = static_cast<uint8_t>(value >> (8 * i));

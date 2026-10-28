@@ -239,10 +239,6 @@ namespace
             if (existing_pointer)
             {
                 ASSERT_TRUE((detail::create_and_fill_indirect_table<mdtid_Param, mdtid_ParamPtr>(&context)));
-                auto& details = context.tables[mdtid_MethodDef].column_details[
-                    static_cast<uint8_t>(MethodDef_ParamList.column_index)];
-                details = static_cast<mdtcol_t>((static_cast<uint32_t>(details) & ~mdtc_timask)
-                    | (uint32_t{mdtid_ParamPtr} << 16));
             }
             auto source_method = AddMethod(delta.get());
             ASSERT_TRUE(source_method);
@@ -689,8 +685,6 @@ TEST_F(CoreAlgorithms, ShiftedListReferencesUseTheActiveDirectOrPointerTable)
     auto first = md_create_cursor<mdtid_TypeDef>(base.get());
     ASSERT_TRUE(first);
     auto& context = detail::context(base.get());
-    auto table = &context.tables[mdtid_TypeDef];
-    auto column = static_cast<uint8_t>(TypeDef_MethodList.column_index);
     auto expect = [&](mdtable_id_t target, uint32_t first_rid, uint32_t second_rid) {
         mdToken token;
         ASSERT_TRUE(first.value().get_column_value(TypeDef_MethodList, token));
@@ -704,9 +698,6 @@ TEST_F(CoreAlgorithms, ShiftedListReferencesUseTheActiveDirectOrPointerTable)
     ASSERT_NO_FATAL_FAILURE(expect(mdtid_MethodDef, 1, 3));
 
     ASSERT_TRUE((detail::create_and_fill_indirect_table<mdtid_MethodDef, mdtid_MethodPtr>(&context)));
-    auto& details = table->column_details[column];
-    details = static_cast<mdtcol_t>((static_cast<uint32_t>(details) & ~mdtc_timask)
-        | (uint32_t{mdtid_MethodPtr} << 16));
     ASSERT_TRUE(ShiftReferences(mdtid_MethodDef, 1, 1));
     ASSERT_NO_FATAL_FAILURE(expect(mdtid_MethodPtr, 1, 3));
     auto pointer_column = detail::pointer_column<mdtid_MethodPtr>();
@@ -791,7 +782,7 @@ TEST_F(CoreAlgorithms, ShiftedReferenceReadFailuresPropagateToInsertion)
     auto column = static_cast<uint8_t>(TypeDef_Extends.column_index);
     auto data = detail::get_writable_table_data(table, true);
     ASSERT_NE(nullptr, data);
-    auto offset = (static_cast<uint32_t>(table->column_details[column]) & mdtc_comask) >> 8;
+    auto offset = (detail::ExtractOffset)(table->column_details[column]);
     data[offset] = 3; // TypeDefOrRef tag 3 is reserved.
     EXPECT_FALSE(ShiftReferences(mdtid_TypeRef, 1, 1));
     EXPECT_FALSE(added_row<mdtid_TypeRef>::append(base.get()));
@@ -862,14 +853,14 @@ TEST_F(CoreAlgorithms, GuidHeapWidthsUseEntryCountsAndPreserveExistingIndices)
     std::memset(data, 0, size);
     std::memcpy(data, &expected, sizeof(expected));
     source.guid_heap = {data, size_t{0xffff} * sizeof(mdguid_t)};
-    ASSERT_TRUE(append_heap(&context, &source, mdtc_hguid));
+    ASSERT_TRUE(append_heap(&context, &source, mdhid_Guid));
     EXPECT_EQ(size_t{0xffff} * sizeof(mdguid_t), context.guid_heap.size);
     EXPECT_FALSE(context.context_flags & mdc_large_guid_heap);
     auto table = detail::CursorTable(module);
     auto column = static_cast<uint8_t>(Module_Mvid.column_index);
     EXPECT_TRUE(table->column_details[column] & mdtc_b2);
     source.guid_heap.size = size;
-    ASSERT_TRUE(append_heap(&context, &source, mdtc_hguid));
+    ASSERT_TRUE(append_heap(&context, &source, mdhid_Guid));
     EXPECT_TRUE(context.context_flags & mdc_large_guid_heap);
     EXPECT_TRUE(table->column_details[column] & mdtc_b4);
     EXPECT_EQ(1u, detail::row_storage_access::read(row_reader{module}, Module_Mvid));
@@ -992,7 +983,7 @@ TEST_F(CoreAlgorithms, HeapGrowthBeforeTableCreationSetsTheHeapWidthFlag)
     auto pointer = table->data.ptr;
     auto details = table->column_details[static_cast<uint8_t>(LocalVariable_Name.column_index)];
     auto memory = context.mem;
-    EXPECT_FALSE(update_heap_column_sizes(&context, mdtc_hstring, 1));
+    EXPECT_FALSE(update_heap_column_sizes(&context, mdhid_String, 1));
     EXPECT_EQ(pointer, table->data.ptr);
     EXPECT_EQ(details, table->column_details[static_cast<uint8_t>(LocalVariable_Name.column_index)]);
     EXPECT_EQ(memory, context.mem);
@@ -1023,6 +1014,33 @@ TEST_F(CoreAlgorithms, ValidatesCompleteCompositeSortKeysAndStorage)
     table->data.size = 1;
     EXPECT_FALSE(md_validate(base.get()));
     table->data.size = size;
+    EXPECT_TRUE(md_validate(base.get()));
+}
+
+TEST_F(CoreAlgorithms, RejectsInvalidCompactColumnFlags)
+{
+    auto row = AddRow<mdtid_ModuleRef>(base.get());
+    ASSERT_TRUE(row);
+    auto table = detail::CursorTable(row);
+    auto& details = table->column_details[0];
+    auto saved = details;
+    for (auto invalid : std::array<mdtcol_t, 3>{mdtc_none, mdtc_widthmask, 0x8001})
+    {
+        details = invalid;
+        EXPECT_FALSE(detail::table_storage_valid(*table, mdtModuleRef_ColCount));
+        EXPECT_FALSE(update_heap_column_sizes(&detail::context(base.get()), mdhid_String, 1));
+    }
+    details = saved;
+    EXPECT_TRUE(detail::table_storage_valid(*table, mdtModuleRef_ColCount));
+    EXPECT_TRUE(md_validate(base.get()));
+}
+
+TEST_F(CoreAlgorithms, HeapOperationsRejectInvalidHeapIds)
+{
+    auto& context = detail::context(base.get());
+    auto& source = detail::context(delta.get());
+    EXPECT_FALSE(update_heap_column_sizes(&context, mdhid_None, 1));
+    EXPECT_FALSE(append_heap(&context, &source, mdhid_None));
     EXPECT_TRUE(md_validate(base.get()));
 }
 

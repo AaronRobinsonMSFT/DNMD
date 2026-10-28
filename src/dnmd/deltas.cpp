@@ -155,10 +155,6 @@ namespace
         {
             if (!detail::create_and_fill_indirect_table<mdtid_Param, mdtid_ParamPtr>(context))
                 return false;
-            auto& details = context->tables[mdtid_MethodDef].column_details[
-                static_cast<uint8_t>(MethodDef_ParamList.column_index)];
-            details = static_cast<mdtcol_t>((static_cast<uint32_t>(details) & ~mdtc_timask)
-                | (uint32_t{mdtid_ParamPtr} << 16));
         }
         if (!row_reader{method}.read(MethodDef_ParamList, position, &count))
             return false;
@@ -297,7 +293,7 @@ bool merge_in_delta(mdcxt_t* context, mdcxt_t* delta)
 
     try
     {
-        for (auto heap : {mdtc_hstring, mdtc_hguid, mdtc_hblob, mdtc_hus})
+        for (auto heap : {mdhid_String, mdhid_Guid, mdhid_Blob, mdhid_UserString})
         {
             if (!append_heap(context, delta, heap))
                 return false;

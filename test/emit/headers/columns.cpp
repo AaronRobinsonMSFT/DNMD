@@ -10,10 +10,13 @@ TEST(CppColumnHeader, StandaloneColumns)
 
 TEST(CppColumnHeader, ColumnOffsetEncoding)
 {
+    static_assert(sizeof(mdtcol_t) == 2);
+    static_assert(!std::is_same_v<mdtcol_t, mdheap_id_t>);
+    static_assert((mdtc_comask & mdtc_widthmask) == 0);
     static_assert([] {
         for (uint32_t offset = 0; offset <= UINT8_MAX; ++offset)
         {
-            if (static_cast<uint32_t>((dnmd::detail::InsertOffset)(offset)) != (offset << 8)
+            if (static_cast<uint32_t>((dnmd::detail::InsertOffset)(offset)) != (offset << 2)
                 || (dnmd::detail::ExtractOffset)((dnmd::detail::InsertOffset)(offset)) != offset)
                 return false;
         }

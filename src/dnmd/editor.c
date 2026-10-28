@@ -85,9 +85,9 @@ bool create_and_fill_indirect_table(mdtable_t* original, mdtable_t* target_table
     // We should only call into here if we don't already have an indirection table.
     assert(!target_table->is_initialized && target_table->row_size_bytes != 0);
 
-    // Assert that the indirection table has exactly one column that points back at the original table.
-    // The width can be either a short or wide column.
-    assert(target_table->column_count == 1 && (target_table->column_details[0] & ~mdtc_widthmask) == (InsertTable(original_table) | mdtc_idx_table));
+    assert(target_table->column_count == 1 && ExtractOffset(target_table->column_details[0]) == 0);
+    assert((target_table->column_details[0] & mdtc_widthmask) == mdtc_b2
+        || (target_table->column_details[0] & mdtc_widthmask) == mdtc_b4);
 
     // If we're allocating an indirection table, then we're about to add new rows to the original table.
     // Allocate more space than we need for the rows we're copying over to be able to handle adding new rows.
@@ -371,24 +371,24 @@ bool update_referenced_type_system_table_row_count(mdcxt_t* cxt, mdtable_id_t up
 }
 #endif // DNMD_PORTABLE_PDB
 
-static md_heap_editor_t* get_heap_editor_by_id(mdeditor_t* editor, mdtcol_t heap_id)
+static md_heap_editor_t* get_heap_editor_by_id(mdeditor_t* editor, mdheap_id_t heap_id)
 {
     switch (heap_id)
     {
-        case mdtc_hblob:
+        case mdhid_Blob:
             return &editor->blob_heap;
-        case mdtc_hguid:
+        case mdhid_Guid:
             return &editor->guid_heap;
-        case mdtc_hstring:
+        case mdhid_String:
             return &editor->strings_heap;
-        case mdtc_hus:
+        case mdhid_UserString:
             return &editor->user_string_heap;
         default:
             return NULL;
     }
 }
 
-static bool reserve_heap_space(mdeditor_t* editor, uint32_t space_size, mdtcol_t heap_id, bool preserve_offsets, uint32_t* heap_offset)
+static bool reserve_heap_space(mdeditor_t* editor, uint32_t space_size, mdheap_id_t heap_id, bool preserve_offsets, uint32_t* heap_offset)
 {
     md_heap_editor_t* heap_editor = get_heap_editor_by_id(editor, heap_id);
     if (heap_editor == NULL)
@@ -398,7 +398,7 @@ static bool reserve_heap_space(mdeditor_t* editor, uint32_t space_size, mdtcol_t
     {
         // Set the default heap size based on likely reasonable sizes for the heaps.
         // In most images, there won't be more than three guids, so we can start with a small heap in that case.
-        size_t const initial_heap_size = heap_id == mdtc_hguid ? sizeof(mdguid_t) * 3 : 0x100;
+        size_t const initial_heap_size = heap_id == mdhid_Guid ? sizeof(mdguid_t) * 3 : 0x100;
         void* mem = alloc_mdmem(editor->cxt, initial_heap_size);
         if (mem == NULL)
             return false;
@@ -412,10 +412,10 @@ static bool reserve_heap_space(mdeditor_t* editor, uint32_t space_size, mdtcol_t
         // The guid heap doesn't start with a 0 byte, but it must be emitted in sizeof(mdguid_t)-based chuncks.
         // If we are preserving offsets, then we don't initialize the heap, as we will be copying an existing heap that has already been validated and
         // we must have the exact same offsets as the existing heap to avoid breaking heap references.
-        if (heap_id != mdtc_hguid && !preserve_offsets)
+        if (heap_id != mdhid_Guid && !preserve_offsets)
         {
             heap_editor->heap.ptr[0] = 0;
-            heap_editor->stream->size = heap_id == mdtc_hguid ? 0 : 1;
+            heap_editor->stream->size = heap_id == mdhid_Guid ? 0 : 1;
         }
     }
 
@@ -436,7 +436,7 @@ static bool reserve_heap_space(mdeditor_t* editor, uint32_t space_size, mdtcol_t
     }
 
     // Update heap references in case the additional used space crosses the boundary for index sizes.
-    uint32_t index_scale = (heap_id == mdtc_hguid ? sizeof(mdguid_t) : 1);
+    uint32_t index_scale = (heap_id == mdhid_Guid ? sizeof(mdguid_t) : 1);
     assert(heap_editor->stream->size % index_scale == 0);
     if (!update_heap_column_sizes(editor->cxt, heap_id, new_heap_size / index_scale))
         return false;
@@ -464,7 +464,7 @@ uint32_t add_to_string_heap(mdcxt_t* cxt, char const* str)
     // TODO: Deduplicate heap
     uint32_t str_len = (uint32_t)strlen(str);
     uint32_t heap_offset;
-    if (!reserve_heap_space(editor, str_len + 1, mdtc_hstring, false, &heap_offset))
+    if (!reserve_heap_space(editor, str_len + 1, mdhid_String, false, &heap_offset))
     {
         return 0;
     }
@@ -496,7 +496,7 @@ uint32_t add_to_blob_heap(mdcxt_t* cxt, uint8_t const* data, uint32_t length)
     uint32_t heap_slot_size = length + (uint32_t)compressed_length_size;
 
     uint32_t heap_offset;
-    if (!reserve_heap_space(editor, heap_slot_size, mdtc_hblob, false, &heap_offset))
+    if (!reserve_heap_space(editor, heap_slot_size, mdhid_Blob, false, &heap_offset))
     {
         return 0;
     }
@@ -577,7 +577,7 @@ uint32_t add_to_user_string_heap(mdcxt_t* cxt, char16_t const* str)
 
     uint32_t heap_slot_size = (uint32_t)us_blob_bytes + (uint32_t)compressed_length_size;
     uint32_t heap_offset;
-    if (!reserve_heap_space(editor, heap_slot_size, mdtc_hus, false, &heap_offset))
+    if (!reserve_heap_space(editor, heap_slot_size, mdhid_UserString, false, &heap_offset))
     {
         return 0;
     }
@@ -604,7 +604,7 @@ uint32_t add_to_guid_heap(mdcxt_t* cxt, mdguid_t guid)
         return 0;
 
     uint32_t heap_offset;
-    if (!reserve_heap_space(editor, sizeof(mdguid_t), mdtc_hguid, false, &heap_offset))
+    if (!reserve_heap_space(editor, sizeof(mdguid_t), mdhid_Guid, false, &heap_offset))
     {
         return 0;
     }
@@ -616,7 +616,7 @@ uint32_t add_to_guid_heap(mdcxt_t* cxt, mdguid_t guid)
     return (heap_offset / sizeof(mdguid_t)) + 1;
 }
 
-bool append_heap(mdcxt_t* cxt, mdcxt_t* delta, mdtcol_t heap_id)
+bool append_heap(mdcxt_t* cxt, mdcxt_t* delta, mdheap_id_t heap_id)
 {
     bool is_minimal_delta = (delta->context_flags & mdc_minimal_delta) == mdc_minimal_delta;
     mdeditor_t* editor = get_editor(cxt);
@@ -625,12 +625,14 @@ bool append_heap(mdcxt_t* cxt, mdcxt_t* delta, mdtcol_t heap_id)
 
     md_heap_editor_t* heap_editor = get_heap_editor_by_id(editor, heap_id);
     mdstream_t* delta_heap = get_heap_by_id(delta, heap_id);
+    if (heap_editor == NULL || delta_heap == NULL)
+        return false;
     if (delta_heap->size == 0)
         return true;
 
     size_t copy_offset;
     size_t delta_size;
-    if (is_minimal_delta && heap_id != mdtc_hguid)
+    if (is_minimal_delta && heap_id != mdhid_Guid)
     {
         // If the delta image is a minimal delta and the heap is not the GUID heap, we do a full copy from the delta image.
         copy_offset = 0;

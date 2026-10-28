@@ -2,6 +2,7 @@
 #include <gtest/gtest.h>
 #include <algorithm>
 #include <array>
+#include <string_view>
 
 extern "C" uint8_t get_table_column_count(mdtable_id_t);
 extern "C" bool initialize_table_details(uint32_t const*, mdcxt_flag_t, mdtable_id_t, bool, mdtable_t*);
@@ -14,71 +15,77 @@ namespace
     struct expected_layout
     {
         uint8_t count;
-        std::array<uint32_t, 9> columns;
+        std::string_view columns;
     };
 
-    // Independent narrow layouts, including semantic payloads and fixed scalar widths.
+    // Independent storage kinds: fixed 2/4-byte scalars, String/Guid/Blob heaps, and References.
     constexpr expected_layout layouts[] = {
-        {mdtModule_ColCount, {0x00000011, 0x20000212, 0x10000412, 0x10000612, 0x10000812}},
-        {mdtTypeRef_ColCount, {0x0b000018, 0x20000212, 0x20000412}},
-        {mdtTypeDef_ColCount, {0x00000021, 0x20000412, 0x20000612, 0x00000818, 0x00040a14, 0x00060c14}},
-        {mdtFieldPtr_ColCount, {0x00040014}},
-        {mdtField_ColCount, {0x00000011, 0x20000212, 0x80000412}},
-        {mdtMethodPtr_ColCount, {0x00060014}},
-        {mdtMethodDef_ColCount, {0x00000021, 0x00000411, 0x00000611, 0x20000812, 0x80000a12, 0x00080c14}},
-        {mdtParamPtr_ColCount, {0x00080014}},
-        {mdtParam_ColCount, {0x00000011, 0x00000211, 0x20000412}},
-        {mdtInterfaceImpl_ColCount, {0x00020014, 0x00000218}},
-        {mdtMemberRef_ColCount, {0x05000018, 0x20000212, 0x80000412}},
-        {mdtConstant_ColCount, {0x00000011, 0x01000218, 0x80000412}},
-        {mdtCustomAttribute_ColCount, {0x02000018, 0x0a000218, 0x80000412}},
-        {mdtFieldMarshal_ColCount, {0x03000018, 0x80000212}},
-        {mdtDeclSecurity_ColCount, {0x00000011, 0x04000218, 0x80000412}},
-        {mdtClassLayout_ColCount, {0x00000011, 0x00000221, 0x00020614}},
-        {mdtFieldLayout_ColCount, {0x00000021, 0x00040414}},
-        {mdtStandAloneSig_ColCount, {0x80000012}},
-        {mdtEventMap_ColCount, {0x00020014, 0x00140214}},
-        {mdtEventPtr_ColCount, {0x00140014}},
-        {mdtEvent_ColCount, {0x00000011, 0x20000212, 0x00000418}},
-        {mdtPropertyMap_ColCount, {0x00020014, 0x00170214}},
-        {mdtPropertyPtr_ColCount, {0x00170014}},
-        {mdtProperty_ColCount, {0x00000011, 0x20000212, 0x80000412}},
-        {mdtMethodSemantics_ColCount, {0x00000011, 0x00060214, 0x06000418}},
-        {mdtMethodImpl_ColCount, {0x00020014, 0x07000218, 0x07000418}},
-        {mdtModuleRef_ColCount, {0x20000012}},
-        {mdtTypeSpec_ColCount, {0x80000012}},
-        {mdtImplMap_ColCount, {0x00000011, 0x08000218, 0x20000412, 0x001a0614}},
-        {mdtFieldRva_ColCount, {0x00000021, 0x00040414}},
-        {mdtENCLog_ColCount, {0x00000021, 0x00000421}},
-        {mdtENCMap_ColCount, {0x00000021}},
-        {mdtAssembly_ColCount, {0x00000021, 0x00000411, 0x00000611, 0x00000811, 0x00000a11,
-            0x00000c21, 0x80001012, 0x20001212, 0x20001412}},
-        {1, {0x00000021}}, // AssemblyProcessor
-        {3, {0x00000021, 0x00000421, 0x00000821}}, // AssemblyOS
-        {mdtAssemblyRef_ColCount, {0x00000011, 0x00000211, 0x00000411, 0x00000611, 0x00000821,
-            0x80000c12, 0x20000e12, 0x20001012, 0x80001212}},
-        {2, {0x00000021, 0x00230414}}, // AssemblyRefProcessor
-        {4, {0x00000021, 0x00000421, 0x00000821, 0x00230c14}}, // AssemblyRefOS
-        {mdtFile_ColCount, {0x00000021, 0x20000412, 0x80000612}},
-        {mdtExportedType_ColCount, {0x00000021, 0x00000421, 0x20000812, 0x20000a12, 0x09000c18}},
-        {mdtManifestResource_ColCount, {0x00000021, 0x00000421, 0x20000812, 0x09000a18}},
-        {mdtNestedClass_ColCount, {0x00020014, 0x00020214}},
-        {mdtGenericParam_ColCount, {0x00000011, 0x00000211, 0x0c000418, 0x20000612}},
-        {mdtMethodSpec_ColCount, {0x07000018, 0x80000212}},
-        {mdtGenericParamConstraint_ColCount, {0x002a0014, 0x00000218}},
+        {mdtModule_ColCount, "2SGGG"},
+        {mdtTypeRef_ColCount, "RSS"},
+        {mdtTypeDef_ColCount, "4SSRRR"},
+        {mdtFieldPtr_ColCount, "R"},
+        {mdtField_ColCount, "2SB"},
+        {mdtMethodPtr_ColCount, "R"},
+        {mdtMethodDef_ColCount, "422SBR"},
+        {mdtParamPtr_ColCount, "R"},
+        {mdtParam_ColCount, "22S"},
+        {mdtInterfaceImpl_ColCount, "RR"},
+        {mdtMemberRef_ColCount, "RSB"},
+        {mdtConstant_ColCount, "2RB"},
+        {mdtCustomAttribute_ColCount, "RRB"},
+        {mdtFieldMarshal_ColCount, "RB"},
+        {mdtDeclSecurity_ColCount, "2RB"},
+        {mdtClassLayout_ColCount, "24R"},
+        {mdtFieldLayout_ColCount, "4R"},
+        {mdtStandAloneSig_ColCount, "B"},
+        {mdtEventMap_ColCount, "RR"},
+        {mdtEventPtr_ColCount, "R"},
+        {mdtEvent_ColCount, "2SR"},
+        {mdtPropertyMap_ColCount, "RR"},
+        {mdtPropertyPtr_ColCount, "R"},
+        {mdtProperty_ColCount, "2SB"},
+        {mdtMethodSemantics_ColCount, "2RR"},
+        {mdtMethodImpl_ColCount, "RRR"},
+        {mdtModuleRef_ColCount, "S"},
+        {mdtTypeSpec_ColCount, "B"},
+        {mdtImplMap_ColCount, "2RSR"},
+        {mdtFieldRva_ColCount, "4R"},
+        {mdtENCLog_ColCount, "44"},
+        {mdtENCMap_ColCount, "4"},
+        {mdtAssembly_ColCount, "422224BSS"},
+        {1, "4"}, // AssemblyProcessor
+        {3, "444"}, // AssemblyOS
+        {mdtAssemblyRef_ColCount, "22224BSSB"},
+        {2, "4R"}, // AssemblyRefProcessor
+        {4, "444R"}, // AssemblyRefOS
+        {mdtFile_ColCount, "4SB"},
+        {mdtExportedType_ColCount, "44SSR"},
+        {mdtManifestResource_ColCount, "44SR"},
+        {mdtNestedClass_ColCount, "RR"},
+        {mdtGenericParam_ColCount, "22RS"},
+        {mdtMethodSpec_ColCount, "RB"},
+        {mdtGenericParamConstraint_ColCount, "RR"},
 #ifdef DNMD_PORTABLE_PDB
-        {0, {}}, {0, {}}, {0, {}},
-        {mdtDocument_ColCount, {0x80000012, 0x10000212, 0x80000412, 0x10000612}},
-        {mdtMethodDebugInformation_ColCount, {0x00300014, 0x80000212}},
-        {mdtLocalScope_ColCount, {0x00060014, 0x00350214, 0x00330414, 0x00340614, 0x00000821, 0x00000c21}},
-        {mdtLocalVariable_ColCount, {0x00000011, 0x00000211, 0x20000412}},
-        {mdtLocalConstant_ColCount, {0x20000012, 0x80000212}},
-        {mdtImportScope_ColCount, {0x00350014, 0x80000212}},
-        {mdtStateMachineMethod_ColCount, {0x00060014, 0x00060214}},
-        {mdtCustomDebugInformation_ColCount, {0x0d000018, 0x10000212, 0x80000412}},
+        {0, ""}, {0, ""}, {0, ""},
+        {mdtDocument_ColCount, "BGBG"},
+        {mdtMethodDebugInformation_ColCount, "RB"},
+        {mdtLocalScope_ColCount, "RRRR44"},
+        {mdtLocalVariable_ColCount, "22S"},
+        {mdtLocalConstant_ColCount, "SB"},
+        {mdtImportScope_ColCount, "RB"},
+        {mdtStateMachineMethod_ColCount, "RR"},
+        {mdtCustomDebugInformation_ColCount, "RGB"},
 #endif
     };
     static_assert(std::size(layouts) == mdtid_End);
+
+    constexpr uint32_t ExpectedWidth(char kind, mdcxt_flag_t flags)
+    {
+        return kind == '4' || (kind == 'S' && (flags & mdc_large_string_heap))
+            || (kind == 'G' && (flags & mdc_large_guid_heap))
+            || (kind == 'B' && (flags & mdc_large_blob_heap))
+            || (kind == 'R' && (flags & mdc_minimal_delta)) ? 4u : 2u;
+    }
 
     struct layout_fixture
     {
@@ -99,6 +106,7 @@ namespace
         constexpr auto expected = layouts[Table];
         constexpr auto count = std::tuple_size_v<decltype(detail::table_columns<Table>())>;
         EXPECT_EQ(expected.count, count);
+        EXPECT_EQ(expected.count, expected.columns.size());
         EXPECT_EQ(expected.count, get_table_column_count(Table));
         if constexpr (count != 0)
         {
@@ -123,17 +131,10 @@ namespace
                 for (uint8_t index = 0; index != expected.count; ++index)
                 {
                     SCOPED_TRACE(index);
-                    auto details = expected.columns[index];
-                    auto width = details & mdtc_widthmask;
-                    auto heap = details & mdtc_hmask;
-                    if ((heap == mdtc_hstring && (flags & mdc_large_string_heap))
-                        || (heap == mdtc_hguid && (flags & mdc_large_guid_heap))
-                        || (heap == mdtc_hblob && (flags & mdc_large_blob_heap))
-                        || ((details & (mdtc_idx_table | mdtc_idx_coded)) && (flags & mdc_minimal_delta)))
-                        width = mdtc_b4;
-                    auto word = (details & ~(mdtc_comask | mdtc_widthmask)) | width | (offset << 8);
+                    auto width = ExpectedWidth(expected.columns[index], flags);
+                    auto word = (offset << 2) | (width == 4 ? 2u : 1u);
                     EXPECT_EQ(word, static_cast<uint32_t>(fixture.columns[index]));
-                    offset += width == mdtc_b4 ? 4u : 2u;
+                    offset += width;
                 }
                 EXPECT_EQ(offset, fixture.table.row_size_bytes);
             }
@@ -170,8 +171,15 @@ namespace
 #endif
             };
             EXPECT_EQ(std::find(std::begin(sorted), std::end(sorted), Table) != std::end(sorted), table.is_sorted);
+            uint32_t offset = 0;
             for (uint8_t index = 0; index != layouts[Table].count; ++index)
-                EXPECT_EQ(layouts[Table].columns[index], static_cast<uint32_t>(table.column_details[index]));
+            {
+                auto width = ExpectedWidth(layouts[Table].columns[index], mdc_none);
+                EXPECT_EQ((offset << 2) | (width == 4 ? 2u : 1u),
+                    static_cast<uint32_t>(table.column_details[index]));
+                offset += width;
+            }
+            EXPECT_EQ(offset, table.row_size_bytes);
         }
     }
 
@@ -185,6 +193,19 @@ namespace
 TEST(InitialTableLayout, CompleteLayoutsAndHeapFlagCombinations)
 {
     CheckInitialLayouts(detail::all_tables{});
+}
+
+TEST(InitialTableLayout, ContextColumnArraysUseCompactStorage)
+{
+    handle_ptr handle{md_create_new_handle()};
+    ASSERT_TRUE(handle);
+    auto& context = detail::context(handle.get());
+    for (int id = mdtid_First; id + 1 < mdtid_End; ++id)
+    {
+        SCOPED_TRACE(id);
+        auto expected_next = context.tables[id].column_details + layouts[id].count;
+        EXPECT_EQ(expected_next, context.tables[id + 1].column_details);
+    }
 }
 
 TEST(InitialTableLayout, DirectAndEveryCodedFamilyBoundary)
@@ -266,7 +287,6 @@ TEST(InitialTableLayout, ListsSelectTheirOwnDirectOrPtrCounts)
             layout_fixture fixture;
             ASSERT_TRUE(initialize_table_details(counts.data(), mdc_none, list.owner, false, &fixture.table));
             auto details = fixture.columns[list.column];
-            EXPECT_EQ(pointer_rows == 0 ? list.direct : list.pointer, (details & mdtc_timask) >> 16);
             EXPECT_EQ(pointer_rows == 1 ? mdtc_b2 : mdtc_b4, details & mdtc_widthmask);
             ASSERT_TRUE(initialize_table_details(counts.data(), mdc_none, list.direct, false, &fixture.table));
             EXPECT_EQ(pointer_rows != 0, fixture.table.has_indirect_table);

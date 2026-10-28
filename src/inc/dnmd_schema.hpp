@@ -308,13 +308,13 @@ constexpr uint8_t constant_column_width(column<Table, column_type_constant> col)
 }
 
 template<typename Kind>
-constexpr mdtcol_t column_heap() noexcept
+constexpr mdheap_id_t column_heap() noexcept
 {
-    if constexpr (std::is_same_v<Kind, column_type_string>) return mdtc_hstring;
-    else if constexpr (std::is_same_v<Kind, column_type_blob>) return mdtc_hblob;
-    else if constexpr (std::is_same_v<Kind, column_type_guid>) return mdtc_hguid;
-    else if constexpr (std::is_same_v<Kind, column_type_userstring>) return mdtc_hus;
-    else return mdtc_none;
+    if constexpr (std::is_same_v<Kind, column_type_string>) return mdhid_String;
+    else if constexpr (std::is_same_v<Kind, column_type_blob>) return mdhid_Blob;
+    else if constexpr (std::is_same_v<Kind, column_type_guid>) return mdhid_Guid;
+    else if constexpr (std::is_same_v<Kind, column_type_userstring>) return mdhid_UserString;
+    else return mdhid_None;
 }
 
 template<mdtable_id_t Table, mdtable_id_t... Targets, typename RowCounts>
@@ -344,33 +344,7 @@ constexpr uint64_t max_reference_value(column<Table, raw_cursor<Targets...>>, Ro
 
 constexpr mdtcol_t reference_width(uint64_t maximum, mdcxt_flag_t flags) noexcept
 {
-    return (flags & mdc_minimal_delta) || maximum > UINT16_MAX ? mdtc_b4 : mdtc_b2;
-}
-
-// Semantic payload IDs are keyed by descriptor kinds; target order and tag widths
-// come exclusively from those kinds' reference codecs.
-template<typename Kind>
-constexpr uint32_t coded_index_family() noexcept
-{
-    using namespace columns;
-    if constexpr (std::is_same_v<Kind, decltype(TypeDef_Extends)::value_type>) return 0;
-    else if constexpr (std::is_same_v<Kind, decltype(Constant_Parent)::value_type>) return 1;
-    else if constexpr (std::is_same_v<Kind, decltype(CustomAttribute_Parent)::value_type>) return 2;
-    else if constexpr (std::is_same_v<Kind, decltype(FieldMarshal_Parent)::value_type>) return 3;
-    else if constexpr (std::is_same_v<Kind, decltype(DeclSecurity_Parent)::value_type>) return 4;
-    else if constexpr (std::is_same_v<Kind, decltype(MemberRef_Class)::value_type>) return 5;
-    else if constexpr (std::is_same_v<Kind, decltype(MethodSemantics_Association)::value_type>) return 6;
-    else if constexpr (std::is_same_v<Kind, decltype(MethodImpl_MethodBody)::value_type>) return 7;
-    else if constexpr (std::is_same_v<Kind, decltype(ImplMap_MemberForwarded)::value_type>) return 8;
-    else if constexpr (std::is_same_v<Kind, decltype(ExportedType_Implementation)::value_type>) return 9;
-    else if constexpr (std::is_same_v<Kind, decltype(CustomAttribute_Type)::value_type>) return 10;
-    else if constexpr (std::is_same_v<Kind, decltype(TypeRef_ResolutionScope)::value_type>) return 11;
-    else if constexpr (std::is_same_v<Kind, decltype(GenericParam_Owner)::value_type>) return 12;
-#ifdef DNMD_PORTABLE_PDB
-    else if constexpr (std::is_same_v<Kind, decltype(CustomDebugInformation_Parent)::value_type>) return 13;
-#endif
-    else
-        static_assert(!std::is_same_v<Kind, Kind>, "The coded index needs a semantic payload ID.");
+    return static_cast<mdtcol_t>((flags & mdc_minimal_delta) || maximum > UINT16_MAX ? mdtc_b4 : mdtc_b2);
 }
 
 template<mdtable_id_t Table, typename Kind, typename RowCounts>
@@ -379,7 +353,7 @@ constexpr mdtcol_t initial_column_details(column<Table, Kind> col, RowCounts con
     if constexpr (std::is_same_v<Kind, column_type_constant>)
     {
         (void)flags;
-        return static_cast<mdtcol_t>(mdtc_constant | (constant_column_width(col) == 4 ? mdtc_b4 : mdtc_b2));
+        return static_cast<mdtcol_t>(constant_column_width(col) == 4 ? mdtc_b4 : mdtc_b2);
     }
     else
     {
@@ -388,7 +362,7 @@ constexpr mdtcol_t initial_column_details(column<Table, Kind> col, RowCounts con
         (void)col;
         constexpr auto large = std::is_same_v<Kind, column_type_string> ? mdc_large_string_heap
             : std::is_same_v<Kind, column_type_guid> ? mdc_large_guid_heap : mdc_large_blob_heap;
-        return static_cast<mdtcol_t>(mdtc_idx_heap | column_heap<Kind>() | (flags & large ? mdtc_b4 : mdtc_b2));
+        return static_cast<mdtcol_t>(flags & large ? mdtc_b4 : mdtc_b2);
     }
 }
 
@@ -396,12 +370,7 @@ template<mdtable_id_t Table, mdtable_id_t... Targets, typename RowCounts>
 constexpr mdtcol_t initial_column_details(column<Table, raw_cursor<Targets...>> col,
     RowCounts const& rows, mdcxt_flag_t flags) noexcept
 {
-    uint32_t semantics = 0;
-    if constexpr (sizeof...(Targets) == 1)
-        semantics = mdtc_idx_table | ((static_cast<uint32_t>(Targets) << 16) | ...);
-    else
-        semantics = mdtc_idx_coded | (coded_index_family<raw_cursor<Targets...>>() << 24);
-    return static_cast<mdtcol_t>(semantics | reference_width(max_reference_value(col, rows), flags));
+    return reference_width(max_reference_value(col, rows), flags);
 }
 
 template<mdtable_id_t Table, mdtable_id_t Direct, mdtable_id_t Ptr, typename RowCounts>

@@ -390,33 +390,33 @@ bool get_referenced_type_system_table_row_counts(mdcxt_t* cxt, uint32_t* row_cou
 }
 #endif
 
-mdstream_t* get_heap_by_id(mdcxt_t* cxt, mdtcol_t heap_id)
+mdstream_t* get_heap_by_id(mdcxt_t* cxt, mdheap_id_t heap_id)
 {
     assert(cxt != NULL);
     switch (heap_id)
     {
-        case mdtc_hblob:
+        case mdhid_Blob:
             return &cxt->blob_heap;
-        case mdtc_hguid:
+        case mdhid_Guid:
             return &cxt->guid_heap;
-        case mdtc_hstring:
+        case mdhid_String:
             return &cxt->strings_heap;
-        case mdtc_hus:
+        case mdhid_UserString:
             return &cxt->user_string_heap;
         default:
             return NULL;
     }
 }
 
-mdcxt_flag_t get_large_heap_flag(mdtcol_t heap_id)
+mdcxt_flag_t get_large_heap_flag(mdheap_id_t heap_id)
 {
     switch (heap_id)
     {
-    case mdtc_hblob:
+    case mdhid_Blob:
         return mdc_large_blob_heap;
-    case mdtc_hguid:
+    case mdhid_Guid:
         return mdc_large_guid_heap;
-    case mdtc_hstring:
+    case mdhid_String:
         return mdc_large_string_heap;
     default:
         return 0;

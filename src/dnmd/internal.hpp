@@ -11,10 +11,10 @@ bool initialize_minimal_table_rows(mdcxt_t* context);
 bool validate_tables(mdcxt_t* context);
 bool merge_in_delta(mdcxt_t* context, mdcxt_t* delta);
 bool dump_tables(mdcxt_t* context, int32_t table);
-bool append_heap(mdcxt_t* context, mdcxt_t* delta, mdtcol_t heap);
+bool append_heap(mdcxt_t* context, mdcxt_t* delta, mdheap_id_t heap);
 bool update_table_references_for_shifted_rows(mdcxt_t* context, mdtable_id_t updated_table,
     uint32_t changed_row_start, int64_t shift);
-bool update_heap_column_sizes(mdcxt_t* context, mdtcol_t heap, uint32_t new_max_count);
+bool update_heap_column_sizes(mdcxt_t* context, mdheap_id_t heap, uint32_t new_max_count);
 #ifdef DNMD_PORTABLE_PDB
 bool update_pdb_column_sizes(mdcxt_t* context, mdtable_id_t updated_table, uint32_t const* row_counts);
 #endif
@@ -30,7 +30,7 @@ bool create_and_fill_indirect_table(mdtable_t* direct, mdtable_t* indirect);
 uint8_t* allocate_table_data(mdtable_t* table, uint8_t row_size, size_t* capacity);
 void replace_table_data(mdtable_t* table, uint8_t* data, size_t capacity, uint8_t row_size, mdtcol_t const* columns);
 void free_mdmem(mdcxt_t* context, void* data);
-mdcxt_flag_t get_large_heap_flag(mdtcol_t heap);
+mdcxt_flag_t get_large_heap_flag(mdheap_id_t heap);
 #ifdef DNMD_PORTABLE_PDB
 bool get_referenced_type_system_table_row_counts(mdcxt_t* context, uint32_t* row_counts);
 #endif
@@ -54,7 +54,8 @@ inline bool table_storage_valid(mdtable_t const& table, size_t columns) noexcept
     {
         auto details = static_cast<uint32_t>(table.column_details[column]);
         auto width = details & mdtc_widthmask;
-        if (width != mdtc_b2 && width != mdtc_b4)
+        if ((details & ~(mdtc_comask | mdtc_widthmask)) != 0
+            || (width != mdtc_b2 && width != mdtc_b4))
             return false;
         auto offset = (ExtractOffset)(details);
         auto bytes = width == mdtc_b4 ? 4u : 2u;

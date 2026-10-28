@@ -60,20 +60,8 @@ static_assert(MDTABLE_MAX_COUNT <= 64, "Specification sets max table count to 64
 #define MDTABLE_MAX_COLUMN_COUNT 9
 
 // Macros used to insert/extract the column offset.
-#define InsertOffset(o) ((o << 8) & mdtc_comask)
-#define ExtractOffset(o) ((o & mdtc_comask) >> 8)
-
-// Macros used to insert/extract the table for indexing.
-#define InsertTable(c) ((c << 16) & mdtc_timask)
-#define ExtractTable(c) ((c & mdtc_timask) >> 16)
-
-// Macros used to insert/extract the coded index map index
-#define InsertCodedIndex(s) ((s << 24) & mdtc_cimask)
-#define ExtractCodedIndex(s) ((s & mdtc_cimask) >> 24)
-
-// Macros used to insert/extract the heap type
-#define InsertHeapType(h) ((h) & mdtc_hmask)
-#define ExtractHeapType(h) ((h) & mdtc_hmask)
+#define InsertOffset(o) ((o << 2) & mdtc_comask)
+#define ExtractOffset(o) ((o & mdtc_comask) >> 2)
 
 // Extract a context from the mdhandle_t.
 mdcxt_t* extract_mdcxt(mdhandle_t md);
@@ -91,8 +79,8 @@ bool dump_tables(mdcxt_t* cxt, int32_t table);
 // Streams
 //
 
-mdstream_t* get_heap_by_id(mdcxt_t* cxt, mdtcol_t heap_id);
-mdcxt_flag_t get_large_heap_flag(mdtcol_t heap_id);
+mdstream_t* get_heap_by_id(mdcxt_t* cxt, mdheap_id_t heap_id);
+mdcxt_flag_t get_large_heap_flag(mdheap_id_t heap_id);
 
 // Strings heap, #Strings - II.24.2.3
 bool try_get_string(mdcxt_t* cxt, size_t offset, char const** str);
@@ -202,7 +190,7 @@ bool allocate_new_table(mdtable_t* table);
 uint8_t* get_writable_table_data(mdtable_t* table, bool make_writable);
 uint8_t* allocate_table_data(mdtable_t* table, uint8_t row_size, size_t* capacity);
 void replace_table_data(mdtable_t* table, uint8_t* data, size_t capacity, uint8_t row_size, mdtcol_t const* columns);
-bool update_heap_column_sizes(mdcxt_t* cxt, mdtcol_t heap, uint32_t new_max_count);
+bool update_heap_column_sizes(mdcxt_t* cxt, mdheap_id_t heap, uint32_t new_max_count);
 bool update_table_references_for_shifted_rows(mdcxt_t* cxt, mdtable_id_t updated_table, uint32_t changed_row_start, int64_t shift);
 // Physical insertion publishes the RID after acquiring a pending row.
 bool insert_row_into_table(mdtable_t* table, uint32_t row_index, uint32_t* new_row);
@@ -213,7 +201,7 @@ bool update_referenced_type_system_table_row_count(mdcxt_t* cxt, mdtable_id_t up
 #endif // DNMD_PORTABLE_PDB
 
 // Add the heap with the specified id from the delta image to the cxt image.
-bool append_heap(mdcxt_t* cxt, mdcxt_t* delta, mdtcol_t heap_id);
+bool append_heap(mdcxt_t* cxt, mdcxt_t* delta, mdheap_id_t heap_id);
 
 extern mdguid_t const empty_guid;
 

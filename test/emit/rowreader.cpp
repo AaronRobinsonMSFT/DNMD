@@ -89,7 +89,7 @@ namespace
             auto details = table->column_details[static_cast<uint8_t>(column.column_index)];
             auto data = const_cast<uint8_t*>(table->data.ptr)
                 + size_t{dnmd::detail::CursorRow(row) - 1} * table->row_size_bytes
-                + ((static_cast<uint32_t>(details) & mdtc_comask) >> 8);
+                + (dnmd::detail::ExtractOffset)(details);
             for (uint32_t i = 0; i < ((details & mdtc_b4) ? 4u : 2u); ++i)
                 data[i] = static_cast<uint8_t>(value >> (8 * i));
         }
@@ -268,25 +268,17 @@ namespace
                 ASSERT_TRUE(dnmd::md_cursor_move(position, -1));
                 EXPECT_EQ(CreateTokenType(source_table) | rows, dnmd_test::Token(position));
             }
-            auto table = dnmd::detail::CursorTable(source);
-            auto saved = table->column_details[0];
-            table->column_details[0] = static_cast<mdtcol_t>(saved & (mdtc_widthmask | mdtc_comask));
             position_type typed{source};
             EXPECT_TRUE(typed);
             mdToken token;
             EXPECT_TRUE(typed.get_target_token(token));
             EXPECT_EQ(direct_token, token);
-            table->column_details[0] = saved;
 
             position_type expected_list = position_type::nil(handle.get());
             uint32_t expected_count;
             ASSERT_TRUE(owner.get_column_value_as_range(list, expected_list, &expected_count));
             mdToken expected_source;
             ASSERT_TRUE(expected_list.get_token(expected_source));
-            auto owner_table = dnmd::detail::CursorTable(owner);
-            auto& list_details = owner_table->column_details[static_cast<uint8_t>(list.column_index)];
-            auto saved_list_details = list_details;
-            list_details = static_cast<mdtcol_t>(list_details & (mdtc_widthmask | mdtc_comask));
             dnmd::row_reader reader{owner};
             mdToken actual_source;
             EXPECT_TRUE(reader.read(list, actual_source));
@@ -304,7 +296,6 @@ namespace
             dnmd::row_reader after_write{owner};
             EXPECT_TRUE(after_write.read(list, actual_source));
             EXPECT_EQ(expected_source, actual_source);
-            list_details = saved_list_details;
 
             size_t image_size = 0;
             EXPECT_FALSE(md_write_to_buffer(handle.get(), nullptr, &image_size));
@@ -355,7 +346,7 @@ namespace
                 EXPECT_EQ(handle.get(), position.get_handle());
             }
             auto saved = pointer;
-            mdtcol_t details = static_cast<mdtcol_t>(mdtc_idx_table | mdtc_b2 | (DirectTableId << 16));
+            mdtcol_t details = mdtc_b2;
             uint8_t data[2]{};
             pointer.row_count = 1;
             pointer.row_size_bytes = sizeof(data);
@@ -513,20 +504,14 @@ TEST_F(CppRowReader, WideIndices)
         (row << 5) | 21, CreateTokenType(mdtid_MethodSpec) | row));
 }
 
-TEST_F(CppRowReader, ReferenceDecodingUsesColumnTypesNotMetadataMaps)
+TEST_F(CppRowReader, ReferenceDecodingUsesColumnTypes)
 {
     auto row = GetRow<mdtid_TypeDef>();
     dnmd::row_reader<mdtid_TypeDef> reader{row};
     SetRaw(row, TypeDef_Extends, (2u << 2) | 1);
-    auto table = dnmd::detail::CursorTable(row);
-    auto& details = table->column_details[static_cast<uint8_t>(mdtTypeDef_Extends)];
-    auto saved = details;
-    details = static_cast<mdtcol_t>((static_cast<uint32_t>(details) & ~(mdtc_categorymask | mdtc_cimask))
-        | mdtc_idx_table);
     mdToken token = 0;
     EXPECT_TRUE(reader.read(TypeDef_Extends, token));
     EXPECT_EQ(CreateTokenType(mdtid_TypeRef) | 2, token);
-    details = saved;
 }
 
 TEST_F(CppRowReader, IndirectConstructorsUseTypedPointerColumns)

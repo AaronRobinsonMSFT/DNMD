@@ -6,6 +6,11 @@
 TEST(CppSchemaHeader, StandaloneSchema)
 {
     using namespace dnmd;
+    static_assert(detail::column_heap<column_type_constant>() == mdhid_None);
+    static_assert(detail::column_heap<column_type_string>() == mdhid_String);
+    static_assert(detail::column_heap<column_type_blob>() == mdhid_Blob);
+    static_assert(detail::column_heap<column_type_guid>() == mdhid_Guid);
+    static_assert(detail::column_heap<column_type_userstring>() == mdhid_UserString);
     static_assert(std::is_same_v<detail::all_tables::value_type, mdtable_id_t>);
     static_assert(detail::all_tables::size() == mdtid_End);
     static_assert(std::is_same_v<typename detail::table_range<mdtid_Module, mdtid_TypeDef>::type,

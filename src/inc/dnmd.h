@@ -146,30 +146,25 @@ typedef struct mdcdata__
     size_t size;
 } mdcdata_t;
 
+// Runtime column metadata stores only width and byte offset.
+typedef uint16_t mdtcol_t;
+enum
+{
+    mdtc_none      = 0x0000,
+    mdtc_b2        = 0x0001,
+    mdtc_b4        = 0x0002,
+    mdtc_widthmask = 0x0003,
+    mdtc_comask    = 0x03fc,
+};
+
 typedef enum
 {
-    // Category of the stored value.
-    mdtc_none         = 0x00000000,
-    mdtc_constant     = 0x00000001,
-    mdtc_idx_heap     = 0x00000002,
-    mdtc_idx_table    = 0x00000004,
-    mdtc_idx_coded    = 0x00000008,
-    mdtc_categorymask = 0x0000000f,
-    // Width of a stored constant or index.
-    mdtc_b2           = 0x00000010,
-    mdtc_b4           = 0x00000020,
-    mdtc_widthmask    = 0x00000030,
-    // Byte offset, target table, and coded-index map within a row.
-    mdtc_comask       = 0x0000ff00,
-    mdtc_timask       = 0x00ff0000,
-    mdtc_cimask       = 0x0f000000,
-    // Heap selected by an index.
-    mdtc_hguid        = 0x10000000,
-    mdtc_hstring      = 0x20000000,
-    mdtc_hus          = 0x40000000,
-    mdtc_hblob        = 0x80000000,
-    mdtc_hmask        = 0xf0000000,
-} mdtcol_t;
+    mdhid_None = -1,
+    mdhid_String,
+    mdhid_Guid,
+    mdhid_Blob,
+    mdhid_UserString,
+} mdheap_id_t;
 
 struct mdcxt__;
 
