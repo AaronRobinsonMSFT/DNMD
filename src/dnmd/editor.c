@@ -72,18 +72,18 @@ static mdeditor_t* get_editor(mdcxt_t* cxt)
     return editor;
 }
 
-bool create_and_fill_indirect_table(mdcxt_t* cxt, mdtable_id_t original_table, mdtable_id_t indirect_table)
+bool create_and_fill_indirect_table(mdtable_t* original, mdtable_t* target_table)
 {
+    mdcxt_t* cxt = original->cxt;
+    mdtable_id_t original_table = (mdtable_id_t)original->table_id;
+    mdtable_id_t indirect_table = (mdtable_id_t)target_table->table_id;
+    assert(target_table->cxt == cxt && get_corresponding_indirection_table(original_table) == indirect_table);
     mdeditor_t* editor = get_editor(cxt);
     if (editor == NULL)
         return false;
 
     // We should only call into here if we don't already have an indirection table.
-    mdtable_t* target_table = editor->tables[indirect_table].table;
-    assert(!target_table->is_initialized);
-
-    if (!initialize_new_table_details(cxt, indirect_table, target_table))
-        return false;
+    assert(!target_table->is_initialized && target_table->row_size_bytes != 0);
 
     // Assert that the indirection table has exactly one column that points back at the original table.
     // The width can be either a short or wide column.
@@ -221,55 +221,16 @@ static bool allocate_more_editable_space(mdcxt_t* cxt, mddata_t* editable_data, 
     return true;
 }
 
-bool initialize_new_table_details(
-    mdcxt_t* cxt,
-    mdtable_id_t id,
-    mdtable_t* table
-)
+bool allocate_new_table(mdtable_t* table)
 {
-    assert(table->cxt == cxt && !table->is_initialized);
-    // Use the real table row counts to ensure that when saving, we can
-    // directly write out table memory without any required post-processing.
-    uint32_t table_row_counts[MDTABLE_MAX_COUNT];
-    for (size_t i = 0; i < MDTABLE_MAX_COUNT; i++)
-    {
-        table_row_counts[i] = cxt->tables[i].row_count;
-    }
-
-    // Set the new table's row count temporarily to 1 to ensure that we initialize the table.
-    table_row_counts[id] = 1;
-
-    // We'll treat any new table that has keys as sorted.
-    // We only want to do this for tables with keys as tables without keys
-    // never use the is_sorted bit.
-    md_key_info_t const* keys;
-    uint8_t key_count = get_table_keys(id, &keys);
-    bool has_keys = key_count != 0;
-
-    if (!initialize_table_details(
-        table_row_counts,
-        cxt->context_flags,
-        id,
-        has_keys,
-        table))
-        return false;
-
-    table->row_count = 0;
-    return true;
-}
-
-bool allocate_new_table(mdcxt_t* cxt, mdtable_id_t table_id)
-{
+    mdcxt_t* cxt = table->cxt;
+    mdtable_id_t table_id = (mdtable_id_t)table->table_id;
     mdeditor_t* editor = get_editor(cxt);
     if (editor == NULL)
         return false;
 
-    mdtable_t* table = &cxt->tables[table_id];
     // We should not be allocating for an already-initialized table.
-    assert(!table->is_initialized);
-
-    if (!initialize_new_table_details(cxt, table_id, table))
-        return false;
+    assert(!table->is_initialized && table->row_size_bytes != 0);
 
     // Allocate some memory for the table.
     // The number of rows in this allocation is arbitrary.

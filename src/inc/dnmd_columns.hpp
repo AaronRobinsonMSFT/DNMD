@@ -52,6 +52,17 @@ struct row_storage_access;
 struct stored_column_value {};
 struct list_boundary_value {};
 
+// Parentheses keep the C backend's function-like macros from expanding here.
+constexpr mdtcol_t (InsertOffset)(uint32_t offset) noexcept
+{
+    return static_cast<mdtcol_t>((offset << 8) & mdtc_comask);
+}
+
+constexpr uint32_t (ExtractOffset)(uint32_t details) noexcept
+{
+    return (details & mdtc_comask) >> 8;
+}
+
 template<mdtable_id_t TableId>
 constexpr mdtable_id_t parent_table_id() noexcept
 {

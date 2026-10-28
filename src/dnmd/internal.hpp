@@ -12,7 +12,6 @@ bool validate_tables(mdcxt_t* context);
 bool merge_in_delta(mdcxt_t* context, mdcxt_t* delta);
 bool dump_tables(mdcxt_t* context, int32_t table);
 bool append_heap(mdcxt_t* context, mdcxt_t* delta, mdtcol_t heap);
-bool create_and_fill_indirect_table(mdcxt_t* context, mdtable_id_t direct, mdtable_id_t indirect);
 bool update_table_references_for_shifted_rows(mdcxt_t* context, mdtable_id_t updated_table,
     uint32_t changed_row_start, int64_t shift);
 bool update_heap_column_sizes(mdcxt_t* context, mdtcol_t heap, uint32_t new_max_count);
@@ -27,6 +26,7 @@ namespace dnmd::detail
 {
 extern "C"
 {
+bool create_and_fill_indirect_table(mdtable_t* direct, mdtable_t* indirect);
 uint8_t* allocate_table_data(mdtable_t* table, uint8_t row_size, size_t* capacity);
 void replace_table_data(mdtable_t* table, uint8_t* data, size_t capacity, uint8_t row_size, mdtcol_t const* columns);
 void free_mdmem(mdcxt_t* context, void* data);
@@ -34,6 +34,14 @@ mdcxt_flag_t get_large_heap_flag(mdtcol_t heap);
 #ifdef DNMD_PORTABLE_PDB
 bool get_referenced_type_system_table_row_counts(mdcxt_t* context, uint32_t* row_counts);
 #endif
+}
+
+template<mdtable_id_t Direct, mdtable_id_t Ptr>
+inline bool create_and_fill_indirect_table(mdcxt_t* context) noexcept
+{
+    static_assert(pointer_table_id<Direct>() == Ptr);
+    return initialize_new_table_details<Ptr>(context)
+        && create_and_fill_indirect_table(&context->tables[Direct], &context->tables[Ptr]);
 }
 
 inline bool table_storage_valid(mdtable_t const& table, size_t columns) noexcept
@@ -48,7 +56,7 @@ inline bool table_storage_valid(mdtable_t const& table, size_t columns) noexcept
         auto width = details & mdtc_widthmask;
         if (width != mdtc_b2 && width != mdtc_b4)
             return false;
-        auto offset = (details & mdtc_comask) >> 8;
+        auto offset = (ExtractOffset)(details);
         auto bytes = width == mdtc_b4 ? 4u : 2u;
         if (offset > table.row_size_bytes || bytes > table.row_size_bytes - offset)
             return false;
@@ -65,7 +73,7 @@ struct row_storage_access
         auto value = reader.read_raw(col);
         if (!(details & mdtc_b4) && value > UINT16_MAX)
             return false;
-        auto offset = (static_cast<uint32_t>(details) & mdtc_comask) >> 8;
+        auto offset = (ExtractOffset)(details);
         row_writer<Table>::write_value(destination + offset, details, value);
         return true;
     }

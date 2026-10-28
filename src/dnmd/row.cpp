@@ -56,27 +56,10 @@ namespace
     }
 
     template<mdtable_id_t Table, mdtable_id_t... Targets>
-    uint64_t max_reference_value(mdtable_t const&, column<Table, raw_cursor<Targets...>>,
+    uint64_t max_reference_value(mdtable_t const&, column<Table, raw_cursor<Targets...>> col,
         table_row_counts const& rows)
     {
-        if constexpr (sizeof...(Targets) == 1)
-            return (uint64_t{rows[Targets]} + ...);
-        else
-        {
-            uint64_t maximum = 0;
-            uint32_t tag = 0;
-            auto include = [&](auto target) {
-                constexpr auto id = decltype(target)::value;
-                if constexpr (id != mdtid_Unused)
-                {
-                    constexpr auto bits = detail::column_reference_codec<Targets...>::tag_bits;
-                    maximum = std::max(maximum, (uint64_t{rows[id]} << bits) | tag);
-                }
-                ++tag;
-            };
-            (include(std::integral_constant<mdtable_id_t, Targets>{}), ...);
-            return maximum;
-        }
+        return detail::max_reference_value(col, rows);
     }
 
     template<mdtable_id_t Table, mdtable_id_t Direct, mdtable_id_t Ptr>
@@ -86,16 +69,6 @@ namespace
         return rows[detail::list_target_table<Direct, Ptr>(&table)];
     }
 
-    template<typename Kind>
-    constexpr mdtcol_t column_heap() noexcept
-    {
-        if constexpr (std::is_same_v<Kind, column_type_string>) return mdtc_hstring;
-        else if constexpr (std::is_same_v<Kind, column_type_blob>) return mdtc_hblob;
-        else if constexpr (std::is_same_v<Kind, column_type_guid>) return mdtc_hguid;
-        else if constexpr (std::is_same_v<Kind, column_type_userstring>) return mdtc_hus;
-        else return mdtc_none;
-    }
-
     template<mdtable_id_t Table, typename Kind>
     mdtcol_t column_width(mdtable_t const& table, column<Table, Kind> col, reference_size_change change)
     {
@@ -103,8 +76,7 @@ namespace
             && !std::is_same_v<Kind, column_type_constant>)
         {
             if (references_table(&table, col, change.table))
-                return (table.cxt->context_flags & mdc_minimal_delta)
-                    || max_reference_value(table, col, change.rows) > UINT16_MAX ? mdtc_b4 : mdtc_b2;
+                return detail::reference_width(max_reference_value(table, col, change.rows), table.cxt->context_flags);
         }
         return static_cast<mdtcol_t>(table.column_details[static_cast<uint8_t>(col.column_index)] & mdtc_widthmask);
     }
@@ -112,11 +84,10 @@ namespace
     template<mdtable_id_t Table, typename Kind>
     mdtcol_t column_width(mdtable_t const& table, column<Table, Kind> col, heap_size_change change)
     {
-        if constexpr (column_heap<Kind>() != mdtc_none)
+        if constexpr (detail::column_heap<Kind>() != mdtc_none)
         {
-            if (column_heap<Kind>() == change.heap)
-                return (table.cxt->context_flags & mdc_minimal_delta)
-                    || change.count > UINT16_MAX ? mdtc_b4 : mdtc_b2;
+            if (detail::column_heap<Kind>() == change.heap)
+                return detail::reference_width(change.count, table.cxt->context_flags);
         }
         return static_cast<mdtcol_t>(table.column_details[static_cast<uint8_t>(col.column_index)] & mdtc_widthmask);
     }
@@ -137,7 +108,7 @@ namespace
                 auto previous = static_cast<uint32_t>(table.column_details[index]);
                 auto width = column_width(table, col, change);
                 auto next = (previous & ~(mdtc_widthmask | mdtc_comask))
-                    | static_cast<uint32_t>(width) | (row_size << 8);
+                    | static_cast<uint32_t>(width) | (detail::InsertOffset)(row_size);
                 details[index] = static_cast<mdtcol_t>(next);
                 changed = changed || next != previous;
                 row_size += width == mdtc_b4 ? 4u : 2u;
@@ -403,7 +374,7 @@ namespace
         if constexpr (traits::pointer != mdtid_Unused)
         {
             // Inserting within a direct list requires a Ptr table.
-            if (!create_and_fill_indirect_table(direct->cxt, child, traits::pointer))
+            if (!detail::create_and_fill_indirect_table<child, traits::pointer>(direct->cxt))
                 return false;
             auto table = detail::CursorTable(owner);
             auto& details = table->column_details[static_cast<uint8_t>(col.column_index)];
@@ -442,7 +413,7 @@ namespace
         if (!table->is_initialized)
         {
             // Create the absent child table and rebind its empty range to one-past the end.
-            if (!detail::allocate_new_table(table->cxt, static_cast<mdtable_id_t>(table->table_id)))
+            if (!detail::initialize_new_table_details(first) || !detail::allocate_new_table(table))
                 return false;
             first = source_position::at(owner.get_handle(), 1, static_cast<mdtable_id_t>(table->table_id));
         }

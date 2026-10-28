@@ -3,6 +3,7 @@
 
 #include "dnmd_read.hpp"
 #include "dnmd_schema.hpp"
+#include <array>
 #include <cstring>
 #include <memory>
 
@@ -19,14 +20,40 @@ uint32_t add_to_string_heap(::mdcxt__* context, char const* value);
 uint32_t add_to_blob_heap(::mdcxt__* context, uint8_t const* value, uint32_t length);
 uint32_t add_to_guid_heap(::mdcxt__* context, mdguid_t value);
 uint32_t add_to_user_string_heap(::mdcxt__* context, char16_t const* value);
-bool allocate_new_table(::mdcxt__* context, mdtable_id_t table);
-bool initialize_new_table_details(::mdcxt__* context, mdtable_id_t id, mdtable_t* table);
+bool allocate_new_table(mdtable_t* table);
 bool insert_row_into_table(mdtable_t* table, uint32_t row, uint32_t* added_row);
 extern mdguid_t const empty_guid;
 #ifdef DNMD_PORTABLE_PDB
 bool has_pdb(::mdcxt__* context);
 bool update_referenced_type_system_table_row_count(::mdcxt__* context, mdtable_id_t table, uint32_t row);
 #endif
+}
+
+template<mdtable_id_t Table, mdtable_id_t... Tables>
+inline bool initialize_new_table_details(mdcxt_t* context, table_sequence<Tables...>) noexcept
+{
+    auto& table = context->tables[Table];
+    assert(table.cxt == context && !table.is_initialized);
+    std::array<uint32_t, mdtid_End> rows{context->tables[Tables].row_count...};
+    rows[Table] = 1;
+    constexpr bool sorted = std::tuple_size_v<decltype(table_sort_keys<Table>())> != 0;
+    if (!initialize_table_details<Table>(rows, context->context_flags, sorted, table))
+        return false;
+    table.row_count = 0;
+    return true;
+}
+
+template<mdtable_id_t Table>
+inline bool initialize_new_table_details(mdcxt_t* context) noexcept
+{
+    return initialize_new_table_details<Table>(context, all_tables{});
+}
+
+template<mdtable_id_t... Targets>
+inline bool initialize_new_table_details(raw_cursor<Targets...> const& position) noexcept
+{
+    auto table = CursorTable(position);
+    return ((table->table_id == Targets && initialize_new_table_details<Targets>(table->cxt)) || ...);
 }
 
 // Indirection failures finish owned child/Ptr additions and clear both outputs.
@@ -147,7 +174,7 @@ private:
                 return false;
         }
         data += size_t{detail::CursorRow(_cursor) - 1} * table->row_size_bytes
-            + ((static_cast<uint32_t>(details) & mdtc_comask) >> 8);
+            + (detail::ExtractOffset)(details);
         write_value(data, details, value);
         if constexpr (TrackOrder)
             detail::update_column_sort_order(_cursor, col);
@@ -363,8 +390,7 @@ inline bool initialize_list_column(cursor<Owner> owner, column<Owner, Kind> col,
 {
     auto target = CursorTable(target_position);
     bool initialized = target->is_initialized;
-    if (!initialized
-        && !initialize_new_table_details(target->cxt, static_cast<mdtable_id_t>(target->table_id), target))
+    if (!initialized && !initialize_new_table_details(target_position))
         return false;
     // Initialize list columns to nil for absent tables, otherwise one-past the end.
     auto end = raw_cursor<Targets...>::at(target->cxt, initialized ? target->row_count + 1 : 0,
@@ -438,7 +464,7 @@ inline bool append_row_to_table(mdcxt_t* context, uint32_t* row) noexcept
             if constexpr (Table == mdtid_FieldPtr || Table == mdtid_MethodPtr
                 || Table == mdtid_ParamPtr || Table == mdtid_EventPtr || Table == mdtid_PropertyPtr)
                 return false;
-            else if (!allocate_new_table(context, Table))
+            else if (!initialize_new_table_details<Table>(context) || !allocate_new_table(&table))
                 return false;
         }
         return append_row<Table>(context, row);

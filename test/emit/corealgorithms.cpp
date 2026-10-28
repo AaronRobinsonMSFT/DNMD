@@ -9,7 +9,6 @@
 #include <utility>
 #include <vector>
 
-extern "C" uint8_t get_table_column_count(mdtable_id_t table);
 extern "C" void* alloc_mdmem(mdcxt_t* context, size_t length);
 
 namespace
@@ -239,7 +238,7 @@ namespace
             auto& context = detail::context(base.get());
             if (existing_pointer)
             {
-                ASSERT_TRUE(create_and_fill_indirect_table(&context, mdtid_Param, mdtid_ParamPtr));
+                ASSERT_TRUE((detail::create_and_fill_indirect_table<mdtid_Param, mdtid_ParamPtr>(&context)));
                 auto& details = context.tables[mdtid_MethodDef].column_details[
                     static_cast<uint8_t>(MethodDef_ParamList.column_index)];
                 details = static_cast<mdtcol_t>((static_cast<uint32_t>(details) & ~mdtc_timask)
@@ -280,12 +279,10 @@ namespace
     };
 
     template<mdtable_id_t... Tables>
-    void CheckSchemas(detail::table_sequence<Tables...>)
+    void CheckColumnOrder(detail::table_sequence<Tables...>)
     {
         auto check = [](auto table) {
             constexpr auto id = decltype(table)::value;
-            constexpr auto count = std::tuple_size_v<decltype(detail::table_columns<id>())>;
-            EXPECT_EQ(get_table_column_count(id), count);
             uint8_t index = 0;
             auto check_index = [&](auto col) {
                 EXPECT_EQ(index++, static_cast<uint8_t>(col.column_index));
@@ -359,9 +356,9 @@ TEST(CoreSchema, ForEachColumnInvokesEmptySchemasWithoutArguments)
 #endif
 }
 
-TEST_F(CoreAlgorithms, TypedSchemasMatchCColumnCountsAndOrder)
+TEST_F(CoreAlgorithms, TypedSchemasPreserveColumnOrder)
 {
-    CheckSchemas(detail::all_tables{});
+    CheckColumnOrder(detail::all_tables{});
 }
 
 TEST_F(CoreAlgorithms, InitializesMinimalRowsWithoutGuidAllocation)
@@ -706,7 +703,7 @@ TEST_F(CoreAlgorithms, ShiftedListReferencesUseTheActiveDirectOrPointerTable)
     ASSERT_TRUE(ShiftReferences(mdtid_MethodDef, 2, -1));
     ASSERT_NO_FATAL_FAILURE(expect(mdtid_MethodDef, 1, 3));
 
-    ASSERT_TRUE(create_and_fill_indirect_table(&context, mdtid_MethodDef, mdtid_MethodPtr));
+    ASSERT_TRUE((detail::create_and_fill_indirect_table<mdtid_MethodDef, mdtid_MethodPtr>(&context)));
     auto& details = table->column_details[column];
     details = static_cast<mdtcol_t>((static_cast<uint32_t>(details) & ~mdtc_timask)
         | (uint32_t{mdtid_MethodPtr} << 16));
@@ -739,7 +736,8 @@ TEST_F(CoreAlgorithms, ShiftedReferencesSkipEmptyAndAbsentTablesAndNonReferenceC
     auto row = md_create_cursor<mdtid_TypeDef>(base.get()).value();
     ASSERT_TRUE(row.set_column_value(TypeDef_Flags, 0x1234));
     ASSERT_TRUE(row.set_column_value(TypeDef_TypeName, "Preserved"));
-    ASSERT_TRUE(detail::allocate_new_table(&context, mdtid_ClassLayout));
+    ASSERT_TRUE(detail::initialize_new_table_details<mdtid_ClassLayout>(&context));
+    ASSERT_TRUE(detail::allocate_new_table(&context.tables[mdtid_ClassLayout]));
     ASSERT_FALSE(context.tables[mdtid_TypeRef].is_initialized);
     ASSERT_TRUE(ShiftReferences(mdtid_TypeDef, 1, 1));
     EXPECT_FALSE(context.tables[mdtid_TypeRef].is_initialized);
@@ -1034,7 +1032,7 @@ TEST_F(CoreAlgorithms, RejectsPointerTablesInCompressedHeap)
     ASSERT_TRUE(method);
     ASSERT_TRUE(AddParameter(method, 0));
     auto& context = detail::context(base.get());
-    ASSERT_TRUE(create_and_fill_indirect_table(&context, mdtid_Param, mdtid_ParamPtr));
+    ASSERT_TRUE((detail::create_and_fill_indirect_table<mdtid_Param, mdtid_ParamPtr>(&context)));
     auto flags = context.context_flags;
     context.context_flags = static_cast<mdcxt_flag_t>(flags & ~mdc_uncompressed_table_heap);
     EXPECT_FALSE(md_validate(base.get()));

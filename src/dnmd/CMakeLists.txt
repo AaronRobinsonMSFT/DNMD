@@ -7,7 +7,7 @@ set(SOURCES
   initialize.cpp
   row.cpp
   streams.c
-  tables.c
+  tables.cpp
   validate.cpp
 )
 

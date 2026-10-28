@@ -139,41 +139,8 @@ bool try_get_pdb(mdcxt_t* cxt, md_pdb_t* pdb);
 // Tables
 //
 
-// Coded index collections - II.24.2.6
-typedef enum
-{
-    mdci_TypeDefOrRef,
-    mdci_HasConstant,
-    mdci_HasCustomAttribute,
-    mdci_HasFieldMarshall,
-    mdci_HasDeclSecurity,
-    mdci_MemberRefParent,
-    mdci_HasSemantics,
-    mdci_MethodDefOrRef,
-    mdci_MemberForwarded,
-    mdci_Implementation,
-    mdci_CustomAttributeType,
-    mdci_ResolutionScope,
-    mdci_TypeOrMethodDef,
-#ifdef DNMD_PORTABLE_PDB
-    mdci_HasCustomDebugInformation,
-#endif // DNMD_PORTABLE_PDB
-    mdci_Count
-} md_coded_idx_t;
-
 // Get the column count for a table.
 uint8_t get_table_column_count(mdtable_id_t id);
-
-// II.22 Metadata logical format tables
-// Sort key info for tables
-
-typedef struct md_key_info__
-{
-    uint8_t index;
-    bool descending;
-} md_key_info_t;
-
-uint8_t get_table_keys(mdtable_id_t id, md_key_info_t const** keys);
 
 // Initialize the supplied table details
 bool initialize_table_details(
@@ -230,10 +197,9 @@ bool decompress_i32(uint8_t const** data, size_t* data_len, int32_t* o);
 bool compress_u32(uint32_t data, uint8_t* compressed, size_t* compressed_len);
 
 // Editing
-bool create_and_fill_indirect_table(mdcxt_t* cxt, mdtable_id_t original_table, mdtable_id_t indirect_table);
-bool allocate_new_table(mdcxt_t* cxt, mdtable_id_t table_id);
+bool create_and_fill_indirect_table(mdtable_t* original, mdtable_t* indirect);
+bool allocate_new_table(mdtable_t* table);
 uint8_t* get_writable_table_data(mdtable_t* table, bool make_writable);
-bool initialize_new_table_details(mdcxt_t* cxt, mdtable_id_t id, mdtable_t* table);
 uint8_t* allocate_table_data(mdtable_t* table, uint8_t row_size, size_t* capacity);
 void replace_table_data(mdtable_t* table, uint8_t* data, size_t capacity, uint8_t row_size, mdtcol_t const* columns);
 bool update_heap_column_sizes(mdcxt_t* cxt, mdtcol_t heap, uint32_t new_max_count);

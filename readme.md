@@ -42,7 +42,7 @@ The typed API is organized into these headers:
 | Header | Contents |
 | --- | --- |
 | `dnmd_columns.hpp` | Column types, descriptors, and reference codecs |
-| `dnmd_schema.hpp` | Table/list columns, sort keys, table sequences, and typed column iteration |
+| `dnmd_schema.hpp` | Table/list columns, fixed widths, initial layouts, sort keys, table sequences, and typed column iteration |
 | `dnmd_cursors.hpp` | Row/position cursors, conversions, navigation, and factories |
 | `dnmd_read.hpp` | Row readers and read-only column iterators |
 | `dnmd_write.hpp` | Row writers, cursor write methods, and typed row-add guards |
@@ -241,6 +241,15 @@ external PDB-reference growth scans only the PDB sequence. Resizing copies store
 values directly, preserving heap offsets and coded-index tags without heap
 insertion or reference-tracking side effects. `editor.c` provides the tracked
 allocation and storage-publication primitives.
+Initial table layouts also expand the canonical schema in `dnmd_schema.hpp`,
+including fixed scalar widths, reference tag widths, offsets, and column counts.
+Image loading selects a typed initializer through a C-compatible adapter in
+`tables.cpp`, using parser-provided row counts (including PDB external counts),
+heap-size flags, and sorted bits. Native creation prepares its known table type
+before calling C allocation; new-table sorted defaults come from typed sort keys.
+Schema-only preparation does not allocate storage or set `is_initialized`.
+Initialization and resizing share reference-sizing primitives, while initial heap
+widths continue to use image flags rather than the heap-growth policy.
 If a list addition fails during an indirection-table step, the core finishes its
 owned child/Ptr additions and returns no pending row to the caller. This does not
 roll back the inserted rows or finish another edit's pending Ptr row.

@@ -1,6 +1,7 @@
 #include <dnmd_schema.hpp>
 #include <dnmd_schema.hpp>
 #include <gtest/gtest.h>
+#include <array>
 
 TEST(CppSchemaHeader, StandaloneSchema)
 {
@@ -41,4 +42,29 @@ TEST(CppSchemaHeader, SelectedMetadataPreservesListAndKeyOrder)
         return (check(selected) && ...);
     }, keys));
     EXPECT_EQ(2, next_key);
+}
+
+TEST(CppSchemaHeader, StandaloneInitialLayout)
+{
+    using namespace dnmd;
+    static_assert(detail::constant_column_width(columns::MethodDef_Rva) == 4);
+    static_assert(detail::constant_column_width(columns::MethodDef_ImplFlags) == 2);
+    static_assert(detail::constant_column_width(columns::ClassLayout_ClassSize) == 4);
+    static_assert(detail::constant_column_width(columns::ClassLayout_PackingSize) == 2);
+    constexpr auto counts = [] {
+        std::array<uint32_t, mdtid_End> rows{};
+        rows[mdtid_TypeDef] = 1;
+        rows[mdtid_TypeSpec] = 0x4000;
+        rows[mdtid_MemberRef] = 0x2000;
+        return rows;
+    }();
+    static_assert((detail::initial_column_details(columns::CustomAttribute_Type, counts, mdc_none)
+        & mdtc_widthmask) == mdtc_b4);
+    std::array<mdtcol_t, 6> columns{};
+    mdtable_t table{};
+    table.column_details = columns.data();
+    ASSERT_TRUE(detail::initialize_table_details<mdtid_TypeDef>(counts, mdc_none, false, table));
+    EXPECT_EQ(16u, table.row_size_bytes);
+    EXPECT_EQ(mdtc_b4, columns[3] & mdtc_widthmask);
+    EXPECT_FALSE(table.is_initialized);
 }

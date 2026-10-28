@@ -153,7 +153,7 @@ namespace
 
         if (!context->tables[mdtid_Param].has_indirect_table)
         {
-            if (!create_and_fill_indirect_table(context, mdtid_Param, mdtid_ParamPtr))
+            if (!detail::create_and_fill_indirect_table<mdtid_Param, mdtid_ParamPtr>(context))
                 return false;
             auto& details = context->tables[mdtid_MethodDef].column_details[
                 static_cast<uint8_t>(MethodDef_ParamList.column_index)];

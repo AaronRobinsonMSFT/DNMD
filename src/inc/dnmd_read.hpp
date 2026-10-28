@@ -45,7 +45,7 @@ private:
     uint32_t read_raw(column<TableId, ColumnType> col) const noexcept
     {
         auto details = column_details(col);
-        auto data = _data + ((static_cast<uint32_t>(details) & mdtc_comask) >> 8);
+        auto data = _data + (detail::ExtractOffset)(details);
 #ifdef _MSC_VER
         // Match the core's unaligned little-endian load fast path on MSVC.
         if (details & mdtc_b4)

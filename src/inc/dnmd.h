@@ -258,11 +258,11 @@ bool md_walk_user_string_heap(mdhandle_t handle, mduserstringcursor_t* cursor, m
 // An example (release build):
 //  MDTABLE_COLUMN(Assembly, HashAlgId, 0) => mdtAssembly_HashAlgId = 0
 //
-#if defined(DEBUG_TABLE_COLUMN_LOOKUP) && !defined(MDTABLES_BUILD)
+#if defined(DEBUG_TABLE_COLUMN_LOOKUP)
 #define MDTABLE_COLUMN(table, col, value) mdt ## table ## _ ## col = ((mdtid_ ## table << 8) | (value))
 #else
 #define MDTABLE_COLUMN(table, col, value) mdt ## table ## _ ## col = (value)
-#endif // DEBUG_TABLE_COLUMN_LOOKUP && !MDTABLES_BUILD
+#endif // DEBUG_TABLE_COLUMN_LOOKUP
 
 #define MDTABLE_COLUMN_COUNT(table, value) mdt ## table ## _ ## ColCount = (value)
 
