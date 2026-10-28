@@ -1,8 +1,41 @@
-#include "schema.hpp"
+#include "internal.hpp"
+#include <algorithm>
+#include <array>
+#include <memory>
 
 namespace
 {
     using namespace dnmd;
+
+    using table_row_counts = std::array<uint64_t, mdtid_End>;
+
+    struct reference_size_change
+    {
+        mdtable_id_t table;
+        table_row_counts const& rows;
+    };
+
+    struct heap_size_change
+    {
+        mdtcol_t heap;
+        uint32_t count;
+    };
+
+    template<mdtable_id_t... Tables>
+    table_row_counts get_row_counts(mdcxt_t* context, detail::table_sequence<Tables...>)
+    {
+        static_assert(sizeof...(Tables) == mdtid_End);
+        return {{context->tables[Tables].row_count...}};
+    }
+
+#ifdef DNMD_PORTABLE_PDB
+    template<mdtable_id_t... Tables>
+    void include_external_rows(table_row_counts& rows, uint32_t const* external,
+        detail::table_sequence<Tables...>)
+    {
+        ((rows[Tables] += external[Tables]), ...);
+    }
+#endif
 
     template<mdtable_id_t Table>
     raw_cursor<Table> position(mdcxt_t* context, uint32_t row)
@@ -11,15 +44,145 @@ namespace
     }
 
     template<mdtable_id_t Table, mdtable_id_t... Targets>
-    bool references_table(mdtable_t*, column<Table, raw_cursor<Targets...>>, mdtable_id_t target)
+    bool references_table(mdtable_t const*, column<Table, raw_cursor<Targets...>>, mdtable_id_t target)
     {
         return ((target == Targets) || ...);
     }
 
     template<mdtable_id_t Table, mdtable_id_t Direct, mdtable_id_t Ptr>
-    bool references_table(mdtable_t* table, column<Table, indirect_cursor<Direct, Ptr>>, mdtable_id_t target)
+    bool references_table(mdtable_t const* table, column<Table, indirect_cursor<Direct, Ptr>>, mdtable_id_t target)
     {
         return detail::list_target_table<Direct, Ptr>(table) == target;
+    }
+
+    template<mdtable_id_t Table, mdtable_id_t... Targets>
+    uint64_t max_reference_value(mdtable_t const&, column<Table, raw_cursor<Targets...>>,
+        table_row_counts const& rows)
+    {
+        if constexpr (sizeof...(Targets) == 1)
+            return (uint64_t{rows[Targets]} + ...);
+        else
+        {
+            uint64_t maximum = 0;
+            uint32_t tag = 0;
+            auto include = [&](auto target) {
+                constexpr auto id = decltype(target)::value;
+                if constexpr (id != mdtid_Unused)
+                {
+                    constexpr auto bits = detail::column_reference_codec<Targets...>::tag_bits;
+                    maximum = std::max(maximum, (uint64_t{rows[id]} << bits) | tag);
+                }
+                ++tag;
+            };
+            (include(std::integral_constant<mdtable_id_t, Targets>{}), ...);
+            return maximum;
+        }
+    }
+
+    template<mdtable_id_t Table, mdtable_id_t Direct, mdtable_id_t Ptr>
+    uint64_t max_reference_value(mdtable_t const& table, column<Table, indirect_cursor<Direct, Ptr>>,
+        table_row_counts const& rows)
+    {
+        return rows[detail::list_target_table<Direct, Ptr>(&table)];
+    }
+
+    template<typename Kind>
+    constexpr mdtcol_t column_heap() noexcept
+    {
+        if constexpr (std::is_same_v<Kind, column_type_string>) return mdtc_hstring;
+        else if constexpr (std::is_same_v<Kind, column_type_blob>) return mdtc_hblob;
+        else if constexpr (std::is_same_v<Kind, column_type_guid>) return mdtc_hguid;
+        else if constexpr (std::is_same_v<Kind, column_type_userstring>) return mdtc_hus;
+        else return mdtc_none;
+    }
+
+    template<mdtable_id_t Table, typename Kind>
+    mdtcol_t column_width(mdtable_t const& table, column<Table, Kind> col, reference_size_change change)
+    {
+        if constexpr (detail::searchable_column<Kind>::value
+            && !std::is_same_v<Kind, column_type_constant>)
+        {
+            if (references_table(&table, col, change.table))
+                return (table.cxt->context_flags & mdc_minimal_delta)
+                    || max_reference_value(table, col, change.rows) > UINT16_MAX ? mdtc_b4 : mdtc_b2;
+        }
+        return static_cast<mdtcol_t>(table.column_details[static_cast<uint8_t>(col.column_index)] & mdtc_widthmask);
+    }
+
+    template<mdtable_id_t Table, typename Kind>
+    mdtcol_t column_width(mdtable_t const& table, column<Table, Kind> col, heap_size_change change)
+    {
+        if constexpr (column_heap<Kind>() != mdtc_none)
+        {
+            if (column_heap<Kind>() == change.heap)
+                return (table.cxt->context_flags & mdc_minimal_delta)
+                    || change.count > UINT16_MAX ? mdtc_b4 : mdtc_b2;
+        }
+        return static_cast<mdtcol_t>(table.column_details[static_cast<uint8_t>(col.column_index)] & mdtc_widthmask);
+    }
+
+    template<mdtable_id_t Table, typename Change>
+    bool set_column_size_for_max_row_count(mdtable_t& table, Change change)
+    {
+        constexpr auto count = std::tuple_size_v<decltype(detail::table_columns<Table>())>;
+        static_assert(count != 0 && count * 4 <= UINT8_MAX);
+        if (!detail::table_storage_valid(table, count))
+            return false;
+        std::array<mdtcol_t, count> details{};
+        uint32_t row_size = 0;
+        bool changed = false;
+        detail::for_each_column<Table>([&](auto... cols) {
+            auto update = [&](auto col) {
+                auto index = static_cast<uint8_t>(col.column_index);
+                auto previous = static_cast<uint32_t>(table.column_details[index]);
+                auto width = column_width(table, col, change);
+                auto next = (previous & ~(mdtc_widthmask | mdtc_comask))
+                    | static_cast<uint32_t>(width) | (row_size << 8);
+                details[index] = static_cast<mdtcol_t>(next);
+                changed = changed || next != previous;
+                row_size += width == mdtc_b4 ? 4u : 2u;
+            };
+            (update(cols), ...);
+        });
+        if (!changed)
+            return true;
+
+        auto release = [context = table.cxt](uint8_t* data) noexcept { detail::free_mdmem(context, data); };
+        size_t capacity = 0;
+        std::unique_ptr<uint8_t, decltype(release)> data{
+            detail::allocate_table_data(&table, static_cast<uint8_t>(row_size), &capacity), release};
+        if (!data || table.row_count > capacity / row_size)
+            return false;
+        auto destination = data.get();
+        // Repacking preserves stored values and sort order without invoking heap or reference writes.
+        for (auto row = position<Table>(table.cxt, 1); row; row.move(1), destination += row_size)
+        {
+            row_reader reader{row.value()};
+            if (!detail::for_each_column<Table>([&](auto... cols) {
+                return (detail::row_storage_access::copy(reader, cols, destination,
+                    details[static_cast<uint8_t>(cols.column_index)]) && ...);
+            }))
+                return false;
+        }
+        detail::replace_table_data(&table, data.get(), capacity, static_cast<uint8_t>(row_size), details.data());
+        data.release();
+        return true;
+    }
+
+    template<mdtable_id_t... Tables, typename Change>
+    bool set_column_sizes(mdcxt_t* context, detail::table_sequence<Tables...>, Change change)
+    {
+        auto update = [&](auto id) {
+            constexpr auto table_id = decltype(id)::value;
+            if constexpr (std::tuple_size_v<decltype(detail::table_columns<table_id>())> == 0)
+                return true;
+            else
+            {
+                auto& table = context->tables[table_id];
+                return !table.is_initialized || set_column_size_for_max_row_count<table_id>(table, change);
+            }
+        };
+        return (update(std::integral_constant<mdtable_id_t, Tables>{}) && ...);
     }
 
     template<mdtable_id_t Table, typename Kind>
@@ -51,11 +214,23 @@ namespace
             return true;
     }
 
-    template<size_t... Tables>
-    bool update_references_in_tables(mdcxt_t* context, std::index_sequence<Tables...>, mdtable_id_t updated_table,
+    template<mdtable_id_t... Tables>
+    bool update_references_in_tables(mdcxt_t* context, detail::table_sequence<Tables...>, mdtable_id_t updated_table,
         uint32_t changed_row_start, int64_t shift)
     {
         auto new_count = static_cast<uint32_t>(int64_t{context->tables[updated_table].row_count} + shift);
+        auto rows = get_row_counts(context, detail::all_tables{});
+        rows[updated_table] = new_count;
+#ifdef DNMD_PORTABLE_PDB
+        auto pdb_rows = rows;
+        if (detail::has_pdb(context))
+        {
+            std::array<uint32_t, mdtid_FirstPdb> external{};
+            if (!detail::get_referenced_type_system_table_row_counts(context, external.data()))
+                return false;
+            include_external_rows(pdb_rows, external.data(), detail::non_pdb_tables{});
+        }
+#endif
         auto update = [&](auto id) {
             constexpr auto table_id = decltype(id)::value;
             if constexpr (std::tuple_size_v<decltype(detail::table_columns<table_id>())> == 0)
@@ -65,18 +240,24 @@ namespace
                 auto& table = context->tables[table_id];
                 if (!table.is_initialized) // This table is not used in the current image.
                     return true;
+#ifdef DNMD_PORTABLE_PDB
+                auto const& counts = table_id >= mdtid_FirstPdb ? pdb_rows : rows;
+#else
+                auto const& counts = rows;
+#endif
+                reference_size_change change{updated_table, counts};
                 // Widen before shifting; narrow only after rewriting the larger RIDs.
                 if (shift >= 0
-                    && !detail::set_column_size_for_max_row_count(&table, updated_table, mdtc_none, new_count))
+                    && !set_column_size_for_max_row_count<table_id>(table, change))
                     return false;
-                if (!std::apply([&](auto... columns) {
+                if (!detail::for_each_column<table_id>([&](auto... columns) {
                     return (update_shifted_row_references(&table, columns, updated_table, changed_row_start, shift) && ...);
-                }, detail::table_columns<table_id>()))
+                }))
                     return false;
-                return shift >= 0 || detail::set_column_size_for_max_row_count(&table, updated_table, mdtc_none, new_count);
+                return shift >= 0 || set_column_size_for_max_row_count<table_id>(table, change);
             }
         };
-        return (update(std::integral_constant<mdtable_id_t, static_cast<mdtable_id_t>(Tables)>{}) && ...);
+        return (update(std::integral_constant<mdtable_id_t, Tables>{}) && ...);
     }
 
     template<mdtable_id_t Table>
@@ -99,9 +280,9 @@ namespace
             else
                 return false;
         };
-        return std::apply([&](auto... columns) {
+        return detail::for_each_column<Table>([&](auto... columns) {
             return (find(columns) || ...);
-        }, detail::table_columns<Table>());
+        });
     }
 
     template<typename Kind>
@@ -404,11 +585,45 @@ bool add_row_to_list(cursor<mdtid_LocalScope> owner, decltype(columns::LocalScop
 #endif
 }
 
+bool update_heap_column_sizes(mdcxt_t* context, mdtcol_t heap, uint32_t new_max_count)
+{
+    assert(context != nullptr);
+    if (heap != mdtc_hstring && heap != mdtc_hblob && heap != mdtc_hguid && heap != mdtc_hus)
+        return false;
+    auto flag = detail::get_large_heap_flag(heap);
+    if (flag != mdc_none)
+    {
+        auto flags = static_cast<uint32_t>(context->context_flags);
+        bool large = (flags & mdc_minimal_delta) || new_max_count > UINT16_MAX;
+        flags = large ? flags | static_cast<uint32_t>(flag) : flags & ~static_cast<uint32_t>(flag);
+        context->context_flags = static_cast<mdcxt_flag_t>(flags);
+    }
+    heap_size_change change{heap, new_max_count};
+    if (!set_column_sizes(context, detail::non_pdb_tables{}, change))
+        return false;
+#ifdef DNMD_PORTABLE_PDB
+    return set_column_sizes(context, detail::pdb_tables{}, change);
+#else
+    return true;
+#endif
+}
+
+#ifdef DNMD_PORTABLE_PDB
+bool update_pdb_column_sizes(mdcxt_t* context, mdtable_id_t updated_table, uint32_t const* row_counts)
+{
+    assert(context != nullptr && row_counts != nullptr);
+    assert(updated_table >= mdtid_First && updated_table < mdtid_FirstPdb);
+    auto rows = get_row_counts(context, detail::all_tables{});
+    include_external_rows(rows, row_counts, detail::non_pdb_tables{});
+    return set_column_sizes(context, detail::pdb_tables{}, reference_size_change{updated_table, rows});
+}
+#endif
+
 bool update_table_references_for_shifted_rows(mdcxt_t* context, mdtable_id_t updated_table,
     uint32_t changed_row_start, int64_t shift)
 {
     assert(context != nullptr && updated_table != mdtid_Unused);
     // Make sure we aren't shifting into negative row ids or above the max row id.
     assert(changed_row_start + shift > 0 && changed_row_start + shift < 0x00ffffff);
-    return update_references_in_tables(context, detail::table_indices{}, updated_table, changed_row_start, shift);
+    return update_references_in_tables(context, detail::all_tables{}, updated_table, changed_row_start, shift);
 }

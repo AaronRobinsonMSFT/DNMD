@@ -1,4 +1,4 @@
-#include "schema.hpp"
+#include "internal.hpp"
 
 namespace
 {
@@ -90,9 +90,9 @@ namespace
         {
             std::printf("%4u|", row);
             row_reader reader{position.value()};
-            if (!std::apply([&](auto... columns) {
+            if (!detail::for_each_column<Table>([&](auto... columns) {
                 return (dump_column(position.value(), reader, columns) && ...);
-            }, detail::table_columns<Table>()))
+            }))
                 return false;
             std::printf("\n");
         }

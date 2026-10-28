@@ -1,12 +1,42 @@
-#ifndef _SRC_DNMD_SCHEMA_HPP_
-#define _SRC_DNMD_SCHEMA_HPP_
+#ifndef _SRC_INC_DNMD_SCHEMA_HPP_
+#define _SRC_INC_DNMD_SCHEMA_HPP_
 
-#include "internal.hpp"
+#include "dnmd_columns.hpp"
+#include <tuple>
 #include <utility>
 
 namespace dnmd::detail
 {
-using table_indices = std::make_index_sequence<mdtid_End>;
+// std::integer_sequence requires an integral type, so use an enum-typed
+// equivalent to preserve table identity throughout deduction and expansion.
+template<mdtable_id_t... Tables>
+struct table_sequence
+{
+    using value_type = mdtable_id_t;
+    static constexpr size_t size() noexcept { return sizeof...(Tables); }
+};
+
+template<mdtable_id_t First, int... Offsets>
+constexpr auto make_table_sequence(std::integer_sequence<int, Offsets...>) noexcept
+{
+    return table_sequence<static_cast<mdtable_id_t>(First + Offsets)...>{};
+}
+
+template<mdtable_id_t First, mdtable_id_t Last>
+struct table_range
+{
+    static_assert(First >= mdtid_First && First <= Last && Last <= mdtid_End);
+    using type = decltype(make_table_sequence<First>(std::make_integer_sequence<int, Last - First>{}));
+};
+
+using all_tables = typename table_range<mdtid_First, mdtid_End>::type;
+
+#ifdef DNMD_PORTABLE_PDB
+using non_pdb_tables = typename table_range<mdtid_First, mdtid_FirstPdb>::type;
+using pdb_tables = typename table_range<mdtid_FirstPdb, mdtid_End>::type;
+#else
+using non_pdb_tables = all_tables;
+#endif
 
 template<typename Kind>
 struct list_traits
@@ -31,6 +61,58 @@ struct list_traits<raw_cursor<Direct>>
     static constexpr mdtable_id_t pointer = mdtid_Unused;
     using position_type = raw_cursor<Direct>;
 };
+
+template<mdtable_id_t TableId>
+constexpr auto list_columns() noexcept
+{
+    using namespace columns;
+    if constexpr (TableId == mdtid_TypeDef) return std::tuple{TypeDef_FieldList, TypeDef_MethodList};
+    else if constexpr (TableId == mdtid_MethodDef) return std::tuple{MethodDef_ParamList};
+    else if constexpr (TableId == mdtid_EventMap) return std::tuple{EventMap_EventList};
+    else if constexpr (TableId == mdtid_PropertyMap) return std::tuple{PropertyMap_PropertyList};
+#ifdef DNMD_PORTABLE_PDB
+    else if constexpr (TableId == mdtid_LocalScope)
+        return std::tuple{LocalScope_VariableList, LocalScope_ConstantList};
+#endif
+    else return std::tuple{};
+}
+
+template<typename Column>
+struct sort_key final
+{
+    Column column;
+    bool descending;
+
+    constexpr sort_key(Column col, bool desc = false) noexcept : column{col}, descending{desc} {}
+};
+
+template<mdtable_id_t TableId>
+constexpr auto table_sort_keys() noexcept
+{
+    using namespace columns;
+    if constexpr (TableId == mdtid_ClassLayout) return std::tuple{sort_key{ClassLayout_Parent}};
+    else if constexpr (TableId == mdtid_Constant) return std::tuple{sort_key{Constant_Parent}};
+    else if constexpr (TableId == mdtid_CustomAttribute) return std::tuple{sort_key{CustomAttribute_Parent}};
+    else if constexpr (TableId == mdtid_DeclSecurity) return std::tuple{sort_key{DeclSecurity_Parent}};
+    else if constexpr (TableId == mdtid_FieldLayout) return std::tuple{sort_key{FieldLayout_Field}};
+    else if constexpr (TableId == mdtid_FieldMarshal) return std::tuple{sort_key{FieldMarshal_Parent}};
+    else if constexpr (TableId == mdtid_FieldRva) return std::tuple{sort_key{FieldRva_Field}};
+    else if constexpr (TableId == mdtid_GenericParam)
+        return std::tuple{sort_key{GenericParam_Owner}, sort_key{GenericParam_Number}};
+    else if constexpr (TableId == mdtid_GenericParamConstraint) return std::tuple{sort_key{GenericParamConstraint_Owner}};
+    else if constexpr (TableId == mdtid_ImplMap) return std::tuple{sort_key{ImplMap_MemberForwarded}};
+    else if constexpr (TableId == mdtid_InterfaceImpl) return std::tuple{sort_key{InterfaceImpl_Class}};
+    else if constexpr (TableId == mdtid_MethodImpl) return std::tuple{sort_key{MethodImpl_Class}};
+    else if constexpr (TableId == mdtid_MethodSemantics) return std::tuple{sort_key{MethodSemantics_Association}};
+    else if constexpr (TableId == mdtid_NestedClass) return std::tuple{sort_key{NestedClass_NestedClass}};
+#ifdef DNMD_PORTABLE_PDB
+    else if constexpr (TableId == mdtid_LocalScope)
+        return std::tuple{sort_key{LocalScope_Method}, sort_key{LocalScope_StartOffset}, sort_key{LocalScope_Length, true}};
+    else if constexpr (TableId == mdtid_StateMachineMethod) return std::tuple{sort_key{StateMachineMethod_MoveNextMethod}};
+    else if constexpr (TableId == mdtid_CustomDebugInformation) return std::tuple{sort_key{CustomDebugInformation_Parent}};
+#endif
+    else return std::tuple{};
+}
 
 template<mdtable_id_t Table>
 constexpr auto table_columns() noexcept
@@ -158,14 +240,41 @@ constexpr auto table_columns() noexcept
     }
 }
 
+// Invoke a variadic callable with a selected tuple of Table's column metadata,
+// such as list_columns<Table>() or table_sort_keys<Table>(). The callable's
+// result and the tuple elements' value categories are preserved.
+template<mdtable_id_t Table, typename Callable, typename Columns>
+constexpr decltype(auto) for_each_column(Callable&& callable, Columns&& columns)
+{
+    // Column descriptors and sort-key wrappers have heterogeneous types.
+    // Unpack their tuple into a typed argument pack so callers can choose
+    // their own &&, ||, or comma fold without introducing runtime dispatch.
+    return std::apply(std::forward<Callable>(callable), std::forward<Columns>(columns));
+}
+
+// Invoke a variadic callable once with Table's typed column descriptors in schema order.
+// For example: for_each_column<Table>([&](auto... cols) { return (process(cols) && ...); }).
+// The callable chooses its fold (&&, ||, or comma) and its result is returned unchanged.
+// Empty schemas invoke the callable with no arguments.
+// Descriptor arguments are temporary; do not retain references to them after the call.
+template<mdtable_id_t Table, typename Callable>
+constexpr decltype(auto) for_each_column(Callable&& callable)
+{
+    // Columns have different C++ types, so an ordinary loop would lose the type
+    // information needed to select reader/writer overloads. table_columns builds
+    // a heterogeneous tuple; the tuple overload unpacks it into the callable's
+    // argument pack, where a fold instantiates operations without runtime dispatch.
+    return for_each_column<Table>(std::forward<Callable>(callable), table_columns<Table>());
+}
+
 template<mdtable_id_t Table, typename ColumnType>
 constexpr bool is_list_column(column<Table, ColumnType> col) noexcept
 {
-    return std::apply([col](auto... lists) {
+    return for_each_column<Table>([col](auto... lists) {
         (void)col;
         return ((col.column_index == lists.column_index) || ...);
     }, list_columns<Table>());
 }
 }
 
-#endif // _SRC_DNMD_SCHEMA_HPP_
+#endif // _SRC_INC_DNMD_SCHEMA_HPP_

@@ -1,5 +1,6 @@
 set(HEADER_TEST_SOURCES
 	headers/columns.cpp
+	headers/schema.cpp
 	headers/cursors.cpp
 	headers/read.cpp
 	headers/write.cpp

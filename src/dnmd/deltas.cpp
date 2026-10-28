@@ -1,4 +1,4 @@
-#include "schema.hpp"
+#include "internal.hpp"
 #include <algorithm>
 #include <array>
 #include <new>
@@ -113,9 +113,9 @@ namespace
                 return reader.read(column, value) && writer.write(column, value);
             }
         };
-        return std::apply([&](auto... columns) {
+        return detail::for_each_column<Table>([&](auto... columns) {
             return (copy(columns) && ...);
-        }, detail::table_columns<Table>());
+        });
     }
 
     bool sort_parameters(cursor<mdtid_MethodDef> method)

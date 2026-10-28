@@ -2,6 +2,7 @@
 #define _SRC_INC_DNMD_WRITE_HPP_
 
 #include "dnmd_read.hpp"
+#include "dnmd_schema.hpp"
 #include <cstring>
 #include <memory>
 
@@ -94,7 +95,7 @@ inline void update_column_sort_order(cursor<TableId> row, column<TableId, Column
     auto table = CursorTable(row);
     if (!table->is_sorted || table->is_adding_new_row)
         return;
-    bool is_key = std::apply([col](auto... keys) {
+    bool is_key = for_each_column<TableId>([col](auto... keys) {
         return ((col.column_index == keys.column.column_index) || ...);
     }, table_sort_keys<TableId>());
     if (is_key)
@@ -108,6 +109,27 @@ struct row_writer final
 private:
     friend struct detail::row_storage_access;
     cursor<TableId> _cursor;
+
+    static void write_value(uint8_t* data, mdtcol_t details, uint32_t value) noexcept
+    {
+#ifdef _MSC_VER
+        if (details & mdtc_b4)
+            std::memcpy(data, &value, sizeof(value));
+        else
+        {
+            auto short_value = static_cast<uint16_t>(value);
+            std::memcpy(data, &short_value, sizeof(short_value));
+        }
+#else
+        data[0] = static_cast<uint8_t>(value);
+        data[1] = static_cast<uint8_t>(value >> 8);
+        if (details & mdtc_b4)
+        {
+            data[2] = static_cast<uint8_t>(value >> 16);
+            data[3] = static_cast<uint8_t>(value >> 24);
+        }
+#endif
+    }
 
     template<bool TrackOrder, bool CheckWidth = false, typename ColumnType>
     bool write_raw(column<TableId, ColumnType> col, uint32_t value) const noexcept
@@ -126,23 +148,7 @@ private:
         }
         data += size_t{detail::CursorRow(_cursor) - 1} * table->row_size_bytes
             + ((static_cast<uint32_t>(details) & mdtc_comask) >> 8);
-#ifdef _MSC_VER
-        if (details & mdtc_b4)
-            std::memcpy(data, &value, sizeof(value));
-        else
-        {
-            auto short_value = static_cast<uint16_t>(value);
-            std::memcpy(data, &short_value, sizeof(short_value));
-        }
-#else
-        data[0] = static_cast<uint8_t>(value);
-        data[1] = static_cast<uint8_t>(value >> 8);
-        if (details & mdtc_b4)
-        {
-            data[2] = static_cast<uint8_t>(value >> 16);
-            data[3] = static_cast<uint8_t>(value >> 24);
-        }
-#endif
+        write_value(data, details, value);
         if constexpr (TrackOrder)
             detail::update_column_sort_order(_cursor, col);
         return true;
@@ -387,7 +393,7 @@ inline bool initialize_list_columns(cursor<Table> row) noexcept
     if constexpr (Table == mdtid_TypeDef || Table == mdtid_MethodDef
         || Table == mdtid_EventMap || Table == mdtid_PropertyMap)
     {
-        return std::apply([&](auto... columns) {
+        return for_each_column<Table>([&](auto... columns) {
             return (initialize_list_column(row, columns) && ...);
         }, list_columns<Table>());
     }
@@ -466,7 +472,7 @@ inline bool insert_row_relative(raw_cursor<Table> relative, bool after, uint32_t
         if (*row == table->row_count)
             return initialize_list_columns(added);
         auto next = raw_cursor<Table>::at(table->cxt, *row + 1).value();
-        return std::apply([&](auto... columns) {
+        return for_each_column<Table>([&](auto... columns) {
             auto copy = [&](auto col) {
                 mdToken token;
                 return row_reader{next}.read(col, token) && row_writer{added}.write(col, token);

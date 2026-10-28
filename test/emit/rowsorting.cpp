@@ -12,16 +12,16 @@ namespace
     void CheckKeys(expected_keys const& expected)
     {
         expected_keys actual;
-        std::apply([&](auto... keys) {
+        dnmd::detail::for_each_column<TableId>([&](auto... keys) {
             (actual.emplace_back(keys.column.column_index, keys.descending), ...);
         }, dnmd::detail::table_sort_keys<TableId>());
         EXPECT_EQ(expected, actual) << "Table " << TableId;
     }
 
-    template<size_t... TableIds>
-    void CheckAllKeys(std::array<expected_keys, mdtid_End> const& expected, std::index_sequence<TableIds...>)
+    template<mdtable_id_t... TableIds>
+    void CheckAllKeys(std::array<expected_keys, mdtid_End> const& expected, dnmd::detail::table_sequence<TableIds...>)
     {
-        (CheckKeys<static_cast<mdtable_id_t>(TableIds)>(expected[TableIds]), ...);
+        (CheckKeys<TableIds>(expected[TableIds]), ...);
     }
 
     class CppRowSorting : public testing::Test
@@ -113,7 +113,7 @@ TEST(CppSortKeys, CompleteOrderedSchema)
     expected[mdtid_StateMachineMethod] = {{mdtStateMachineMethod_MoveNextMethod, false}};
     expected[mdtid_CustomDebugInformation] = {{mdtCustomDebugInformation_Parent, false}};
 #endif
-    CheckAllKeys(expected, std::make_index_sequence<mdtid_End>{});
+    CheckAllKeys(expected, dnmd::detail::all_tables{});
 }
 
 TEST_F(CppRowSorting, KeyWritesCheckActualNeighborsAtBothEdgesAndInTheMiddle)

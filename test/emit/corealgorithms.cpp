@@ -1,21 +1,47 @@
 #include <dnmd.hpp>
-#include "schema.hpp"
+#include "internal.hpp"
 #include <gtest/gtest.h>
 #include <algorithm>
 #include <array>
+#include <memory>
 #include <string>
 #include <type_traits>
 #include <utility>
 #include <vector>
 
 extern "C" uint8_t get_table_column_count(mdtable_id_t table);
+extern "C" void* alloc_mdmem(mdcxt_t* context, size_t length);
 
 namespace
 {
     using namespace dnmd;
     using namespace dnmd::columns;
 
-    static_assert(std::is_same_v<detail::table_indices, std::make_index_sequence<mdtid_End>>);
+    static_assert(detail::for_each_column<mdtid_TypeRef>([](auto... columns) {
+        (static_cast<void>(columns), ...);
+        return sizeof...(columns);
+    }) == 3);
+    static_assert(detail::for_each_column<mdtid_Unused>([](auto... columns) {
+        return ((columns.column_index == 0) && ...);
+    }));
+    static_assert(!detail::for_each_column<mdtid_Unused>([](auto... columns) {
+        return ((columns.column_index == 0) || ...);
+    }));
+
+    static_assert(std::is_same_v<detail::all_tables::value_type, mdtable_id_t>);
+    static_assert(detail::all_tables::size() == mdtid_End);
+    static_assert(std::is_same_v<typename detail::table_range<mdtid_TypeRef, mdtid_TypeRef>::type,
+        detail::table_sequence<>>);
+    static_assert(std::is_same_v<typename detail::table_range<mdtid_TypeRef, mdtid_FieldPtr>::type,
+        detail::table_sequence<mdtid_TypeRef, mdtid_TypeDef>>);
+#ifdef DNMD_PORTABLE_PDB
+    static_assert(detail::non_pdb_tables::size() == mdtid_FirstPdb);
+    static_assert(std::is_same_v<detail::pdb_tables, detail::table_sequence<
+        mdtid_Document, mdtid_MethodDebugInformation, mdtid_LocalScope, mdtid_LocalVariable,
+        mdtid_LocalConstant, mdtid_ImportScope, mdtid_StateMachineMethod, mdtid_CustomDebugInformation>>);
+#else
+    static_assert(std::is_same_v<detail::non_pdb_tables, detail::all_tables>);
+#endif
 
     template<typename Owner, typename List, typename... Sort>
     auto SupportsListAdd(int) -> decltype(detail::add_row_to_list(
@@ -51,6 +77,31 @@ namespace
             ASSERT_NE(nullptr, base.get());
             ASSERT_NE(nullptr, delta.get());
         }
+
+#ifdef DNMD_PORTABLE_PDB
+        std::array<uint8_t, 116> pdb_image{};
+
+        handle_ptr CreatePdb()
+        {
+            std::memcpy(pdb_image.data(), "BSJB", 4);
+            pdb_image[4] = 1;
+            pdb_image[6] = 1;
+            pdb_image[12] = 12;
+            std::memcpy(pdb_image.data() + 16, "PDB v1.0", 8);
+            pdb_image[30] = 2;
+            pdb_image[32] = 60;
+            pdb_image[36] = 32;
+            std::memcpy(pdb_image.data() + 40, "#Pdb", 4);
+            pdb_image[48] = 92;
+            pdb_image[52] = 24;
+            std::memcpy(pdb_image.data() + 56, "#~", 2);
+            pdb_image[96] = 2;
+            pdb_image[99] = 1;
+            mdhandle_t raw = nullptr;
+            EXPECT_TRUE(md_create_handle(pdb_image.data(), pdb_image.size(), &raw));
+            return handle_ptr{raw};
+        }
+#endif
 
         template<mdtable_id_t Table>
         raw_cursor<Table> AddRow(mdhandle_t handle)
@@ -228,29 +279,89 @@ namespace
         }
     };
 
-    template<size_t... Tables>
-    void CheckSchemas(std::index_sequence<Tables...>)
+    template<mdtable_id_t... Tables>
+    void CheckSchemas(detail::table_sequence<Tables...>)
     {
         auto check = [](auto table) {
             constexpr auto id = decltype(table)::value;
-            auto columns = detail::table_columns<id>();
-            EXPECT_EQ(get_table_column_count(id), std::tuple_size_v<decltype(columns)>);
+            constexpr auto count = std::tuple_size_v<decltype(detail::table_columns<id>())>;
+            EXPECT_EQ(get_table_column_count(id), count);
             uint8_t index = 0;
             auto check_index = [&](auto col) {
                 EXPECT_EQ(index++, static_cast<uint8_t>(col.column_index));
             };
             (void)check_index;
-            std::apply([&](auto... cols) {
+            detail::for_each_column<id>([&](auto... cols) {
                 (check_index(cols), ...);
-            }, columns);
+            });
         };
-        (check(std::integral_constant<mdtable_id_t, static_cast<mdtable_id_t>(Tables)>{}), ...);
+        (check(std::integral_constant<mdtable_id_t, Tables>{}), ...);
     }
+}
+
+TEST(CoreSchema, ForEachColumnPreservesOrderAndShortCircuiting)
+{
+    using namespace dnmd;
+    std::vector<uint8_t> visited;
+    auto visit = [&](auto col) { visited.push_back(static_cast<uint8_t>(col.column_index)); };
+    detail::for_each_column<mdtid_TypeRef>([&](auto... columns) { (visit(columns), ...); });
+    EXPECT_EQ((std::vector<uint8_t>{0, 1, 2}), visited);
+
+    visited.clear();
+    auto until_second = [&](auto col) {
+        visit(col);
+        return static_cast<uint8_t>(col.column_index) != 1;
+    };
+    EXPECT_FALSE(detail::for_each_column<mdtid_TypeRef>([&](auto... columns) {
+        return (until_second(columns) && ...);
+    }));
+    EXPECT_EQ((std::vector<uint8_t>{0, 1}), visited);
+
+    visited.clear();
+    auto find_second = [&](auto col) {
+        visit(col);
+        return static_cast<uint8_t>(col.column_index) == 1;
+    };
+    EXPECT_TRUE(detail::for_each_column<mdtid_TypeRef>([&](auto... columns) {
+        return (find_second(columns) || ...);
+    }));
+    EXPECT_EQ((std::vector<uint8_t>{0, 1}), visited);
+}
+
+TEST(CoreSchema, ForEachColumnForwardsCallableAndResult)
+{
+    auto move_only = [value = std::make_unique<int>(7)](auto... columns) mutable {
+        (static_cast<void>(columns), ...);
+        return std::pair{std::move(value), sizeof...(columns)};
+    };
+    auto result = dnmd::detail::for_each_column<mdtid_TypeRef>(std::move(move_only));
+    ASSERT_NE(nullptr, result.first);
+    EXPECT_EQ(7, *result.first);
+    EXPECT_EQ(3u, result.second);
+
+    int calls = 0;
+    auto reference = [&](auto...) -> int& { return ++calls; };
+    static_assert(std::is_same_v<decltype(dnmd::detail::for_each_column<mdtid_TypeRef>(reference)), int&>);
+    EXPECT_EQ(&calls, &dnmd::detail::for_each_column<mdtid_TypeRef>(reference));
+    EXPECT_EQ(1, calls);
+}
+
+TEST(CoreSchema, ForEachColumnInvokesEmptySchemasWithoutArguments)
+{
+    int calls = 0;
+    EXPECT_EQ(17, dnmd::detail::for_each_column<mdtid_Unused>([&] { ++calls; return 17; }));
+    EXPECT_EQ(1, calls);
+#ifdef DNMD_PORTABLE_PDB
+    EXPECT_EQ(0u, dnmd::detail::for_each_column<static_cast<mdtable_id_t>(0x2d)>([](auto... columns) {
+        (static_cast<void>(columns), ...);
+        return sizeof...(columns);
+    }));
+#endif
 }
 
 TEST_F(CoreAlgorithms, TypedSchemasMatchCColumnCountsAndOrder)
 {
-    CheckSchemas(detail::table_indices{});
+    CheckSchemas(detail::all_tables{});
 }
 
 TEST_F(CoreAlgorithms, InitializesMinimalRowsWithoutGuidAllocation)
@@ -690,27 +801,90 @@ TEST_F(CoreAlgorithms, ShiftedReferenceReadFailuresPropagateToInsertion)
     EXPECT_FALSE(context.tables[mdtid_TypeRef].is_adding_new_row);
 }
 
+TEST_F(CoreAlgorithms, InsertingIntoAResizedTablePreservesItsLastRowAndClearsTheNewRow)
+{
+    auto first = AddRow<mdtid_TypeRef>(base.get());
+    ASSERT_TRUE(first);
+    ASSERT_TRUE(first.value().set_column_value(TypeRef_TypeName, "Preserved"));
+    ASSERT_TRUE(first.value().set_column_value(TypeRef_TypeNamespace, "Preserved.Namespace"));
+    auto table = detail::CursorTable(first);
+    constexpr uint32_t rows = 0x3fff;
+    size_t capacity = size_t{rows + 1} * table->row_size_bytes;
+    auto data = static_cast<uint8_t*>(alloc_mdmem(table->cxt, capacity));
+    ASSERT_NE(nullptr, data);
+    std::array<mdtcol_t, 3> columns{};
+    std::copy_n(table->column_details, columns.size(), columns.begin());
+    for (uint32_t index = 0; index < rows; ++index)
+        std::memcpy(data + size_t{index} * table->row_size_bytes, table->data.ptr, table->row_size_bytes);
+    table->row_count = rows;
+    detail::replace_table_data(table, data, capacity, table->row_size_bytes, columns.data());
+    auto last = raw_cursor<mdtid_TypeRef>::at(base.get(), rows).value();
+    ASSERT_TRUE(last.set_column_value(TypeRef_ResolutionScope, CreateTokenType(mdtid_TypeRef) | rows));
+    auto added = added_row<mdtid_TypeRef>::insert(first.value(), false);
+    ASSERT_TRUE(added);
+    added.commit();
+    EXPECT_EQ(rows + 1, table->row_count);
+    EXPECT_TRUE(table->column_details[static_cast<uint8_t>(TypeRef_ResolutionScope.column_index)] & mdtc_b4);
+
+    auto bytes = Save(base.get());
+    mdhandle_t raw;
+    ASSERT_TRUE(md_create_handle(bytes.data(), bytes.size(), &raw));
+    handle_ptr loaded{raw};
+    for (auto handle : {base.get(), loaded.get()})
+    {
+        auto inserted = raw_cursor<mdtid_TypeRef>::at(handle, 1).value();
+        mdToken token;
+        char const* name;
+        ASSERT_TRUE(inserted.get_column_value(TypeRef_ResolutionScope, token));
+        EXPECT_EQ(CreateTokenType(mdtid_Module), token);
+        ASSERT_TRUE(inserted.get_column_value(TypeRef_TypeName, &name));
+        EXPECT_STREQ("", name);
+        ASSERT_TRUE(inserted.get_column_value(TypeRef_TypeNamespace, &name));
+        EXPECT_STREQ("", name);
+        auto tail = raw_cursor<mdtid_TypeRef>::at(handle, rows + 1).value();
+        ASSERT_TRUE(tail.get_column_value(TypeRef_ResolutionScope, token));
+        EXPECT_EQ(CreateTokenType(mdtid_TypeRef) | (rows + 1), token);
+        ASSERT_TRUE(tail.get_column_value(TypeRef_TypeName, &name));
+        EXPECT_STREQ("Preserved", name);
+        ASSERT_TRUE(tail.get_column_value(TypeRef_TypeNamespace, &name));
+        EXPECT_STREQ("Preserved.Namespace", name);
+    }
+}
+
+TEST_F(CoreAlgorithms, GuidHeapWidthsUseEntryCountsAndPreserveExistingIndices)
+{
+    auto module = md_create_cursor<mdtid_Module>(base.get()).value();
+    mdguid_t expected{0x12345678, 0x1234, 0x5678, {0, 1, 2, 3, 4, 5, 6, 7}};
+    ASSERT_TRUE(module.set_column_value(Module_Mvid, expected));
+    auto& context = detail::context(base.get());
+    auto& source = detail::context(delta.get());
+    size_t size = size_t{0x10000} * sizeof(mdguid_t);
+    auto data = static_cast<uint8_t*>(alloc_mdmem(&source, size));
+    ASSERT_NE(nullptr, data);
+    std::memset(data, 0, size);
+    std::memcpy(data, &expected, sizeof(expected));
+    source.guid_heap = {data, size_t{0xffff} * sizeof(mdguid_t)};
+    ASSERT_TRUE(append_heap(&context, &source, mdtc_hguid));
+    EXPECT_EQ(size_t{0xffff} * sizeof(mdguid_t), context.guid_heap.size);
+    EXPECT_FALSE(context.context_flags & mdc_large_guid_heap);
+    auto table = detail::CursorTable(module);
+    auto column = static_cast<uint8_t>(Module_Mvid.column_index);
+    EXPECT_TRUE(table->column_details[column] & mdtc_b2);
+    source.guid_heap.size = size;
+    ASSERT_TRUE(append_heap(&context, &source, mdtc_hguid));
+    EXPECT_TRUE(context.context_flags & mdc_large_guid_heap);
+    EXPECT_TRUE(table->column_details[column] & mdtc_b4);
+    EXPECT_EQ(1u, detail::row_storage_access::read(row_reader{module}, Module_Mvid));
+    mdguid_t actual;
+    ASSERT_TRUE(module.get_column_value(Module_Mvid, &actual));
+    EXPECT_EQ(0, std::memcmp(&expected, &actual, sizeof(expected)));
+}
+
 #ifdef DNMD_PORTABLE_PDB
 TEST_F(CoreAlgorithms, ShiftedReferencesReacquireRowsAfterPdbSchemaGrowth)
 {
-    std::array<uint8_t, 116> image{};
-    std::memcpy(image.data(), "BSJB", 4);
-    image[4] = 1;
-    image[6] = 1;
-    image[12] = 12;
-    std::memcpy(image.data() + 16, "PDB v1.0", 8);
-    image[30] = 2;
-    image[32] = 60;
-    image[36] = 32;
-    std::memcpy(image.data() + 40, "#Pdb", 4);
-    image[48] = 92;
-    image[52] = 24;
-    std::memcpy(image.data() + 56, "#~", 2);
-    image[96] = 2;
-    image[99] = 1;
-    mdhandle_t raw;
-    ASSERT_TRUE(md_create_handle(image.data(), image.size(), &raw));
-    handle_ptr pdb{raw};
+    auto pdb = CreatePdb();
+    ASSERT_NE(nullptr, pdb.get());
     for (uint32_t index : {1u, 2u, 3u})
     {
         auto added = added_row<mdtid_LocalScope>::append(pdb.get());
@@ -733,6 +907,99 @@ TEST_F(CoreAlgorithms, ShiftedReferencesReacquireRowsAfterPdbSchemaGrowth)
         EXPECT_EQ(CreateTokenType(mdtid_MethodDef) | (index + 0xffff), token);
         EXPECT_EQ(index * 10, offset);
     }
+}
+
+TEST_F(CoreAlgorithms, ExternalRowGrowthScansOnlyPdbTables)
+{
+    auto pdb = CreatePdb();
+    ASSERT_NE(nullptr, pdb.get());
+    auto member = AddRow<mdtid_MemberRef>(pdb.get());
+    ASSERT_TRUE(member);
+    auto debug = AddRow<mdtid_CustomDebugInformation>(pdb.get());
+    ASSERT_TRUE(debug);
+    ASSERT_TRUE(debug.value().set_column_value(CustomDebugInformation_Parent, CreateTokenType(mdtid_MethodDef) | 0x10000));
+    EXPECT_TRUE(detail::CursorTable(member)->column_details[
+        static_cast<uint8_t>(MemberRef_Class.column_index)] & mdtc_b2);
+    EXPECT_TRUE(detail::CursorTable(debug)->column_details[
+        static_cast<uint8_t>(CustomDebugInformation_Parent.column_index)] & mdtc_b4);
+}
+
+TEST_F(CoreAlgorithms, CodedWidthsRetainOtherExternalTargets)
+{
+    auto pdb = CreatePdb();
+    ASSERT_NE(nullptr, pdb.get());
+    auto first = AddRow<mdtid_CustomDebugInformation>(pdb.get());
+    ASSERT_TRUE(first);
+    mdToken method = CreateTokenType(mdtid_MethodDef) | 0x10000;
+    mdToken field = CreateTokenType(mdtid_Field) | 3;
+    ASSERT_TRUE(first.value().set_column_value(CustomDebugInformation_Parent, method));
+    auto second = AddRow<mdtid_CustomDebugInformation>(pdb.get());
+    ASSERT_TRUE(second);
+    ASSERT_TRUE(second.value().set_column_value(CustomDebugInformation_Parent, field));
+    EXPECT_TRUE(detail::CursorTable(first)->column_details[
+        static_cast<uint8_t>(CustomDebugInformation_Parent.column_index)] & mdtc_b4);
+    auto position = md_create_cursor<mdtid_CustomDebugInformation>(pdb.get());
+    for (auto expected : {method, field})
+    {
+        ASSERT_TRUE(position);
+        mdToken actual;
+        ASSERT_TRUE(position.value().get_column_value(CustomDebugInformation_Parent, actual));
+        EXPECT_EQ(expected, actual);
+        ASSERT_TRUE(position.move(1));
+    }
+    EXPECT_EQ(0x10000u << 5, detail::row_storage_access::read(row_reader{first.value()}, CustomDebugInformation_Parent));
+    EXPECT_EQ((3u << 5) | 1u, detail::row_storage_access::read(row_reader{second.value()}, CustomDebugInformation_Parent));
+}
+
+TEST_F(CoreAlgorithms, HeapGrowthUpdatesBothTableSequences)
+{
+    auto pdb = CreatePdb();
+    ASSERT_NE(nullptr, pdb.get());
+    auto system = AddRow<mdtid_ModuleRef>(pdb.get());
+    auto local = AddRow<mdtid_LocalVariable>(pdb.get());
+    ASSERT_TRUE(system);
+    ASSERT_TRUE(local);
+    ASSERT_TRUE(system.value().set_column_value(ModuleRef_Name, "System"));
+    ASSERT_TRUE(local.value().set_column_value(LocalVariable_Name, "Local"));
+    ASSERT_TRUE(local.value().set_column_value(LocalVariable_Index, 0x1234));
+    std::string large(70000, 'x');
+    ASSERT_NE(0u, detail::add_to_string_heap(&detail::context(pdb.get()), large.c_str()));
+    char const* name;
+    uint32_t index;
+    ASSERT_TRUE(system.value().get_column_value(ModuleRef_Name, &name));
+    EXPECT_STREQ("System", name);
+    ASSERT_TRUE(local.value().get_column_value(LocalVariable_Name, &name));
+    EXPECT_STREQ("Local", name);
+    ASSERT_TRUE(local.value().get_column_value(LocalVariable_Index, &index));
+    EXPECT_EQ(0x1234u, index);
+    EXPECT_TRUE(detail::CursorTable(system)->column_details[static_cast<uint8_t>(ModuleRef_Name.column_index)] & mdtc_b4);
+    EXPECT_TRUE(detail::CursorTable(local)->column_details[static_cast<uint8_t>(LocalVariable_Name.column_index)] & mdtc_b4);
+}
+
+TEST_F(CoreAlgorithms, HeapGrowthBeforeTableCreationSetsTheHeapWidthFlag)
+{
+    auto pdb = CreatePdb();
+    ASSERT_NE(nullptr, pdb.get());
+    std::string large(70000, 'x');
+    auto& context = detail::context(pdb.get());
+    ASSERT_NE(0u, detail::add_to_string_heap(&context, large.c_str()));
+    EXPECT_TRUE(context.context_flags & mdc_large_string_heap);
+    auto row = AddRow<mdtid_LocalVariable>(pdb.get());
+    ASSERT_TRUE(row);
+    ASSERT_TRUE(row.value().set_column_value(LocalVariable_Name, "AfterGrowth"));
+    char const* name;
+    ASSERT_TRUE(row.value().get_column_value(LocalVariable_Name, &name));
+    EXPECT_STREQ("AfterGrowth", name);
+    auto table = detail::CursorTable(row);
+    auto pointer = table->data.ptr;
+    auto details = table->column_details[static_cast<uint8_t>(LocalVariable_Name.column_index)];
+    auto memory = context.mem;
+    EXPECT_FALSE(update_heap_column_sizes(&context, mdtc_hstring, 1));
+    EXPECT_EQ(pointer, table->data.ptr);
+    EXPECT_EQ(details, table->column_details[static_cast<uint8_t>(LocalVariable_Name.column_index)]);
+    EXPECT_EQ(memory, context.mem);
+    ASSERT_TRUE(row.value().get_column_value(LocalVariable_Name, &name));
+    EXPECT_STREQ("AfterGrowth", name);
 }
 #endif
 

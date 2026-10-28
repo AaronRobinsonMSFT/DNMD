@@ -41,7 +41,8 @@ The typed API is organized into these headers:
 
 | Header | Contents |
 | --- | --- |
-| `dnmd_columns.hpp` | Column types, descriptors, and shared schema metadata |
+| `dnmd_columns.hpp` | Column types, descriptors, and reference codecs |
+| `dnmd_schema.hpp` | Table/list columns, sort keys, table sequences, and typed column iteration |
 | `dnmd_cursors.hpp` | Row/position cursors, conversions, navigation, and factories |
 | `dnmd_read.hpp` | Row readers and read-only column iterators |
 | `dnmd_write.hpp` | Row writers, cursor write methods, and typed row-add guards |
@@ -230,8 +231,16 @@ List and sort columns remain typed through the C++ implementation.
 List algorithms and reference shifting live in `src\dnmd\row.cpp`.
 Row creation there uses the typed header implementation
 for appending and inserting rows.
-Reference shifting enumerates `detail::table_indices` and expands typed column
-schemas at compile time, without runtime table dispatch.
+Reference shifting enumerates the enum-typed `detail::all_tables` sequence and
+expands typed column schemas at compile time, without runtime table dispatch.
+`detail::table_sequence<Tables...>` keeps `mdtable_id_t` values in traversal
+signatures; an internal integer-sequence builder generates the table ranges.
+Column-width selection, layout rebuilding, and row copying also use these typed
+schemas in `row.cpp`. Heap growth scans the non-PDB and PDB typed table sequences;
+external PDB-reference growth scans only the PDB sequence. Resizing copies stored
+values directly, preserving heap offsets and coded-index tags without heap
+insertion or reference-tracking side effects. `editor.c` provides the tracked
+allocation and storage-publication primitives.
 If a list addition fails during an indirection-table step, the core finishes its
 owned child/Ptr additions and returns no pending row to the caller. This does not
 roll back the inserted rows or finish another edit's pending Ptr row.

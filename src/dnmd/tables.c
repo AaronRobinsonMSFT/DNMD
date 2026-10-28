@@ -105,50 +105,6 @@ static coded_index_entry_t const coded_index_map[] =
 #endif // DNMD_PORTABLE_PDB
 };
 
-bool compose_coded_index(mdToken tk, mdtcol_t col_details, uint32_t* coded_index)
-{
-    // See II.24.2.6
-    assert(coded_index != NULL);
-
-    // Use the embedded index into the coded index map.
-    size_t ci_idx = ExtractCodedIndex(col_details);
-    assert(ci_idx < ARRAY_SIZE(coded_index_map));
-    coded_index_entry_t const* ci_entry = &coded_index_map[ci_idx];
-
-    // Verify the supplied table type is valid for encoding.
-    mdtable_id_t tgt_table = ExtractTokenType(tk);
-    uint32_t row;
-    for (uint8_t i = 0; i < ci_entry->lookup_len; ++i)
-    {
-        // If the table is valid, construct the coded index.
-        if (ci_entry->lookup[i] == tgt_table)
-        {
-            row = RidFromToken(tk);
-            *coded_index = (row << ci_entry->bit_encoding_size) | (uint32_t)i;
-            return true;
-        }
-    }
-    return false;
-}
-
-bool is_coded_index_target(mdtcol_t col_details, mdtable_id_t table)
-{
-    assert(table != mdtid_Unused);
-
-    size_t ci_idx = ExtractCodedIndex(col_details);
-    assert(ci_idx < ARRAY_SIZE(coded_index_map));
-    coded_index_entry_t const* ci_entry = &coded_index_map[ci_idx];
-    for (uint8_t i = 0; i < ci_entry->lookup_len; ++i)
-    {
-        // If the table is valid, construct the coded index.
-        if (ci_entry->lookup[i] == table)
-        {
-            return true;
-        }
-    }
-    return false;
-}
-
 // Look up table for column counts by table ID
 static uint8_t const table_column_counts[] =
 {

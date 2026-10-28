@@ -378,6 +378,18 @@ bool try_get_pdb(mdcxt_t* cxt, md_pdb_t* pdb)
 #endif // !DNMD_PORTABLE_PDB
 }
 
+#ifdef DNMD_PORTABLE_PDB
+bool get_referenced_type_system_table_row_counts(mdcxt_t* cxt, uint32_t* row_counts)
+{
+    assert(row_counts != NULL);
+    md_pdb_t pdb;
+    if (!try_get_pdb(cxt, &pdb))
+        return false;
+    memcpy(row_counts, pdb.type_system_table_rows, sizeof(*row_counts) * mdtid_FirstPdb);
+    return true;
+}
+#endif
+
 mdstream_t* get_heap_by_id(mdcxt_t* cxt, mdtcol_t heap_id)
 {
     assert(cxt != NULL);

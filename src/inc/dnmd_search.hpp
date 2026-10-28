@@ -2,6 +2,7 @@
 #define _SRC_INC_DNMD_SEARCH_HPP_
 
 #include "dnmd_read.hpp"
+#include "dnmd_schema.hpp"
 #include <algorithm>
 #include <iterator>
 

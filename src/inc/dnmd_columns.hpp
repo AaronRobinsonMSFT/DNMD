@@ -3,7 +3,6 @@
 
 #include "dnmd.h"
 #include <cassert>
-#include <tuple>
 #include <type_traits>
 
 namespace dnmd
@@ -406,61 +405,6 @@ inline constexpr column<mdtid_CustomDebugInformation, raw_cursor<mdtid_MethodDef
 inline constexpr column<mdtid_CustomDebugInformation, column_type_guid> CustomDebugInformation_Kind{ mdtCustomDebugInformation_Kind };
 inline constexpr column<mdtid_CustomDebugInformation, column_type_blob> CustomDebugInformation_Value{ mdtCustomDebugInformation_Value };
 #endif // DNMD_PORTABLE_PDB
-}
-
-namespace detail
-{
-template<mdtable_id_t TableId>
-constexpr auto list_columns() noexcept
-{
-    using namespace columns;
-    if constexpr (TableId == mdtid_TypeDef) return std::tuple{TypeDef_FieldList, TypeDef_MethodList};
-    else if constexpr (TableId == mdtid_MethodDef) return std::tuple{MethodDef_ParamList};
-    else if constexpr (TableId == mdtid_EventMap) return std::tuple{EventMap_EventList};
-    else if constexpr (TableId == mdtid_PropertyMap) return std::tuple{PropertyMap_PropertyList};
-#ifdef DNMD_PORTABLE_PDB
-    else if constexpr (TableId == mdtid_LocalScope)
-        return std::tuple{LocalScope_VariableList, LocalScope_ConstantList};
-#endif
-    else return std::tuple{};
-}
-
-template<typename Column>
-struct sort_key final
-{
-    Column column;
-    bool descending;
-
-    constexpr sort_key(Column col, bool desc = false) noexcept : column{col}, descending{desc} {}
-};
-
-template<mdtable_id_t TableId>
-constexpr auto table_sort_keys() noexcept
-{
-    using namespace columns;
-    if constexpr (TableId == mdtid_ClassLayout) return std::tuple{sort_key{ClassLayout_Parent}};
-    else if constexpr (TableId == mdtid_Constant) return std::tuple{sort_key{Constant_Parent}};
-    else if constexpr (TableId == mdtid_CustomAttribute) return std::tuple{sort_key{CustomAttribute_Parent}};
-    else if constexpr (TableId == mdtid_DeclSecurity) return std::tuple{sort_key{DeclSecurity_Parent}};
-    else if constexpr (TableId == mdtid_FieldLayout) return std::tuple{sort_key{FieldLayout_Field}};
-    else if constexpr (TableId == mdtid_FieldMarshal) return std::tuple{sort_key{FieldMarshal_Parent}};
-    else if constexpr (TableId == mdtid_FieldRva) return std::tuple{sort_key{FieldRva_Field}};
-    else if constexpr (TableId == mdtid_GenericParam)
-        return std::tuple{sort_key{GenericParam_Owner}, sort_key{GenericParam_Number}};
-    else if constexpr (TableId == mdtid_GenericParamConstraint) return std::tuple{sort_key{GenericParamConstraint_Owner}};
-    else if constexpr (TableId == mdtid_ImplMap) return std::tuple{sort_key{ImplMap_MemberForwarded}};
-    else if constexpr (TableId == mdtid_InterfaceImpl) return std::tuple{sort_key{InterfaceImpl_Class}};
-    else if constexpr (TableId == mdtid_MethodImpl) return std::tuple{sort_key{MethodImpl_Class}};
-    else if constexpr (TableId == mdtid_MethodSemantics) return std::tuple{sort_key{MethodSemantics_Association}};
-    else if constexpr (TableId == mdtid_NestedClass) return std::tuple{sort_key{NestedClass_NestedClass}};
-#ifdef DNMD_PORTABLE_PDB
-    else if constexpr (TableId == mdtid_LocalScope)
-        return std::tuple{sort_key{LocalScope_Method}, sort_key{LocalScope_StartOffset}, sort_key{LocalScope_Length, true}};
-    else if constexpr (TableId == mdtid_StateMachineMethod) return std::tuple{sort_key{StateMachineMethod_MoveNextMethod}};
-    else if constexpr (TableId == mdtid_CustomDebugInformation) return std::tuple{sort_key{CustomDebugInformation_Parent}};
-#endif
-    else return std::tuple{};
-}
 }
 
 } // namespace dnmd

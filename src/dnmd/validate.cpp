@@ -1,4 +1,4 @@
-#include "schema.hpp"
+#include "internal.hpp"
 
 bool validate_tables(mdcxt_t* context)
 {

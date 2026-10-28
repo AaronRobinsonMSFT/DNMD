@@ -161,10 +161,6 @@ typedef enum
     mdci_Count
 } md_coded_idx_t;
 
-// Manipulators for coded indices - II.24.2.6
-bool compose_coded_index(mdToken tk, mdtcol_t col_details, uint32_t* coded_index);
-bool is_coded_index_target(mdtcol_t col_details, mdtable_id_t table);
-
 // Get the column count for a table.
 uint8_t get_table_column_count(mdtable_id_t id);
 
@@ -238,11 +234,15 @@ bool create_and_fill_indirect_table(mdcxt_t* cxt, mdtable_id_t original_table, m
 bool allocate_new_table(mdcxt_t* cxt, mdtable_id_t table_id);
 uint8_t* get_writable_table_data(mdtable_t* table, bool make_writable);
 bool initialize_new_table_details(mdcxt_t* cxt, mdtable_id_t id, mdtable_t* table);
-bool set_column_size_for_max_row_count(mdtable_t* table, mdtable_id_t updated_table, mdtcol_t updated_heap, uint32_t new_max_row_count);
+uint8_t* allocate_table_data(mdtable_t* table, uint8_t row_size, size_t* capacity);
+void replace_table_data(mdtable_t* table, uint8_t* data, size_t capacity, uint8_t row_size, mdtcol_t const* columns);
+bool update_heap_column_sizes(mdcxt_t* cxt, mdtcol_t heap, uint32_t new_max_count);
 bool update_table_references_for_shifted_rows(mdcxt_t* cxt, mdtable_id_t updated_table, uint32_t changed_row_start, int64_t shift);
 // Physical insertion publishes the RID after acquiring a pending row.
 bool insert_row_into_table(mdtable_t* table, uint32_t row_index, uint32_t* new_row);
 #ifdef DNMD_PORTABLE_PDB
+bool get_referenced_type_system_table_row_counts(mdcxt_t* cxt, uint32_t* row_counts);
+bool update_pdb_column_sizes(mdcxt_t* cxt, mdtable_id_t updated_table, uint32_t const* row_counts);
 bool update_referenced_type_system_table_row_count(mdcxt_t* cxt, mdtable_id_t updated_table, uint32_t new_max_row_count);
 #endif // DNMD_PORTABLE_PDB
 
