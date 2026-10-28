@@ -12,69 +12,63 @@ namespace
 {
     using namespace dnmd;
 
-    struct expected_layout
-    {
-        uint8_t count;
-        std::string_view columns;
-    };
-
     // Independent storage kinds: fixed 2/4-byte scalars, String/Guid/Blob heaps, and References.
-    constexpr expected_layout layouts[] = {
-        {mdtModule_ColCount, "2SGGG"},
-        {mdtTypeRef_ColCount, "RSS"},
-        {mdtTypeDef_ColCount, "4SSRRR"},
-        {mdtFieldPtr_ColCount, "R"},
-        {mdtField_ColCount, "2SB"},
-        {mdtMethodPtr_ColCount, "R"},
-        {mdtMethodDef_ColCount, "422SBR"},
-        {mdtParamPtr_ColCount, "R"},
-        {mdtParam_ColCount, "22S"},
-        {mdtInterfaceImpl_ColCount, "RR"},
-        {mdtMemberRef_ColCount, "RSB"},
-        {mdtConstant_ColCount, "2RB"},
-        {mdtCustomAttribute_ColCount, "RRB"},
-        {mdtFieldMarshal_ColCount, "RB"},
-        {mdtDeclSecurity_ColCount, "2RB"},
-        {mdtClassLayout_ColCount, "24R"},
-        {mdtFieldLayout_ColCount, "4R"},
-        {mdtStandAloneSig_ColCount, "B"},
-        {mdtEventMap_ColCount, "RR"},
-        {mdtEventPtr_ColCount, "R"},
-        {mdtEvent_ColCount, "2SR"},
-        {mdtPropertyMap_ColCount, "RR"},
-        {mdtPropertyPtr_ColCount, "R"},
-        {mdtProperty_ColCount, "2SB"},
-        {mdtMethodSemantics_ColCount, "2RR"},
-        {mdtMethodImpl_ColCount, "RRR"},
-        {mdtModuleRef_ColCount, "S"},
-        {mdtTypeSpec_ColCount, "B"},
-        {mdtImplMap_ColCount, "2RSR"},
-        {mdtFieldRva_ColCount, "4R"},
-        {mdtENCLog_ColCount, "44"},
-        {mdtENCMap_ColCount, "4"},
-        {mdtAssembly_ColCount, "422224BSS"},
-        {1, "4"}, // AssemblyProcessor
-        {3, "444"}, // AssemblyOS
-        {mdtAssemblyRef_ColCount, "22224BSSB"},
-        {2, "4R"}, // AssemblyRefProcessor
-        {4, "444R"}, // AssemblyRefOS
-        {mdtFile_ColCount, "4SB"},
-        {mdtExportedType_ColCount, "44SSR"},
-        {mdtManifestResource_ColCount, "44SR"},
-        {mdtNestedClass_ColCount, "RR"},
-        {mdtGenericParam_ColCount, "22RS"},
-        {mdtMethodSpec_ColCount, "RB"},
-        {mdtGenericParamConstraint_ColCount, "RR"},
+    constexpr std::string_view layouts[] = {
+        "2SGGG",
+        "RSS",
+        "4SSRRR",
+        "R",
+        "2SB",
+        "R",
+        "422SBR",
+        "R",
+        "22S",
+        "RR",
+        "RSB",
+        "2RB",
+        "RRB",
+        "RB",
+        "2RB",
+        "24R",
+        "4R",
+        "B",
+        "RR",
+        "R",
+        "2SR",
+        "RR",
+        "R",
+        "2SB",
+        "2RR",
+        "RRR",
+        "S",
+        "B",
+        "2RSR",
+        "4R",
+        "44",
+        "4",
+        "422224BSS",
+        "4", // AssemblyProcessor
+        "444", // AssemblyOS
+        "22224BSSB",
+        "4R", // AssemblyRefProcessor
+        "444R", // AssemblyRefOS
+        "4SB",
+        "44SSR",
+        "44SR",
+        "RR",
+        "22RS",
+        "RB",
+        "RR",
 #ifdef DNMD_PORTABLE_PDB
-        {0, ""}, {0, ""}, {0, ""},
-        {mdtDocument_ColCount, "BGBG"},
-        {mdtMethodDebugInformation_ColCount, "RB"},
-        {mdtLocalScope_ColCount, "RRRR44"},
-        {mdtLocalVariable_ColCount, "22S"},
-        {mdtLocalConstant_ColCount, "SB"},
-        {mdtImportScope_ColCount, "RB"},
-        {mdtStateMachineMethod_ColCount, "RR"},
-        {mdtCustomDebugInformation_ColCount, "RGB"},
+        "", "", "",
+        "BGBG",
+        "RB",
+        "RRRR44",
+        "22S",
+        "SB",
+        "RB",
+        "RR",
+        "RGB",
 #endif
     };
     static_assert(std::size(layouts) == mdtid_End);
@@ -105,9 +99,8 @@ namespace
     {
         constexpr auto expected = layouts[Table];
         constexpr auto count = std::tuple_size_v<decltype(detail::table_columns<Table>())>;
-        EXPECT_EQ(expected.count, count);
-        EXPECT_EQ(expected.count, expected.columns.size());
-        EXPECT_EQ(expected.count, get_table_column_count(Table));
+        EXPECT_EQ(expected.size(), count);
+        EXPECT_EQ(expected.size(), get_table_column_count(Table));
         if constexpr (count != 0)
         {
             for (unsigned combination = 0; combination != 16; ++combination)
@@ -126,12 +119,12 @@ namespace
                 EXPECT_EQ(sorted, fixture.table.is_sorted);
                 EXPECT_FALSE(fixture.table.is_initialized);
                 EXPECT_FALSE(fixture.table.has_indirect_table);
-                EXPECT_EQ(expected.count, fixture.table.column_count);
+                EXPECT_EQ(expected.size(), fixture.table.column_count);
                 uint32_t offset = 0;
-                for (uint8_t index = 0; index != expected.count; ++index)
+                for (size_t index = 0; index != expected.size(); ++index)
                 {
                     SCOPED_TRACE(index);
-                    auto width = ExpectedWidth(expected.columns[index], flags);
+                    auto width = ExpectedWidth(expected[index], flags);
                     auto word = (offset << 2) | (width == 4 ? 2u : 1u);
                     EXPECT_EQ(word, static_cast<uint32_t>(fixture.columns[index]));
                     offset += width;
@@ -150,7 +143,7 @@ namespace
     template<mdtable_id_t Table>
     void CheckNewLayout(mdcxt_t& context)
     {
-        if constexpr (layouts[Table].count != 0)
+        if constexpr (!layouts[Table].empty())
         {
             SCOPED_TRACE(Table);
             ASSERT_TRUE(detail::initialize_new_table_details<Table>(&context));
@@ -172,9 +165,9 @@ namespace
             };
             EXPECT_EQ(std::find(std::begin(sorted), std::end(sorted), Table) != std::end(sorted), table.is_sorted);
             uint32_t offset = 0;
-            for (uint8_t index = 0; index != layouts[Table].count; ++index)
+            for (size_t index = 0; index != layouts[Table].size(); ++index)
             {
-                auto width = ExpectedWidth(layouts[Table].columns[index], mdc_none);
+                auto width = ExpectedWidth(layouts[Table][index], mdc_none);
                 EXPECT_EQ((offset << 2) | (width == 4 ? 2u : 1u),
                     static_cast<uint32_t>(table.column_details[index]));
                 offset += width;
@@ -203,7 +196,7 @@ TEST(InitialTableLayout, ContextColumnArraysUseCompactStorage)
     for (int id = mdtid_First; id + 1 < mdtid_End; ++id)
     {
         SCOPED_TRACE(id);
-        auto expected_next = context.tables[id].column_details + layouts[id].count;
+        auto expected_next = context.tables[id].column_details + layouts[id].size();
         EXPECT_EQ(expected_next, context.tables[id + 1].column_details);
     }
 }

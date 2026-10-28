@@ -281,7 +281,7 @@ namespace
             constexpr auto id = decltype(table)::value;
             uint8_t index = 0;
             auto check_index = [&](auto col) {
-                EXPECT_EQ(index++, static_cast<uint8_t>(col.column_index));
+                EXPECT_EQ(index++, col.column_index);
             };
             (void)check_index;
             detail::for_each_column<id>([&](auto... cols) {
@@ -1024,14 +1024,15 @@ TEST_F(CoreAlgorithms, RejectsInvalidCompactColumnFlags)
     auto table = detail::CursorTable(row);
     auto& details = table->column_details[0];
     auto saved = details;
+    constexpr auto count = std::tuple_size_v<decltype(detail::table_columns<mdtid_ModuleRef>())>;
     for (auto invalid : std::array<mdtcol_t, 3>{mdtc_none, mdtc_widthmask, 0x8001})
     {
         details = invalid;
-        EXPECT_FALSE(detail::table_storage_valid(*table, mdtModuleRef_ColCount));
+        EXPECT_FALSE(detail::table_storage_valid(*table, count));
         EXPECT_FALSE(update_heap_column_sizes(&detail::context(base.get()), mdhid_String, 1));
     }
     details = saved;
-    EXPECT_TRUE(detail::table_storage_valid(*table, mdtModuleRef_ColCount));
+    EXPECT_TRUE(detail::table_storage_valid(*table, count));
     EXPECT_TRUE(md_validate(base.get()));
 }
 
