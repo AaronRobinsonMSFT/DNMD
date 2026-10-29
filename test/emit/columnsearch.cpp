@@ -158,7 +158,9 @@ namespace
             for (bool loaded : {false, true})
             {
                 if (loaded)
+                {
                     ASSERT_NO_FATAL_FAILURE(Reload());
+                }
                 for (size_t i = 0; i < tokens.size(); ++i)
                 {
                     auto element = dnmd::md_token_to_cursor<ElementTableId>(handle.get(), tokens[i]);

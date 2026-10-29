@@ -527,7 +527,8 @@ namespace
             if (!IsNilToken(tkEnclosingClass))
             {
                 assert(ExtractTokenType(tkEnclosingClass) == mdtid_TypeDef);
-                (void)cursor.get_token(tk);
+                if (!cursor.get_token(tk))
+                    return CLDB_E_FILE_CORRUPT;
                 hr = importer->GetNestedClassProps(tk, &tmpTk);
 
                 // Skip this type if it doesn't have an enclosing class
@@ -547,7 +548,8 @@ namespace
 
             if (0 == ::strcmp(name, str))
             {
-                (void)cursor.get_token(*ptd);
+                if (!cursor.get_token(*ptd))
+                    return CLDB_E_FILE_CORRUPT;
                 return S_OK;
             }
         }
@@ -831,7 +833,8 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumMembersWithName(
 
             if (0 == ::strcmp(toMatch, cvt))
             {
-                (void)methodCursor.get_token(matchedTk);
+                if (!methodCursor.get_token(matchedTk))
+                    return CLDB_E_FILE_CORRUPT;
                 RETURN_IF_FAILED(HCORENUMImpl::AddToDynamicEnum(*enumImpl, matchedTk));
             }
             (void)dnmd::md_cursor_next(methodList);
@@ -849,7 +852,8 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumMembersWithName(
 
             if (0 == ::strcmp(toMatch, cvt))
             {
-                (void)fieldCursor.get_token(matchedTk);
+                if (!fieldCursor.get_token(matchedTk))
+                    return CLDB_E_FILE_CORRUPT;
                 RETURN_IF_FAILED(HCORENUMImpl::AddToDynamicEnum(*enumImpl, matchedTk));
             }
             (void)dnmd::md_cursor_next(fieldList);
@@ -980,7 +984,8 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumMemberRefs(
             {
                 if (toMatch[j] == tkParent)
                 {
-                    (void)cursor.get_token(matchedTk);
+                    if (!cursor.get_token(matchedTk))
+                        return CLDB_E_FILE_CORRUPT;
                     RETURN_IF_FAILED(HCORENUMImpl::AddToDynamicEnum(*enumImpl, matchedTk));
                 }
                 (void)dnmd::md_cursor_next(cursor);
@@ -1107,7 +1112,8 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumPermissionSets(
                         || (reader.read(DeclSecurity_Parent, parent)
                             && parent == tk)))
                 {
-                    (void)cursor.get_token(toAdd);
+                    if (!cursor.get_token(toAdd))
+                        return CLDB_E_FILE_CORRUPT;
                     RETURN_IF_FAILED(HCORENUMImpl::AddToDynamicEnum(*enumImpl, toAdd));
                 }
 
@@ -2192,7 +2198,8 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::GetParamForMethodIndex(
 
         if (ulParamSeq == seqMaybe)
         {
-            (void)target.get_token(*ppd);
+            if (!target.get_token(*ppd))
+                return CLDB_E_FILE_CORRUPT;
             return S_OK;
         }
 
@@ -2276,7 +2283,8 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumCustomAttributes(
                     {
                         if (toMatch[j] == tkType)
                         {
-                            (void)curr.get_token(matchedTk);
+                            if (!curr.get_token(matchedTk))
+                                return CLDB_E_FILE_CORRUPT;
                             RETURN_IF_FAILED(HCORENUMImpl::AddToDynamicEnum(*enumImpl, matchedTk));
                         }
                         (void)dnmd::md_cursor_next(curr);
@@ -2371,7 +2379,8 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::FindTypeRef(
 
         if (0 == ::strcmp(name, str))
         {
-            (void)cursor.get_token(*ptr);
+            if (!cursor.get_token(*ptr))
+                return CLDB_E_FILE_CORRUPT;
             return S_OK;
         }
     }
@@ -3218,7 +3227,11 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumGenericParams(
 
             bool operator()(dnmd::cursor<mdtid_GenericParam> c)
             {
-                (void)c.get_token(Token);
+                if (!c.get_token(Token))
+                {
+                    Result = CLDB_E_FILE_CORRUPT;
+                    return true;
+                }
                 if (FAILED(hr = HCORENUMImpl::AddToDynamicEnum(EnumImpl, Token)))
                 {
                     Result = hr;
@@ -3327,7 +3340,11 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumGenericParamConstraints(
 
             bool operator()(dnmd::cursor<mdtid_GenericParamConstraint> c)
             {
-                (void)c.get_token(Token);
+                if (!c.get_token(Token))
+                {
+                    Result = CLDB_E_FILE_CORRUPT;
+                    return true;
+                }
                 if (FAILED(hr = HCORENUMImpl::AddToDynamicEnum(EnumImpl, Token)))
                 {
                     Result = hr;
@@ -3418,7 +3435,11 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumMethodSpecs(
 
             bool operator()(dnmd::cursor<mdtid_MethodSpec> c)
             {
-                (void)c.get_token(Token);
+                if (!c.get_token(Token))
+                {
+                    Result = CLDB_E_FILE_CORRUPT;
+                    return true;
+                }
                 if (FAILED(hr = HCORENUMImpl::AddToDynamicEnum(EnumImpl, Token)))
                 {
                     Result = hr;

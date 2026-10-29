@@ -2,6 +2,16 @@
 #include <dnmd.hpp>
 #include <vector>
 
+TEST(CppEmitterAccess, Emit2CanBeQueriedFromLegacyEmit)
+{
+    dncp::com_ptr<IMetaDataEmit> emit;
+    ASSERT_NO_FATAL_FAILURE(CreateEmit(emit));
+    dncp::com_ptr<IMetaDataEmit2> emit2;
+    ASSERT_EQ(S_OK, emit->QueryInterface(IID_IMetaDataEmit2, (void**)&emit2));
+    dncp::com_ptr<IMetaDataEmit> legacy;
+    ASSERT_EQ(S_OK, emit2->QueryInterface(IID_IMetaDataEmit, (void**)&legacy));
+}
+
 TEST(CppEmitterAccess, DeleteClassLayoutResolvesDirectAndIndirectFields)
 {
     for (bool indirect : {false, true})
@@ -180,7 +190,9 @@ TEST(CppEmitterAccess, PermissionSetEnumerationClassifiesOwnerTables)
         ULONG count = 123;
         EXPECT_EQ(test.result, import->EnumPermissionSets(&enumeration, test.token, 0, &permission, 1, &count));
         if (test.result == S_FALSE)
+        {
             EXPECT_EQ(0u, count);
+        }
         EXPECT_EQ(nullptr, enumeration);
         import->CloseEnum(enumeration);
     }

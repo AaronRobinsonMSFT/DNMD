@@ -17,6 +17,7 @@ set(SOURCES
 	importhelpers.cpp
 	emitteraccess.cpp
 	hcorenum.cpp
+	pal.cpp
 	typeref.cpp
 	module.cpp
 	typedef.cpp

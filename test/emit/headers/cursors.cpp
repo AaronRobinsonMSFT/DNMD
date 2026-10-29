@@ -92,7 +92,9 @@ TEST_F(CppHeader, NativeMovementPreservesFailures)
             EXPECT_EQ(expected, dnmd_test::Token(value));
             EXPECT_EQ(handle, value.get_handle());
             if (!moved)
+            {
                 EXPECT_EQ(before, dnmd_test::Token(value));
+            }
         }
     }
 }

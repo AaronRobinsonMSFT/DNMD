@@ -70,7 +70,9 @@ namespace
             {
                 auto row = dnmd_test::AppendRow<TableId>(handle.get());
                 if constexpr (TableId == mdtid_CustomAttribute)
+                {
                     EXPECT_TRUE(row.set_column_value(dnmd::columns::CustomAttribute_Type, CreateTokenType(mdtid_MethodDef)));
+                }
                 return row;
             }
         }
@@ -258,7 +260,9 @@ namespace
                     ASSERT_TRUE(position.get_target_token(actual_target));
                     EXPECT_EQ(expected_target, actual_target);
                     if (index <= rows)
+                    {
                         ASSERT_TRUE(dnmd::md_cursor_next(position));
+                    }
                 }
                 auto end_token = dnmd_test::Token(position);
                 EXPECT_FALSE(dnmd::md_cursor_next(position));

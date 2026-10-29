@@ -168,8 +168,10 @@ namespace
             auto offset = detail::row_storage_access::read(row_reader{row}, col);
             ASSERT_LE(base_size, UINT32_MAX - offset);
             if (offset != 0)
+            {
                 ASSERT_TRUE(detail::row_storage_access::write_heap_index(
                     row_writer{row}, col, offset + static_cast<uint32_t>(base_size)));
+            }
         }
 
         template<mdtable_id_t Child>
