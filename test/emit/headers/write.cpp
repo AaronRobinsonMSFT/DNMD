@@ -1,5 +1,4 @@
 #include <dnmd_write.hpp>
-#include <dnmd_write.hpp>
 #include "fixture.hpp"
 
 namespace

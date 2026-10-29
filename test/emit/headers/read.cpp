@@ -1,5 +1,4 @@
 #include <dnmd_read.hpp>
-#include <dnmd_read.hpp>
 #include "fixture.hpp"
 
 TEST_F(CppHeader, StandaloneRead)

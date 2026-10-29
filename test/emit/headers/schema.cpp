@@ -1,5 +1,4 @@
 #include <dnmd_schema.hpp>
-#include <dnmd_schema.hpp>
 #include <gtest/gtest.h>
 #include <array>
 

@@ -3,7 +3,6 @@
 
 #include "dnmd.h"
 #include "dnmd_schema.hpp"
-#include "dnmd_schema.hpp"
 #include "dnmd_cursors.hpp"
 #include "dnmd_read.hpp"
 #include "dnmd_write.hpp"

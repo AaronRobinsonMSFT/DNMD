@@ -1,5 +1,4 @@
 #include <dnmd_cursors.hpp>
-#include <dnmd_cursors.hpp>
 #include "fixture.hpp"
 
 namespace

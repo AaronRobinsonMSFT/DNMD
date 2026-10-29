@@ -1,5 +1,4 @@
 #include <dnmd_search.hpp>
-#include <dnmd_search.hpp>
 #include "fixture.hpp"
 
 namespace

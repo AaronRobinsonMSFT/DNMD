@@ -4,8 +4,14 @@
 #include <dnmd_cursors.hpp>
 #include <dnmd_schema.hpp>
 #include <dnmd.hpp>
+
+// Reinclude headers after the umbrella to exercise their include guards.
+#include <dnmd_schema.hpp>
 #include <dnmd_cursors.hpp>
+#include <dnmd_read.hpp>
 #include <dnmd_write.hpp>
+#include <dnmd_search.hpp>
+#include <dnmd.hpp>
 #include "fixture.hpp"
 
 #if !defined(NDEBUG) && GTEST_HAS_DEATH_TEST
