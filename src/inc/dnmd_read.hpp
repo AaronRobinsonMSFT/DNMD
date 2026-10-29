@@ -80,7 +80,7 @@ private:
     bool read_position(column<TableId, indirect_cursor<Direct, Ptr>> col,
         mdtable_t const*& target, uint32_t& row) const noexcept
     {
-        auto table = detail::list_target_table<Direct, Ptr>(_table);
+        auto table = detail::list_target_table<Direct, Ptr>(_table->cxt);
         target = &_table->cxt->tables[table];
         row = (detail::RidFromToken)(read_raw(col));
         return uint64_t{row} <= uint64_t{target->row_count} + 1;
@@ -130,7 +130,7 @@ public:
     template<mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
     bool read(column<TableId, indirect_cursor<DirectTableId, IndirectTableId>> col, mdToken& value) const noexcept
     {
-        auto table = detail::list_target_table<DirectTableId, IndirectTableId>(_table);
+        auto table = detail::list_target_table<DirectTableId, IndirectTableId>(_table->cxt);
         value = CreateTokenType(table) | (detail::RidFromToken)(read_raw(col));
         return true;
     }

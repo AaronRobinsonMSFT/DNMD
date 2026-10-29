@@ -134,7 +134,7 @@ bool create_and_fill_indirect_table(mdtable_t* original, mdtable_t* target_table
     return true;
 }
 
-uint8_t* get_writable_table_data(mdtable_t* table, bool make_writable)
+uint8_t* get_writable_table_data(mdtable_t* table)
 {
     mdeditor_t* editor = get_editor(table->cxt);
     if (editor == NULL)
@@ -142,7 +142,7 @@ uint8_t* get_writable_table_data(mdtable_t* table, bool make_writable)
 
     mddata_t* table_data = &editor->tables[table->table_id].data;
 
-    if (table_data->ptr == NULL && make_writable)
+    if (table_data->ptr == NULL)
     {
         // If we're trying to get writable data for a table that has not been edited,
         // then we need to allocate space for it and copy the contents for editing.

@@ -41,8 +41,7 @@ The typed API is organized into these headers:
 
 | Header | Contents |
 | --- | --- |
-| `dnmd_columns.hpp` | Column types, descriptors, and reference codecs |
-| `dnmd_schema.hpp` | Table/list columns, fixed widths, initial layouts, sort keys, table sequences, and typed column iteration |
+| `dnmd_schema.hpp` | Column types/descriptors, reference codecs, table/list relationships, fixed widths, initial layouts, sort keys, table sequences, and typed column iteration |
 | `dnmd_cursors.hpp` | Row/position cursors, conversions, navigation, and factories |
 | `dnmd_read.hpp` | Row readers and read-only column iterators |
 | `dnmd_write.hpp` | Row writers, cursor write methods, and typed row-add guards |
@@ -174,6 +173,9 @@ List columns select their direct or Ptr target from `mdtable_t::has_indirect_tab
 on the element table. The flag is initialized when
 loading an image and set when editing introduces its Ptr table. Keeping it on
 the element table lets TypeDef field and method lists select independently.
+`dnmd_schema.hpp` owns the canonical list-column registry and derives parent,
+Ptr-column, and target-table helpers from it. Event/property list owners remain
+their map tables; their logical parents are obtained through the maps' Parent columns.
 
 Rows provide matching `set_column_value` overloads for constants, UTF-8 strings,
 blobs, GUIDs, user strings, and table references. They delegate to the corresponding
@@ -217,8 +219,10 @@ if (!row.set_column_value(dnmd::columns::TypeRef_TypeName, "Example"))
 added.commit();
 ```
 
-List additions infer the child table from the typed list column; sorted list
-additions also require a constant sort column from that child table.
+List additions infer the child table from the typed list column. Sorted insertion
+is supported only for `MethodDef_ParamList`, with its typed parameter sort column.
+Other lists support only unsorted insertion. Parameters also retain unsorted
+insertion for EnC, which appends rows before copying and sorting their contents.
 Native typed guards never expose C output pointers.
 Append and relative insertion are fully implemented in `dnmd_write.hpp`,
 including table preparation, empty-list initialization, and copying insertion

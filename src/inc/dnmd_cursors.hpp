@@ -1,7 +1,7 @@
 #ifndef _SRC_INC_DNMD_CURSORS_HPP_
 #define _SRC_INC_DNMD_CURSORS_HPP_
 
-#include "dnmd_columns.hpp"
+#include "dnmd_schema.hpp"
 #include <limits>
 #include <utility>
 
@@ -22,6 +22,12 @@ struct cursor_access
 {
     template<typename P> static mdtable_t* table(P const& p) noexcept { return p._table; }
     template<typename P> static uint32_t row(P const& p) noexcept { return p._row; }
+
+    template<mdtable_id_t Table>
+    static cursor<Table> make_cursor(mdtable_t& table, uint32_t row) noexcept
+    {
+        return cursor<Table>{table, row};
+    }
 };
 
 template<typename P> inline mdtable_t* CursorTable(P const& p) noexcept { return cursor_access::table(p); }
@@ -42,38 +48,12 @@ inline bool position_token(mdtable_t const& table, uint32_t row, mdToken& token)
     return true;
 }
 
-template<typename T> struct is_position : std::false_type {};
-template<mdtable_id_t T> struct is_position<cursor<T>> : std::true_type {};
-template<mdtable_id_t... T> struct is_position<raw_cursor<T...>> : std::true_type {};
-template<mdtable_id_t D, mdtable_id_t P> struct is_position<indirect_cursor<D, P>> : std::true_type {};
-
-template<typename P, mdtable_id_t... Targets>
-struct position_targets_subset : std::false_type {};
-template<mdtable_id_t T, mdtable_id_t... Targets>
-struct position_targets_subset<cursor<T>, Targets...>
-    : std::bool_constant<contains_table_id_v<T, Targets...>> {};
-template<mdtable_id_t... Sources, mdtable_id_t... Targets>
-struct position_targets_subset<raw_cursor<Sources...>, Targets...>
-    : std::bool_constant<((Sources == mdtid_Unused || contains_table_id_v<Sources, Targets...>) && ...)> {};
-template<mdtable_id_t Direct, mdtable_id_t Ptr, mdtable_id_t... Targets>
-struct position_targets_subset<indirect_cursor<Direct, Ptr>, Targets...>
-    : std::bool_constant<contains_table_id_v<Direct, Targets...> && contains_table_id_v<Ptr, Targets...>> {};
-
-template<mdtable_id_t... T> struct first_concrete_table;
-template<> struct first_concrete_table<> : std::integral_constant<mdtable_id_t, mdtid_Unused> {};
-template<mdtable_id_t T, mdtable_id_t... Rest>
-struct first_concrete_table<T, Rest...> : std::integral_constant<mdtable_id_t,
-    T == mdtid_Unused ? first_concrete_table<Rest...>::value : T> {};
 }
 
 template<mdtable_id_t TableId>
 struct cursor final
 {
 private:
-    template<mdtable_id_t...> friend struct raw_cursor;
-    template<mdtable_id_t, mdtable_id_t> friend struct indirect_cursor;
-    template<mdtable_id_t> friend struct row_reader;
-    template<mdtable_id_t> friend struct row_writer;
     friend struct detail::cursor_access;
     mdtable_t* _table;
     uint32_t _row;
@@ -207,7 +187,6 @@ struct raw_cursor final
 {
     static_assert(sizeof...(TableIds) != 0);
 private:
-    template<mdtable_id_t...> friend struct raw_cursor;
     friend struct detail::cursor_access;
     mdtable_t* _table;
     uint32_t _row;
@@ -311,7 +290,7 @@ public:
     auto value() const noexcept
     {
         assert(static_cast<bool>(*this));
-        return (cursor<TableIds>{*_table, _row}, ...);
+        return (detail::cursor_access::make_cursor<TableIds>(*_table, _row), ...);
     }
 
     template<mdtable_id_t T>
@@ -340,7 +319,7 @@ private:
         {
             if (!is<T>())
                 return false;
-            std::forward<F>(callable)(cursor<T>{*_table, _row});
+            std::forward<F>(callable)(detail::cursor_access::make_cursor<T>(*_table, _row));
             return true;
         }
     }
@@ -403,14 +382,14 @@ public:
     static indirect_cursor nil(mdhandle_t handle) noexcept
     {
         auto& c = detail::context(handle);
-        auto table = c.tables[Direct].has_indirect_table ? Ptr : Direct;
+        auto table = detail::list_target_table<Direct, Ptr>(&c);
         return at(handle, 0, table);
     }
 
     static indirect_cursor end(mdhandle_t handle) noexcept
     {
         auto& c = detail::context(handle);
-        auto table = c.tables[Direct].has_indirect_table ? Ptr : Direct;
+        auto table = detail::list_target_table<Direct, Ptr>(&c);
         return at(handle, c.tables[table].row_count + 1, table);
     }
 
@@ -448,9 +427,6 @@ using any_cursor = raw_cursor<
 #endif
 >;
 
-template<typename T> struct cursor_tableid;
-template<mdtable_id_t T> struct cursor_tableid<cursor<T>> { static constexpr mdtable_id_t value = T; };
-template<typename T> inline constexpr mdtable_id_t cursor_tableid_v = cursor_tableid<T>::value;
 
 template<typename P>
 inline auto md_cursor_move(P& p, int32_t delta) noexcept -> decltype(p.move(delta)) { return p.move(delta); }

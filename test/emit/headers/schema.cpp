@@ -3,6 +3,85 @@
 #include <gtest/gtest.h>
 #include <array>
 
+namespace
+{
+    template<mdtable_id_t Element, mdtable_id_t Parent, mdtable_id_t Ptr, mdtable_id_t Owner, typename Kind>
+    constexpr bool RelationshipMatches(dnmd::column<Owner, Kind> expected)
+    {
+        using namespace dnmd;
+        constexpr auto list = detail::parent_list_column<Element>();
+        bool matches = decltype(list)::table_id == Owner && list.column_index == expected.column_index
+            && detail::parent_table_id<Element>() == Parent
+            && detail::pointer_table_id<Element>() == Ptr && detail::pointer_table_id(Element) == Ptr;
+        if constexpr (Ptr != mdtid_Unused)
+        {
+            constexpr auto pointer = detail::pointer_column<Ptr>();
+            return matches && detail::is_pointer_table<Ptr>() && decltype(pointer)::table_id == Ptr
+                && pointer.column_index == 0
+                && std::is_same_v<typename decltype(pointer)::value_type, raw_cursor<Element>>;
+        }
+        else
+            return matches;
+    }
+}
+
+TEST(CppSchemaHeader, CanonicalListRelationships)
+{
+    using namespace dnmd;
+    static_assert(RelationshipMatches<mdtid_Field, mdtid_TypeDef, mdtid_FieldPtr>(columns::TypeDef_FieldList));
+    static_assert(RelationshipMatches<mdtid_MethodDef, mdtid_TypeDef, mdtid_MethodPtr>(columns::TypeDef_MethodList));
+    static_assert(RelationshipMatches<mdtid_Param, mdtid_MethodDef, mdtid_ParamPtr>(columns::MethodDef_ParamList));
+    static_assert(RelationshipMatches<mdtid_Event, mdtid_TypeDef, mdtid_EventPtr>(columns::EventMap_EventList));
+    static_assert(RelationshipMatches<mdtid_Property, mdtid_TypeDef, mdtid_PropertyPtr>(columns::PropertyMap_PropertyList));
+    static_assert(detail::parent_table_id<mdtid_Module>() == mdtid_Unused);
+    static_assert(detail::parent_table_id<mdtid_TypeDef>() == mdtid_Unused);
+    static_assert(detail::pointer_table_id<mdtid_Module>() == mdtid_Unused);
+    static_assert(detail::pointer_table_id<mdtid_Unused>() == mdtid_Unused);
+    static_assert(!detail::is_pointer_table<mdtid_Unused>());
+    static_assert(!detail::is_pointer_table<mdtid_Field>());
+    static_assert(std::tuple_size_v<decltype(detail::list_columns<mdtid_TypeDef>())> == 2);
+    static_assert(std::tuple_size_v<decltype(detail::list_columns<mdtid_EventMap>())> == 1);
+    static_assert(std::tuple_size_v<decltype(detail::list_columns<mdtid_Module>())> == 0);
+#ifdef DNMD_PORTABLE_PDB
+    static_assert(RelationshipMatches<mdtid_LocalVariable, mdtid_LocalScope, mdtid_Unused>(columns::LocalScope_VariableList));
+    static_assert(RelationshipMatches<mdtid_LocalConstant, mdtid_LocalScope, mdtid_Unused>(columns::LocalScope_ConstantList));
+    static_assert(std::tuple_size_v<decltype(detail::all_list_columns())> == 7);
+#else
+    static_assert(std::tuple_size_v<decltype(detail::all_list_columns())> == 5);
+#endif
+}
+
+TEST(CppSchemaHeader, ListTargetsUseElementTableIndirectionState)
+{
+    using namespace dnmd;
+    mdcxt_t context{};
+    std::array<mdtable_t, mdtid_End> tables{};
+    context.tables = tables.data();
+    auto& owner = tables[mdtid_TypeDef];
+    owner.cxt = &context;
+    owner.has_indirect_table = true;
+    tables[mdtid_Field].row_count = 11;
+    tables[mdtid_FieldPtr].row_count = 5;
+    tables[mdtid_MethodDef].row_count = 7;
+    EXPECT_EQ(mdtid_Field, detail::list_target_table(&context, columns::TypeDef_FieldList));
+    EXPECT_EQ(12u, detail::list_end_row(&owner, columns::TypeDef_FieldList));
+    tables[mdtid_Field].has_indirect_table = true;
+    EXPECT_EQ(mdtid_FieldPtr, detail::list_target_table(&context, columns::TypeDef_FieldList));
+    EXPECT_EQ(6u, detail::list_end_row(&owner, columns::TypeDef_FieldList));
+    EXPECT_EQ(mdtid_MethodDef, detail::list_target_table(&context, columns::TypeDef_MethodList));
+    EXPECT_EQ(8u, detail::list_end_row(&owner, columns::TypeDef_MethodList));
+    static_assert(detail::select_list_target<mdtid_Field, mdtid_FieldPtr>(false) == mdtid_Field);
+    static_assert(detail::select_list_target<mdtid_Field, mdtid_FieldPtr>(true) == mdtid_FieldPtr);
+#ifdef DNMD_PORTABLE_PDB
+    auto& scope = tables[mdtid_LocalScope];
+    scope.cxt = &context;
+    tables[mdtid_LocalVariable].has_indirect_table = true;
+    tables[mdtid_LocalVariable].row_count = 3;
+    EXPECT_EQ(mdtid_LocalVariable, detail::list_target_table(&context, columns::LocalScope_VariableList));
+    EXPECT_EQ(4u, detail::list_end_row(&scope, columns::LocalScope_VariableList));
+#endif
+}
+
 TEST(CppSchemaHeader, StandaloneSchema)
 {
     using namespace dnmd;

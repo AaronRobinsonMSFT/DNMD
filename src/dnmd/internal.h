@@ -187,7 +187,7 @@ bool compress_u32(uint32_t data, uint8_t* compressed, size_t* compressed_len);
 // Editing
 bool create_and_fill_indirect_table(mdtable_t* original, mdtable_t* indirect);
 bool allocate_new_table(mdtable_t* table);
-uint8_t* get_writable_table_data(mdtable_t* table, bool make_writable);
+uint8_t* get_writable_table_data(mdtable_t* table);
 uint8_t* allocate_table_data(mdtable_t* table, uint8_t row_size, size_t* capacity);
 void replace_table_data(mdtable_t* table, uint8_t* data, size_t capacity, uint8_t row_size, mdtcol_t const* columns);
 bool update_heap_column_sizes(mdcxt_t* cxt, mdheap_id_t heap, uint32_t new_max_count);

@@ -8,6 +8,10 @@ namespace
     using position = dnmd::raw_cursor<mdtid_TypeDef>;
     using indirect = dnmd::indirect_cursor<mdtid_MethodDef, mdtid_MethodPtr>;
     using guard = dnmd::added_row<mdtid_TypeDef>;
+    static_assert(std::is_same_v<decltype(dnmd::detail::cursor_access::make_cursor<mdtid_TypeDef>(
+        std::declval<mdtable_t&>(), uint32_t{})), row>);
+    static_assert(noexcept(dnmd::detail::cursor_access::make_cursor<mdtid_TypeDef>(
+        std::declval<mdtable_t&>(), uint32_t{})));
     static_assert(std::is_same_v<decltype(std::declval<position const&>().is<mdtid_TypeDef>()), bool>);
     static_assert(noexcept(std::declval<position const&>().is<mdtid_TypeDef>()));
     static_assert(std::is_same_v<decltype(std::declval<position const&>().is_nil()), bool>);

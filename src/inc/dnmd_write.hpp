@@ -15,7 +15,7 @@ namespace detail
 // Shared storage helpers.
 extern "C"
 {
-uint8_t* get_writable_table_data(mdtable_t* table, bool make_writable);
+uint8_t* get_writable_table_data(mdtable_t* table);
 uint32_t add_to_string_heap(::mdcxt__* context, char const* value);
 uint32_t add_to_blob_heap(::mdcxt__* context, uint8_t const* value, uint32_t length);
 uint32_t add_to_guid_heap(::mdcxt__* context, mdguid_t value);
@@ -60,33 +60,21 @@ inline bool initialize_new_table_details(raw_cursor<Targets...> const& position)
 // Other failures can still return an owned pending child row.
 bool add_row_to_list(cursor<mdtid_TypeDef> owner, decltype(columns::TypeDef_FieldList) list,
     mdtable_t** added_table, uint32_t* added_row);
-bool add_row_to_list(cursor<mdtid_TypeDef> owner, decltype(columns::TypeDef_FieldList) list,
-    column<mdtid_Field, column_type_constant> sort, uint32_t value, mdtable_t** added_table, uint32_t* added_row);
 bool add_row_to_list(cursor<mdtid_TypeDef> owner, decltype(columns::TypeDef_MethodList) list,
     mdtable_t** added_table, uint32_t* added_row);
-bool add_row_to_list(cursor<mdtid_TypeDef> owner, decltype(columns::TypeDef_MethodList) list,
-    column<mdtid_MethodDef, column_type_constant> sort, uint32_t value, mdtable_t** added_table, uint32_t* added_row);
 bool add_row_to_list(cursor<mdtid_MethodDef> owner, decltype(columns::MethodDef_ParamList) list,
     mdtable_t** added_table, uint32_t* added_row);
 bool add_row_to_list(cursor<mdtid_MethodDef> owner, decltype(columns::MethodDef_ParamList) list,
     column<mdtid_Param, column_type_constant> sort, uint32_t value, mdtable_t** added_table, uint32_t* added_row);
 bool add_row_to_list(cursor<mdtid_EventMap> owner, decltype(columns::EventMap_EventList) list,
     mdtable_t** added_table, uint32_t* added_row);
-bool add_row_to_list(cursor<mdtid_EventMap> owner, decltype(columns::EventMap_EventList) list,
-    column<mdtid_Event, column_type_constant> sort, uint32_t value, mdtable_t** added_table, uint32_t* added_row);
 bool add_row_to_list(cursor<mdtid_PropertyMap> owner, decltype(columns::PropertyMap_PropertyList) list,
     mdtable_t** added_table, uint32_t* added_row);
-bool add_row_to_list(cursor<mdtid_PropertyMap> owner, decltype(columns::PropertyMap_PropertyList) list,
-    column<mdtid_Property, column_type_constant> sort, uint32_t value, mdtable_t** added_table, uint32_t* added_row);
 #ifdef DNMD_PORTABLE_PDB
 bool add_row_to_list(cursor<mdtid_LocalScope> owner, decltype(columns::LocalScope_VariableList) list,
     mdtable_t** added_table, uint32_t* added_row);
-bool add_row_to_list(cursor<mdtid_LocalScope> owner, decltype(columns::LocalScope_VariableList) list,
-    column<mdtid_LocalVariable, column_type_constant> sort, uint32_t value, mdtable_t** added_table, uint32_t* added_row);
 bool add_row_to_list(cursor<mdtid_LocalScope> owner, decltype(columns::LocalScope_ConstantList) list,
     mdtable_t** added_table, uint32_t* added_row);
-bool add_row_to_list(cursor<mdtid_LocalScope> owner, decltype(columns::LocalScope_ConstantList) list,
-    column<mdtid_LocalConstant, column_type_constant> sort, uint32_t value, mdtable_t** added_table, uint32_t* added_row);
 #endif
 
 template<size_t Key = 0, mdtable_id_t TableId>
@@ -162,7 +150,7 @@ private:
     bool write_raw(column<TableId, ColumnType> col, uint32_t value) const noexcept
     {
         auto table = detail::CursorTable(_cursor);
-        auto data = detail::get_writable_table_data(table, true);
+        auto data = detail::get_writable_table_data(table);
         if (data == nullptr)
             return false;
 
@@ -266,7 +254,7 @@ public:
     bool write(column<TableId, indirect_cursor<DirectTableId, IndirectTableId>> col, mdToken value) const noexcept
     {
         auto table = detail::CursorTable(_cursor);
-        auto target = detail::list_target_table<DirectTableId, IndirectTableId>(table);
+        auto target = detail::list_target_table<DirectTableId, IndirectTableId>(table->cxt);
         if (static_cast<mdtable_id_t>(ExtractTokenType(value)) != target)
             return false;
         return write_reference(col, value, (detail::RidFromToken)(value));
@@ -403,7 +391,7 @@ inline bool initialize_list_column(cursor<Owner> owner,
     column<Owner, indirect_cursor<Direct, Ptr>> col) noexcept
 {
     auto source = CursorTable(owner);
-    auto target = list_target_table<Direct, Ptr>(source);
+    auto target = list_target_table<Direct, Ptr>(source->cxt);
     return initialize_list_column(owner, col, raw_cursor<Direct, Ptr>::at(source->cxt, 0, target));
 }
 
@@ -461,8 +449,7 @@ inline bool append_row_to_table(mdcxt_t* context, uint32_t* row) noexcept
         auto& table = context->tables[Table];
         if (!table.is_initialized)
         {
-            if constexpr (Table == mdtid_FieldPtr || Table == mdtid_MethodPtr
-                || Table == mdtid_ParamPtr || Table == mdtid_EventPtr || Table == mdtid_PropertyPtr)
+            if constexpr (is_pointer_table<Table>())
                 return false;
             else if (!initialize_new_table_details<Table>(context) || !allocate_new_table(&table))
                 return false;
@@ -599,7 +586,9 @@ public:
         return finish_acquisition(target, success, row);
     }
 
-    template<mdtable_id_t Owner, typename Kind>
+    template<mdtable_id_t Owner, typename Kind,
+        std::enable_if_t<TableId == mdtid_Param && Owner == mdtid_MethodDef
+            && std::is_same_v<Kind, decltype(columns::MethodDef_ParamList)::value_type>, int> = 0>
     static added_row in_list(cursor<Owner> owner, column<Owner, Kind> list,
         column<TableId, column_type_constant> sort, uint32_t value) noexcept
     {
@@ -621,13 +610,11 @@ inline added_row<Direct> md_add_new_row_to_list(cursor<Owner> owner,
     static_assert(Ptr == detail::pointer_table_id<Direct>());
     return added_row<Direct>::in_list(owner, list);
 }
-template<mdtable_id_t Owner, mdtable_id_t Direct, mdtable_id_t Ptr>
-inline added_row<Direct> md_add_new_row_to_sorted_list(cursor<Owner> owner,
-    column<Owner, indirect_cursor<Direct, Ptr>> list,
-    column<Direct, column_type_constant> sort, uint32_t value) noexcept
+inline added_row<mdtid_Param> md_add_new_row_to_sorted_list(cursor<mdtid_MethodDef> owner,
+    decltype(columns::MethodDef_ParamList) list,
+    column<mdtid_Param, column_type_constant> sort, uint32_t value) noexcept
 {
-    static_assert(Ptr == detail::pointer_table_id<Direct>());
-    return added_row<Direct>::in_list(owner, list, sort, value);
+    return added_row<mdtid_Param>::in_list(owner, list, sort, value);
 }
 } // namespace dnmd
 #endif // _SRC_INC_DNMD_WRITE_HPP_

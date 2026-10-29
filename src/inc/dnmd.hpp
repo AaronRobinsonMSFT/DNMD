@@ -2,7 +2,7 @@
 #define _SRC_INC_DNMD_HPP_
 
 #include "dnmd.h"
-#include "dnmd_columns.hpp"
+#include "dnmd_schema.hpp"
 #include "dnmd_schema.hpp"
 #include "dnmd_cursors.hpp"
 #include "dnmd_read.hpp"

@@ -12,12 +12,6 @@ namespace
             static_cast<uint8_t>(std::tuple_size_v<decltype(detail::table_columns<Tables>())>)...};
     }
 
-    template<mdtable_id_t... Tables>
-    constexpr auto indirect_tables(detail::table_sequence<Tables...>) noexcept
-    {
-        return std::array<mdtable_id_t, sizeof...(Tables)>{detail::pointer_table_id<Tables>()...};
-    }
-
     template<mdtable_id_t Table>
     bool initialize(uint32_t const* rows, mdcxt_flag_t flags, bool sorted, mdtable_t* table)
     {
@@ -31,7 +25,6 @@ namespace
     }
 
     constexpr auto table_column_counts = column_counts(detail::all_tables{});
-    constexpr auto table_indirect_tables = indirect_tables(detail::all_tables{});
     constexpr auto table_initializers = initializers(detail::all_tables{});
 }
 
@@ -67,6 +60,5 @@ extern "C" bool consume_table_rows(mdtable_t* table, uint8_t const** data, size_
 
 extern "C" mdtable_id_t get_corresponding_indirection_table(mdtable_id_t id)
 {
-    assert(mdtid_First <= id && id < mdtid_End);
-    return table_indirect_tables[id];
+    return dnmd::detail::pointer_table_id(id);
 }

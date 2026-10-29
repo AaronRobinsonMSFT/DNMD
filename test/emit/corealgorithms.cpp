@@ -56,6 +56,26 @@ namespace
     static_assert(can_add_list_v<cursor<mdtid_MethodDef>, decltype(MethodDef_ParamList)>);
     static_assert(can_add_list_v<cursor<mdtid_MethodDef>, decltype(MethodDef_ParamList),
         decltype(Param_Sequence), uint32_t>);
+    static_assert(can_add_list_v<cursor<mdtid_TypeDef>, decltype(TypeDef_FieldList)>);
+    static_assert(!can_add_list_v<cursor<mdtid_TypeDef>, decltype(TypeDef_FieldList),
+        decltype(Field_Flags), uint32_t>);
+    static_assert(can_add_list_v<cursor<mdtid_TypeDef>, decltype(TypeDef_MethodList)>);
+    static_assert(!can_add_list_v<cursor<mdtid_TypeDef>, decltype(TypeDef_MethodList),
+        decltype(MethodDef_Rva), uint32_t>);
+    static_assert(can_add_list_v<cursor<mdtid_EventMap>, decltype(EventMap_EventList)>);
+    static_assert(!can_add_list_v<cursor<mdtid_EventMap>, decltype(EventMap_EventList),
+        decltype(Event_EventFlags), uint32_t>);
+    static_assert(can_add_list_v<cursor<mdtid_PropertyMap>, decltype(PropertyMap_PropertyList)>);
+    static_assert(!can_add_list_v<cursor<mdtid_PropertyMap>, decltype(PropertyMap_PropertyList),
+        decltype(Property_Flags), uint32_t>);
+#ifdef DNMD_PORTABLE_PDB
+    static_assert(can_add_list_v<cursor<mdtid_LocalScope>, decltype(LocalScope_VariableList)>);
+    static_assert(!can_add_list_v<cursor<mdtid_LocalScope>, decltype(LocalScope_VariableList),
+        decltype(LocalVariable_Index), uint32_t>);
+    static_assert(can_add_list_v<cursor<mdtid_LocalScope>, decltype(LocalScope_ConstantList)>);
+    static_assert(!can_add_list_v<cursor<mdtid_LocalScope>, decltype(LocalScope_ConstantList),
+        column<mdtid_LocalConstant, column_type_constant>, uint32_t>);
+#endif
     static_assert(!can_add_list_v<cursor<mdtid_MethodDef>, col_index_t>);
     static_assert(!can_add_list_v<cursor<mdtid_TypeDef>, decltype(MethodDef_ParamList)>);
     static_assert(!can_add_list_v<cursor<mdtid_MethodDef>, decltype(MethodDef_ParamList),
@@ -782,7 +802,7 @@ TEST_F(CoreAlgorithms, ShiftedReferenceReadFailuresPropagateToInsertion)
     auto& context = detail::context(base.get());
     auto table = &context.tables[mdtid_TypeDef];
     auto column = static_cast<uint8_t>(TypeDef_Extends.column_index);
-    auto data = detail::get_writable_table_data(table, true);
+    auto data = detail::get_writable_table_data(table);
     ASSERT_NE(nullptr, data);
     auto offset = (detail::ExtractOffset)(table->column_details[column]);
     data[offset] = 3; // TypeDefOrRef tag 3 is reserved.
@@ -1066,7 +1086,7 @@ TEST_F(CoreAlgorithms, DumpsInvalidReferencesWithRawDiagnosticsAndRejectsTruncat
     auto row = AddRow<mdtid_MemberRef>(base.get());
     ASSERT_TRUE(row);
     auto table = detail::CursorTable(row);
-    auto data = detail::get_writable_table_data(table, true);
+    auto data = detail::get_writable_table_data(table);
     ASSERT_NE(nullptr, data);
     data[0] = 7;
     testing::internal::CaptureStdout();
@@ -1181,7 +1201,7 @@ TEST_F(CoreAlgorithms, FinishesOwnedRowsAfterCopyFailure)
 {
     auto source = AddRow<mdtid_MemberRef>(delta.get());
     ASSERT_TRUE(source);
-    auto data = detail::get_writable_table_data(detail::CursorTable(source), true);
+    auto data = detail::get_writable_table_data(detail::CursorTable(source));
     ASSERT_NE(nullptr, data);
     data[0] = 7;
     ASSERT_NO_FATAL_FAILURE(Log(CreateTokenType(mdtid_MemberRef) | 1));
@@ -1278,9 +1298,9 @@ TEST_F(CoreAlgorithms, TypedListAddSupportsDirectPortablePdbLists)
         ASSERT_TRUE(variable.value().set_column_value(LocalVariable_Index, index));
     }
     {
-        auto variable = added_row<mdtid_LocalVariable>::in_list(
-            scope.value(), LocalScope_VariableList, LocalVariable_Index, 3);
+        auto variable = added_row<mdtid_LocalVariable>::in_list(scope.value(), LocalScope_VariableList);
         ASSERT_TRUE(variable);
+        ASSERT_TRUE(variable.value().set_column_value(LocalVariable_Index, 3));
         uint32_t index = 0;
         ASSERT_TRUE(variable.value().get_column_value(LocalVariable_Index, &index));
         EXPECT_EQ(3u, index);

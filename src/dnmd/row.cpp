@@ -43,40 +43,14 @@ namespace
         return raw_cursor<Table>::at(context, row);
     }
 
-    template<mdtable_id_t Table, mdtable_id_t... Targets>
-    bool references_table(mdtable_t const*, column<Table, raw_cursor<Targets...>>, mdtable_id_t target)
-    {
-        return ((target == Targets) || ...);
-    }
-
-    template<mdtable_id_t Table, mdtable_id_t Direct, mdtable_id_t Ptr>
-    bool references_table(mdtable_t const* table, column<Table, indirect_cursor<Direct, Ptr>>, mdtable_id_t target)
-    {
-        return detail::list_target_table<Direct, Ptr>(table) == target;
-    }
-
-    template<mdtable_id_t Table, mdtable_id_t... Targets>
-    uint64_t max_reference_value(mdtable_t const&, column<Table, raw_cursor<Targets...>> col,
-        table_row_counts const& rows)
-    {
-        return detail::max_reference_value(col, rows);
-    }
-
-    template<mdtable_id_t Table, mdtable_id_t Direct, mdtable_id_t Ptr>
-    uint64_t max_reference_value(mdtable_t const& table, column<Table, indirect_cursor<Direct, Ptr>>,
-        table_row_counts const& rows)
-    {
-        return rows[detail::list_target_table<Direct, Ptr>(&table)];
-    }
-
     template<mdtable_id_t Table, typename Kind>
     mdtcol_t column_width(mdtable_t const& table, column<Table, Kind> col, reference_size_change change)
     {
         if constexpr (detail::searchable_column<Kind>::value
             && !std::is_same_v<Kind, column_type_constant>)
         {
-            if (references_table(&table, col, change.table))
-                return detail::reference_width(max_reference_value(table, col, change.rows), table.cxt->context_flags);
+            if (detail::references_table(&table, col, change.table))
+                return detail::reference_width(detail::max_reference_value(table, col, change.rows), table.cxt->context_flags);
         }
         return static_cast<mdtcol_t>(table.column_details[static_cast<uint8_t>(col.column_index)] & mdtc_widthmask);
     }
@@ -162,7 +136,7 @@ namespace
         if constexpr (detail::searchable_column<Kind>::value
             && !std::is_same_v<Kind, column_type_constant>)
         {
-            if (!references_table(table, col, updated_table))
+            if (!detail::references_table(table, col, updated_table))
                 return true;
             for (auto row = position<Table>(table->cxt, 1); row; row.move(1))
             {
@@ -470,22 +444,10 @@ bool add_row_to_list(cursor<mdtid_TypeDef> owner, decltype(columns::TypeDef_Fiel
     return add_list_row(owner, list, unsorted_list{}, 0, table, row);
 }
 
-bool add_row_to_list(cursor<mdtid_TypeDef> owner, decltype(columns::TypeDef_FieldList) list,
-    column<mdtid_Field, column_type_constant> sort, uint32_t value, mdtable_t** table, uint32_t* row)
-{
-    return add_list_row(owner, list, sort, value, table, row);
-}
-
 bool add_row_to_list(cursor<mdtid_TypeDef> owner, decltype(columns::TypeDef_MethodList) list,
     mdtable_t** table, uint32_t* row)
 {
     return add_list_row(owner, list, unsorted_list{}, 0, table, row);
-}
-
-bool add_row_to_list(cursor<mdtid_TypeDef> owner, decltype(columns::TypeDef_MethodList) list,
-    column<mdtid_MethodDef, column_type_constant> sort, uint32_t value, mdtable_t** table, uint32_t* row)
-{
-    return add_list_row(owner, list, sort, value, table, row);
 }
 
 bool add_row_to_list(cursor<mdtid_MethodDef> owner, decltype(columns::MethodDef_ParamList) list,
@@ -506,22 +468,10 @@ bool add_row_to_list(cursor<mdtid_EventMap> owner, decltype(columns::EventMap_Ev
     return add_list_row(owner, list, unsorted_list{}, 0, table, row);
 }
 
-bool add_row_to_list(cursor<mdtid_EventMap> owner, decltype(columns::EventMap_EventList) list,
-    column<mdtid_Event, column_type_constant> sort, uint32_t value, mdtable_t** table, uint32_t* row)
-{
-    return add_list_row(owner, list, sort, value, table, row);
-}
-
 bool add_row_to_list(cursor<mdtid_PropertyMap> owner, decltype(columns::PropertyMap_PropertyList) list,
     mdtable_t** table, uint32_t* row)
 {
     return add_list_row(owner, list, unsorted_list{}, 0, table, row);
-}
-
-bool add_row_to_list(cursor<mdtid_PropertyMap> owner, decltype(columns::PropertyMap_PropertyList) list,
-    column<mdtid_Property, column_type_constant> sort, uint32_t value, mdtable_t** table, uint32_t* row)
-{
-    return add_list_row(owner, list, sort, value, table, row);
 }
 
 #ifdef DNMD_PORTABLE_PDB
@@ -531,23 +481,12 @@ bool add_row_to_list(cursor<mdtid_LocalScope> owner, decltype(columns::LocalScop
     return add_list_row(owner, list, unsorted_list{}, 0, table, row);
 }
 
-bool add_row_to_list(cursor<mdtid_LocalScope> owner, decltype(columns::LocalScope_VariableList) list,
-    column<mdtid_LocalVariable, column_type_constant> sort, uint32_t value, mdtable_t** table, uint32_t* row)
-{
-    return add_list_row(owner, list, sort, value, table, row);
-}
-
 bool add_row_to_list(cursor<mdtid_LocalScope> owner, decltype(columns::LocalScope_ConstantList) list,
     mdtable_t** table, uint32_t* row)
 {
     return add_list_row(owner, list, unsorted_list{}, 0, table, row);
 }
 
-bool add_row_to_list(cursor<mdtid_LocalScope> owner, decltype(columns::LocalScope_ConstantList) list,
-    column<mdtid_LocalConstant, column_type_constant> sort, uint32_t value, mdtable_t** table, uint32_t* row)
-{
-    return add_list_row(owner, list, sort, value, table, row);
-}
 #endif
 }
 

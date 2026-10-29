@@ -28,33 +28,6 @@ inline bool sorted_search(mdtable_t const* table, column<TableId, ColumnType> co
         return table->is_sorted && !table->is_adding_new_row && !std::get<0>(keys).descending
             && col.column_index == std::get<0>(keys).column.column_index;
 }
-}
-
-namespace detail
-{
-template<typename ColumnType, mdtable_id_t... ValueTableIds>
-struct search_reference_tables : std::false_type {};
-
-template<mdtable_id_t... TargetTableIds, mdtable_id_t... ValueTableIds>
-struct search_reference_tables<raw_cursor<TargetTableIds...>, ValueTableIds...>
-    : std::conjunction<std::bool_constant<contains_table_id_v<ValueTableIds, TargetTableIds...>>...> {};
-
-template<mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId, mdtable_id_t... ValueTableIds>
-struct search_reference_tables<indirect_cursor<DirectTableId, IndirectTableId>, ValueTableIds...>
-    : std::conjunction<std::bool_constant<contains_table_id_v<ValueTableIds, DirectTableId, IndirectTableId>>...> {};
-
-template<typename ColumnType, typename Value>
-struct search_reference_value : std::false_type {};
-
-template<typename ColumnType, mdtable_id_t ValueTableId>
-struct search_reference_value<ColumnType, cursor<ValueTableId>> : search_reference_tables<ColumnType, ValueTableId> {};
-
-template<typename ColumnType, mdtable_id_t... ValueTableIds>
-struct search_reference_value<ColumnType, raw_cursor<ValueTableIds...>> : search_reference_tables<ColumnType, ValueTableIds...> {};
-
-template<typename ColumnType, mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
-struct search_reference_value<ColumnType, indirect_cursor<DirectTableId, IndirectTableId>>
-    : search_reference_tables<ColumnType, DirectTableId> {};
 
 template<mdtable_id_t TableId, typename ColumnType, mdtable_id_t ValueTableId>
 inline bool search_token(column<TableId, ColumnType>, cursor<ValueTableId> const& value, mdToken& token) noexcept
@@ -95,7 +68,7 @@ template<mdtable_id_t TableId, mdtable_id_t DirectTableId, mdtable_id_t Indirect
 inline bool search_value(mdtable_t const* table,
     column<TableId, indirect_cursor<DirectTableId, IndirectTableId>>, mdToken value, uint32_t& raw) noexcept
 {
-    if (static_cast<mdtable_id_t>(ExtractTokenType(value)) != list_target_table<DirectTableId, IndirectTableId>(table))
+    if (static_cast<mdtable_id_t>(ExtractTokenType(value)) != list_target_table<DirectTableId, IndirectTableId>(table->cxt))
         return false;
     raw = (RidFromToken)(value);
     return true;
@@ -170,22 +143,6 @@ inline range_result md_find_range_from_cursor(cursor<TableId> begin, column<Tabl
 
 namespace detail
 {
-template<mdtable_id_t ElementTableId>
-constexpr auto parent_list_column() noexcept
-{
-    if constexpr (ElementTableId == mdtid_Field) return columns::TypeDef_FieldList;
-    else if constexpr (ElementTableId == mdtid_MethodDef) return columns::TypeDef_MethodList;
-    else if constexpr (ElementTableId == mdtid_Param) return columns::MethodDef_ParamList;
-    else if constexpr (ElementTableId == mdtid_Event) return columns::EventMap_EventList;
-    else if constexpr (ElementTableId == mdtid_Property) return columns::PropertyMap_PropertyList;
-#ifdef DNMD_PORTABLE_PDB
-    else if constexpr (ElementTableId == mdtid_LocalVariable) return columns::LocalScope_VariableList;
-    else if constexpr (ElementTableId == mdtid_LocalConstant) return columns::LocalScope_ConstantList;
-#endif
-    else
-        static_assert(parent_table_id<ElementTableId>() != mdtid_Unused, "The row must belong to a list.");
-}
-
 template<mdtable_id_t ElementTableId, mdtable_id_t OwnerTableId, typename ColumnType>
 inline raw_cursor<OwnerTableId> find_list_owner(cursor<ElementTableId> element,
     column<OwnerTableId, ColumnType> col) noexcept
@@ -248,18 +205,17 @@ inline bool md_find_cursor_of_range_element(cursor<ElementTableId> element, raw_
 {
     static_assert(detail::parent_table_id<ElementTableId>() != mdtid_Unused, "The row must belong to a list.");
     static_assert(ParentTableId == detail::parent_table_id<ElementTableId>(), "The parent table type is incorrect.");
-    auto owner = detail::find_list_owner(element, detail::parent_list_column<ElementTableId>());
+    constexpr auto list = detail::parent_list_column<ElementTableId>();
+    auto owner = detail::find_list_owner(element, list);
     if (!owner)
         return false;
-    if constexpr (ElementTableId == mdtid_Event)
-        return row_reader{owner.value()}.read(columns::EventMap_Parent, parent);
-    else if constexpr (ElementTableId == mdtid_Property)
-        return row_reader{owner.value()}.read(columns::PropertyMap_Parent, parent);
-    else
+    if constexpr (decltype(list)::table_id == ParentTableId)
     {
         parent = owner;
         return true;
     }
+    else
+        return row_reader{owner.value()}.read(detail::list_owner_parent_column<decltype(list)::table_id>(), parent);
 }
 
 template<mdtable_id_t TableId>
@@ -273,13 +229,7 @@ inline bool md_find_token_of_range_element(cursor<TableId> element, mdToken& tok
 template<mdtable_id_t TableId>
 inline bool cursor<TableId>::get_parent_token(mdToken& tk) const noexcept
 {
-    static_assert(TableId == mdtid_Field || TableId == mdtid_MethodDef
-        || TableId == mdtid_Param || TableId == mdtid_Event
-#ifdef DNMD_PORTABLE_PDB
-        || TableId == mdtid_LocalVariable || TableId == mdtid_LocalConstant
-#endif
-        || TableId == mdtid_Property,
-        "The row must belong to a list.");
+    static_assert(detail::parent_table_id<TableId>() != mdtid_Unused, "The row must belong to a list.");
     return dnmd::md_find_token_of_range_element(*this, tk);
 }
 

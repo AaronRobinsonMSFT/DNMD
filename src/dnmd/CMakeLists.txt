@@ -14,7 +14,6 @@ set(SOURCES
 set(PUBLIC_HEADERS
   ../inc/dnmd.h
   ../inc/dnmd.hpp
-  ../inc/dnmd_columns.hpp
   ../inc/dnmd_schema.hpp
   ../inc/dnmd_cursors.hpp
   ../inc/dnmd_read.hpp
