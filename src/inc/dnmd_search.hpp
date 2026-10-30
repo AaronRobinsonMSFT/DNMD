@@ -1,0 +1,238 @@
+#ifndef _SRC_INC_DNMD_SEARCH_HPP_
+#define _SRC_INC_DNMD_SEARCH_HPP_
+
+#include "dnmd_read.hpp"
+#include "dnmd_schema.hpp"
+#include <algorithm>
+#include <iterator>
+
+namespace dnmd
+{
+
+enum class range_result
+{
+    found = 0,
+    not_found = 1,
+    not_supported = 2,
+};
+
+namespace detail
+{
+template<mdtable_id_t TableId, typename ColumnType>
+inline bool sorted_search(mdtable_t const* table, column<TableId, ColumnType> col) noexcept
+{
+    constexpr auto keys = table_sort_keys<TableId>();
+    if constexpr (std::tuple_size_v<decltype(keys)> == 0)
+        return false;
+    else
+        return table->is_sorted && !table->is_adding_new_row && !std::get<0>(keys).descending
+            && col.column_index == std::get<0>(keys).column.column_index;
+}
+
+template<mdtable_id_t TableId, typename ColumnType, mdtable_id_t ValueTableId>
+inline bool search_token(column<TableId, ColumnType>, cursor<ValueTableId> const& value, mdToken& token) noexcept
+{
+    token = CreateTokenType(ValueTableId) | CursorRow(value);
+    return true;
+}
+
+template<mdtable_id_t TableId, typename ColumnType, mdtable_id_t... ValueTableIds>
+inline bool search_token(column<TableId, ColumnType>, raw_cursor<ValueTableIds...> const& value, mdToken& token) noexcept
+{
+    return value.get_token(token);
+}
+
+template<mdtable_id_t TableId, typename ColumnType, mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
+inline bool search_token(column<TableId, ColumnType>, indirect_cursor<DirectTableId, IndirectTableId> const& value, mdToken& token) noexcept
+{
+    if constexpr (std::is_same_v<ColumnType, indirect_cursor<DirectTableId, IndirectTableId>>)
+        return value.get_token(token);
+    else
+        return value.get_target_token(token);
+}
+
+template<mdtable_id_t TableId>
+inline bool search_value(mdtable_t const*, column<TableId, column_type_constant>, uint32_t value, uint32_t& raw) noexcept
+{
+    raw = value;
+    return true;
+}
+
+template<mdtable_id_t TableId, mdtable_id_t... TargetTableIds>
+inline bool search_value(mdtable_t const*, column<TableId, raw_cursor<TargetTableIds...>>, mdToken value, uint32_t& raw) noexcept
+{
+    return column_reference_codec<TargetTableIds...>::encode(value, raw);
+}
+
+template<mdtable_id_t TableId, mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
+inline bool search_value(mdtable_t const* table,
+    column<TableId, indirect_cursor<DirectTableId, IndirectTableId>>, mdToken value, uint32_t& raw) noexcept
+{
+    if (static_cast<mdtable_id_t>(ExtractTokenType(value)) != list_target_table<DirectTableId, IndirectTableId>(table->cxt))
+        return false;
+    raw = (RidFromToken)(value);
+    return true;
+}
+
+template<mdtable_id_t TableId, typename ColumnType>
+inline raw_cursor<TableId> find_row(cursor<TableId> begin, column<TableId, ColumnType> col, uint32_t value) noexcept
+{
+    column_iterator first{begin, col};
+    auto last = first.end();
+    auto found = sorted_search(CursorTable(begin), col)
+        ? std::lower_bound(first, last, value) : std::find(first, last, value);
+    if (found == last || *found != value)
+        return raw_cursor<TableId>::nil(begin.get_handle());
+    return found.position();
+}
+}
+
+template<mdtable_id_t TableId, typename ColumnType,
+    std::enable_if_t<detail::searchable_column<ColumnType>::value, int> = 0>
+inline raw_cursor<TableId> md_find_row_from_cursor(cursor<TableId> begin, column<TableId, ColumnType> col, uint32_t value) noexcept
+{
+    uint32_t encoded;
+    if (!detail::search_value(detail::CursorTable(begin), col, value, encoded))
+        return raw_cursor<TableId>::nil(begin.get_handle());
+    return detail::find_row(begin, col, encoded);
+}
+
+template<mdtable_id_t TableId, typename ColumnType, typename Value,
+    std::enable_if_t<detail::search_reference_value<ColumnType, Value>::value, int> = 0>
+inline raw_cursor<TableId> md_find_row_from_cursor(cursor<TableId> begin, column<TableId, ColumnType> col,
+    Value const& value) noexcept
+{
+    mdToken token;
+    if (!detail::search_token(col, value, token))
+        return raw_cursor<TableId>::nil(begin.get_handle());
+    return md_find_row_from_cursor(begin, col, token);
+}
+
+template<mdtable_id_t TableId, typename ColumnType,
+    std::enable_if_t<detail::searchable_column<ColumnType>::value, int> = 0>
+inline range_result md_find_range_from_cursor(cursor<TableId> begin,
+    column<TableId, ColumnType> col, uint32_t value,
+    raw_cursor<TableId>& start, uint32_t* count) noexcept
+{
+    assert(count != nullptr);
+    uint32_t encoded;
+    auto table = detail::CursorTable(begin);
+    if (!detail::search_value(table, col, value, encoded))
+        return range_result::not_found;
+    if (!detail::sorted_search(table, col))
+        return range_result::not_supported;
+    column_iterator first{begin, col};
+    auto range = std::equal_range(first, first.end(), encoded);
+    if (range.first == range.second)
+        return range_result::not_found;
+    start = range.first.position();
+    *count = static_cast<uint32_t>(range.second - range.first);
+    return range_result::found;
+}
+
+template<mdtable_id_t TableId, typename ColumnType, typename Value,
+    std::enable_if_t<detail::search_reference_value<ColumnType, Value>::value, int> = 0>
+inline range_result md_find_range_from_cursor(cursor<TableId> begin, column<TableId, ColumnType> col,
+    Value const& value, raw_cursor<TableId>& start, uint32_t* count) noexcept
+{
+    mdToken token;
+    if (!detail::search_token(col, value, token))
+        return range_result::not_found;
+    return md_find_range_from_cursor(begin, col, token, start, count);
+}
+
+namespace detail
+{
+template<mdtable_id_t ElementTableId, mdtable_id_t OwnerTableId, typename ColumnType>
+inline raw_cursor<OwnerTableId> find_list_owner(cursor<ElementTableId> element,
+    column<OwnerTableId, ColumnType> col) noexcept
+{
+    auto element_table = CursorTable(element);
+    auto owner_table = &element_table->cxt->tables[OwnerTableId];
+    if (owner_table->row_count == 0)
+        return raw_cursor<OwnerTableId>::nil(element.get_handle());
+
+    uint32_t index = CursorRow(element);
+    constexpr auto pointer_id = pointer_table_id<ElementTableId>();
+    if constexpr (pointer_id != mdtid_Unused)
+    {
+        if (element_table->has_indirect_table)
+        {
+            auto pointer_table = &element_table->cxt->tables[pointer_id];
+            if (pointer_table->row_count == 0)
+                return raw_cursor<OwnerTableId>::nil(element.get_handle());
+            auto pointer_begin = raw_cursor<pointer_id>::at(element.get_handle(), 1).value();
+            auto pointer = md_find_row_from_cursor(pointer_begin, pointer_column<pointer_id>(), element);
+            if (!pointer)
+                return raw_cursor<OwnerTableId>::nil(element.get_handle());
+            index = CursorRow(pointer);
+        }
+    }
+
+    auto owner_begin = raw_cursor<OwnerTableId>::at(element.get_handle(), 1).value();
+    column_iterator first{owner_begin, col};
+    auto last = first.end();
+    auto found = last;
+    if (element_table->cxt->editor != nullptr || element_table->has_indirect_table)
+    {
+        // Edited/indirected runs can contain unpartitioned starts; Ptr lookup is already linear.
+        auto reverse = std::find_if(std::make_reverse_iterator(last), std::make_reverse_iterator(first),
+            [index](uint32_t start) { return start != 0 && start <= index; });
+        if (reverse == std::make_reverse_iterator(first))
+            return raw_cursor<OwnerTableId>::nil(element.get_handle());
+        found = reverse.base() - 1;
+    }
+    else
+    {
+        column_iterator<OwnerTableId, ColumnType, list_boundary_value> ordered{owner_begin, col};
+        auto after = std::upper_bound(ordered, ordered.end(), index);
+        if (after == ordered)
+            return raw_cursor<OwnerTableId>::nil(element.get_handle());
+        found = column_iterator{(--after).position().value(), col};
+    }
+
+    auto next = std::find_if(found + 1, last, [](uint32_t start) { return start != 0; });
+    uint32_t end_row = list_end_row(owner_table, col);
+    uint32_t end = next == last ? end_row : *next;
+    if (*found == 0 || *found > index || end > end_row || index >= end)
+        return raw_cursor<OwnerTableId>::nil(element.get_handle());
+    return found.position();
+}
+}
+
+template<mdtable_id_t ElementTableId, mdtable_id_t ParentTableId>
+inline bool md_find_cursor_of_range_element(cursor<ElementTableId> element, raw_cursor<ParentTableId>& parent) noexcept
+{
+    static_assert(detail::parent_table_id<ElementTableId>() != mdtid_Unused, "The row must belong to a list.");
+    static_assert(ParentTableId == detail::parent_table_id<ElementTableId>(), "The parent table type is incorrect.");
+    constexpr auto list = detail::parent_list_column<ElementTableId>();
+    auto owner = detail::find_list_owner(element, list);
+    if (!owner)
+        return false;
+    if constexpr (decltype(list)::table_id == ParentTableId)
+    {
+        parent = owner;
+        return true;
+    }
+    else
+        return row_reader{owner.value()}.read(detail::list_owner_parent_column<decltype(list)::table_id>(), parent);
+}
+
+template<mdtable_id_t TableId>
+inline bool md_find_token_of_range_element(cursor<TableId> element, mdToken& token) noexcept
+{
+    static_assert(detail::parent_table_id<TableId>() != mdtid_Unused, "The row must belong to a list.");
+    auto parent = raw_cursor<detail::parent_table_id<TableId>()>::nil(element.get_handle());
+    return md_find_cursor_of_range_element(element, parent) && parent.get_token(token);
+}
+
+template<mdtable_id_t TableId>
+inline bool cursor<TableId>::get_parent_token(mdToken& tk) const noexcept
+{
+    static_assert(detail::parent_table_id<TableId>() != mdtid_Unused, "The row must belong to a list.");
+    return dnmd::md_find_token_of_range_element(*this, tk);
+}
+
+} // namespace dnmd
+
+#endif // _SRC_INC_DNMD_SEARCH_HPP_
