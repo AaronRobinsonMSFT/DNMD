@@ -200,7 +200,7 @@ bool pal::ComputeSha1Hash(span<const uint8_t> data, std::array<uint8_t, SHA1_HAS
 bool pal::ComputeSha1Hash(span<const uint8_t> data, std::array<uint8_t, SHA1_HASH_SIZE>& hashDestination)
 {
     static_assert(CC_SHA1_DIGEST_LENGTH == SHA1_HASH_SIZE, "SHA1 hash size mismatch");
-    CC_SHA1(data, data.size(), hashDestination.data());
+    CC_SHA1(static_cast<uint8_t const*>(data), data.size(), hashDestination.data());
     return true;
 }
 
@@ -209,7 +209,7 @@ bool pal::ComputeSha1Hash(span<const uint8_t> data, std::array<uint8_t, SHA1_HAS
 bool pal::ComputeSha1Hash(span<const uint8_t> data, std::array<uint8_t, SHA1_HASH_SIZE>& hashDestination)
 {
     static_assert(SHA_DIGEST_LENGTH == SHA1_HASH_SIZE, "SHA1 hash size mismatch");
-    SHA1(data, data.size(), hashDestination.data());
+    SHA1(static_cast<uint8_t const*>(data), data.size(), hashDestination.data());
     return true;
 }
 

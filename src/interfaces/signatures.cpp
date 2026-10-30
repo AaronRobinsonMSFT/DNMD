@@ -3,6 +3,7 @@
 #include <cassert>
 #include <cstring>
 #include <tuple>
+#include <type_traits>
 #include <vector>
 
 namespace
@@ -11,7 +12,7 @@ namespace
     std::tuple<uint32_t, span<T>> read_compressed_uint(span<T> signature)
     {
         ULONG value = 0;
-        signature = slice(signature, CorSigUncompressData(signature, &value));
+        signature = slice(signature, CorSigUncompressData((T*)signature, &value));
         return std::make_tuple(value, signature);
     }
 
@@ -19,7 +20,7 @@ namespace
     std::tuple<int32_t, span<T>> read_compressed_int(span<T> signature)
     {
         int value = 0;
-        signature = slice(signature, CorSigUncompressSignedInt(signature, &value));
+        signature = slice(signature, CorSigUncompressSignedInt((T*)signature, &value));
         return std::make_tuple(value, signature);
     }
 
@@ -27,7 +28,7 @@ namespace
     std::tuple<mdToken, span<T>> read_compressed_token(span<T> signature)
     {
         mdToken value = mdTokenNil;
-        signature = slice(signature, CorSigUncompressToken(signature, &value));
+        signature = slice(signature, CorSigUncompressToken((T*)signature, &value));
         return std::make_tuple(value, signature);
     }
 
@@ -272,59 +273,16 @@ void GetMethodDefSigFromMethodRefSig(span<uint8_t> methodRefSig, inline_span<uin
     methodDefSig[offset++] = callingConvention;
     if ((callingConvention & IMAGE_CEE_CS_CALLCONV_GENERIC) == IMAGE_CEE_CS_CALLCONV_GENERIC)
     {
-        offset += CorSigCompressData(genericParameterCount, methodDefSig + offset);
+        offset += CorSigCompressData(genericParameterCount, (uint8_t*)methodDefSig + offset);
     }
-    std::memcpy(methodDefSig + offset, compressedNewParamCount, newParamCountCompressedSize);
+    std::memcpy((uint8_t*)methodDefSig + offset, (uint8_t*)compressedNewParamCount, newParamCountCompressedSize);
     offset += newParamCountCompressedSize;
 
     // Now that we've re-written the parameter count, we can copy the rest of the signature directly from the MethodRefSig
     assert(returnTypeAndParameters.size() >= methodDefSigBufferLength - offset);
-    std::memcpy(methodDefSig + offset, returnTypeAndParameters, methodDefSigBufferLength - offset);
+    std::memcpy((uint8_t*)methodDefSig + offset, (uint8_t*)returnTypeAndParameters, methodDefSigBufferLength - offset);
 
     return;
-}
-
-// Define a function object that enables us to combine multiple lambdas into a single overload set.
-namespace
-{
-    template<typename... T>
-    struct Overload;
-
-    template<typename T>
-    struct Overload<T>
-    {
-        Overload(T&& t) : _t{ std::forward<T>(t) }
-        { }
-
-        // Define a perfectly-forwarding operator() that will call the function object with the given arguments.
-        template <typename... Args>
-        auto operator()(Args&&... args) const
-        -> decltype(std::declval<T>()(std::forward<Args>(args)...))
-        {
-            return _t(std::forward<Args>(args)...);
-        }
-    private:
-        T _t;
-    };
-
-    template<typename T, typename... Ts>
-    struct Overload<T, Ts...> : Overload<T>, Overload<Ts...>
-    {
-        using Overload<T>::operator();
-        using Overload<Ts...>::operator();
-
-        Overload(T&& t, Ts&&... ts)
-            :Overload<T>(std::forward<T>(t)),
-             Overload<Ts...>(std::forward<Ts>(ts)...)
-        {
-        }
-    };
-
-    template<typename... Ts>
-    Overload<Ts...> make_overload(Ts&&... ts)
-    {
-        return Overload<Ts...>(std::forward<Ts>(ts)...);
-    }
 }
 
 HRESULT ImportSignatureIntoModule(
@@ -334,7 +292,7 @@ HRESULT ImportSignatureIntoModule(
     mdhandle_t destinationAssembly,
     mdhandle_t destinationModule,
     span<const uint8_t> signature,
-    std::function<void(mdcursor_t)> onRowAdded,
+    std::function<void(dnmd::any_cursor)> onRowAdded,
     inline_span<uint8_t>& importedSignature)
 {
     HRESULT hr;
@@ -344,25 +302,29 @@ HRESULT ImportSignatureIntoModule(
     // Our imported signature will likely be a very similar size to the original signature.
     importedSignatureBuffer.reserve(signature.size());
 
-    auto onSignatureItemCallback = make_overload(
-        [&](uint8_t byte, raw_byte_tag)
+    auto onSignatureItemCallback = [=, &importedSignatureBuffer, &hr](auto value, auto tag)
+    {
+        using tag_type = decltype(tag);
+        if constexpr (std::is_same_v<tag_type, raw_byte_tag>)
         {
-            importedSignatureBuffer.push_back(byte);
-        },
-        [&](uint32_t value, compressed_uint_tag)
+            importedSignatureBuffer.push_back(value);
+        }
+        else if constexpr (std::is_same_v<tag_type, compressed_uint_tag>)
         {
             uint8_t buffer[4];
             ULONG compressedSize = CorSigCompressData(value, buffer);
             importedSignatureBuffer.insert(importedSignatureBuffer.end(), buffer, buffer + compressedSize);
-        },
-        [&](int32_t value, compressed_int_tag)
+        }
+        else if constexpr (std::is_same_v<tag_type, compressed_int_tag>)
         {
             uint8_t buffer[4];
             ULONG compressedSize = CorSigCompressSignedInt(value, buffer);
             importedSignatureBuffer.insert(importedSignatureBuffer.end(), buffer, buffer + compressedSize);
-        },
-        [=, &importedSignatureBuffer, &hr](mdToken token, token_tag)
+        }
+        else
         {
+            static_assert(std::is_same_v<tag_type, token_tag>);
+            mdToken token = value;
             HRESULT localHR = ImportReferenceToTypeDefOrRefOrSpec(
                 sourceAssembly,
                 sourceModule,
@@ -384,7 +346,7 @@ HRESULT ImportSignatureIntoModule(
             ULONG compressedSize = CorSigCompressToken(token, buffer);
             importedSignatureBuffer.insert(importedSignatureBuffer.end(), buffer, buffer + compressedSize);
         }
-    );
+    };
 
     const uint8_t callingConvention = signature[0];
     signature = slice(signature, 1);
@@ -455,7 +417,7 @@ HRESULT ImportTypeSpecBlob(
     mdhandle_t destinationAssembly,
     mdhandle_t destinationModule,
     span<const uint8_t> typeSpecBlob,
-    std::function<void(mdcursor_t)> onRowAdded,
+    std::function<void(dnmd::any_cursor)> onRowAdded,
     inline_span<uint8_t>& importedTypeSpecBlob)
 {
     std::vector<uint8_t> importedTypeSpecBlobBuffer;
@@ -465,25 +427,29 @@ HRESULT ImportTypeSpecBlob(
     HRESULT hr = S_OK;
 
     // WalkSignatureElement is more permissive of what it will accept than the requirements of the TypeSpecBlob.
-    span<const uint8_t> remaining = WalkSignatureElement(typeSpecBlob, make_overload(
-        [&](uint8_t byte, raw_byte_tag)
+    span<const uint8_t> remaining = WalkSignatureElement(typeSpecBlob, [=, &importedTypeSpecBlobBuffer, &hr](auto value, auto tag)
+    {
+        using tag_type = decltype(tag);
+        if constexpr (std::is_same_v<tag_type, raw_byte_tag>)
         {
-            importedTypeSpecBlobBuffer.push_back(byte);
-        },
-        [&](uint32_t value, compressed_uint_tag)
+            importedTypeSpecBlobBuffer.push_back(value);
+        }
+        else if constexpr (std::is_same_v<tag_type, compressed_uint_tag>)
         {
             uint8_t buffer[4];
             ULONG compressedSize = CorSigCompressData(value, buffer);
             importedTypeSpecBlobBuffer.insert(importedTypeSpecBlobBuffer.end(), buffer, buffer + compressedSize);
-        },
-        [&](int32_t value, compressed_int_tag)
+        }
+        else if constexpr (std::is_same_v<tag_type, compressed_int_tag>)
         {
             uint8_t buffer[4];
             ULONG compressedSize = CorSigCompressSignedInt(value, buffer);
             importedTypeSpecBlobBuffer.insert(importedTypeSpecBlobBuffer.end(), buffer, buffer + compressedSize);
-        },
-        [=, &importedTypeSpecBlobBuffer, &hr](mdToken token, token_tag)
+        }
+        else
         {
+            static_assert(std::is_same_v<tag_type, token_tag>);
+            mdToken token = value;
             HRESULT localHR = ImportReferenceToTypeDefOrRefOrSpec(
                 sourceAssembly,
                 sourceModule,
@@ -505,7 +471,7 @@ HRESULT ImportTypeSpecBlob(
             ULONG compressedSize = CorSigCompressToken(token, buffer);
             importedTypeSpecBlobBuffer.insert(importedTypeSpecBlobBuffer.end(), buffer, buffer + compressedSize);
         }
-    ));
+    });
 
     if (FAILED(hr))
         return hr;
