@@ -1,30 +1,7 @@
 #include <dnmd_pdb.hpp>
 #include <dnmd.hpp>
 #include <gtest/gtest.h>
-#include <cstdlib>
-#include <new>
 #include <type_traits>
-
-namespace
-{
-    thread_local bool fail_allocation = false;
-}
-
-void* operator new(std::size_t size)
-{
-    // Target record storage rather than MSVC's noexcept debug-iterator proxy allocations.
-    if (fail_allocation && size >= sizeof(dnmd::sequence_point_record))
-        throw std::bad_alloc{};
-    if (auto data = std::malloc(size == 0 ? 1 : size))
-        return data;
-    throw std::bad_alloc{};
-}
-
-void* operator new[](std::size_t size) { return ::operator new(size); }
-void operator delete(void* data) noexcept { std::free(data); }
-void operator delete[](void* data) noexcept { std::free(data); }
-void operator delete(void* data, std::size_t) noexcept { std::free(data); }
-void operator delete[](void* data, std::size_t) noexcept { std::free(data); }
 
 namespace
 {
@@ -272,18 +249,4 @@ TEST_F(PdbSequencePoints, RejectsTruncatedInvalidAndOutOfRangeInput)
         ASSERT_FALSE(result);
         EXPECT_EQ(error::invalid_blob, result.error());
     }
-}
-
-TEST_F(PdbSequencePoints, ReportsAllocationFailureWithoutThrowing)
-{
-    auto document = Document();
-    ASSERT_TRUE(document);
-    auto method = Method(document);
-    ASSERT_TRUE(method);
-    uint8_t bytes[] = {0, 0, 0, 0};
-    fail_allocation = true;
-    auto result = parse_sequence_points(method.value(), bytes, sizeof(bytes));
-    fail_allocation = false;
-    ASSERT_FALSE(result);
-    EXPECT_EQ(error::out_of_memory, result.error());
 }

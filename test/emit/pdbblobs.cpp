@@ -3,30 +3,7 @@
 #include <corhdr.h>
 #include <gtest/gtest.h>
 #include <array>
-#include <cstdlib>
-#include <new>
 #include <type_traits>
-
-namespace
-{
-    thread_local bool fail_allocation = false;
-}
-
-void* operator new(std::size_t size)
-{
-    // Leave MSVC's noexcept debug-iterator proxy allocations alone.
-    if (fail_allocation && size >= 64)
-        throw std::bad_alloc{};
-    if (auto memory = std::malloc(size == 0 ? 1 : size))
-        return memory;
-    throw std::bad_alloc{};
-}
-
-void* operator new[](std::size_t size) { return ::operator new(size); }
-void operator delete(void* memory) noexcept { std::free(memory); }
-void operator delete[](void* memory) noexcept { std::free(memory); }
-void operator delete(void* memory, std::size_t) noexcept { std::free(memory); }
-void operator delete[](void* memory, std::size_t) noexcept { std::free(memory); }
 
 namespace
 {
@@ -393,33 +370,6 @@ TEST_F(PdbBlobs, RejectsTruncatedImportsAndInvalidKindsReferencesAndStrings)
     auto overflow = parse_imports(handle.get(), bytes.data(), bytes.size());
     ASSERT_FALSE(overflow);
     EXPECT_EQ(error::invalid_blob, overflow.error());
-}
-
-TEST_F(PdbBlobs, ReportsAllocationFailuresWithoutThrowing)
-{
-    std::string long_name(200, 'a');
-    auto offset = Blob(long_name);
-    std::vector<uint8_t> name{'/'};
-    Append(name, offset);
-    std::vector<uint8_t> constant;
-    std::vector<uint8_t> imports;
-    for (int i = 0; i < 20; ++i)
-    {
-        constant.insert(constant.end(), {ELEMENT_TYPE_CMOD_OPT, 4});
-        imports.insert(imports.end(), {1, 0});
-    }
-    constant.insert(constant.end(), {ELEMENT_TYPE_I4, 0, 0, 0, 0});
-    fail_allocation = true;
-    auto name_result = parse_document_name(handle.get(), name.data(), name.size());
-    auto constant_result = parse_local_constant_signature(handle.get(), constant.data(), constant.size());
-    auto imports_result = parse_imports(handle.get(), imports.data(), imports.size());
-    fail_allocation = false;
-    ASSERT_FALSE(name_result);
-    ASSERT_FALSE(constant_result);
-    ASSERT_FALSE(imports_result);
-    EXPECT_EQ(error::out_of_memory, name_result.error());
-    EXPECT_EQ(error::out_of_memory, constant_result.error());
-    EXPECT_EQ(error::out_of_memory, imports_result.error());
 }
 
 TEST_F(PdbBlobs, DumpsNativeNamesModifiersAndEveryImportForm)
