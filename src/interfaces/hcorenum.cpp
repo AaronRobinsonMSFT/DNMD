@@ -1,6 +1,61 @@
 #include "hcorenum.hpp"
 #include <cassert>
-#include <cstring>
+#include <new>
+
+namespace
+{
+    bool ResolveIndirectCursor(dnmd::any_cursor const& source, dnmd::any_cursor& target) noexcept
+    {
+        auto sentinel = source;
+        mdToken token;
+        bool resolved;
+        switch (dnmd::detail::CursorTable(source)->table_id)
+        {
+        case mdtid_FieldPtr:
+            sentinel = source.as<mdtid_Field>();
+            resolved = dnmd::indirect_cursor<mdtid_Field, mdtid_FieldPtr>{source}.get_target_token(token);
+            break;
+        case mdtid_MethodPtr:
+            sentinel = source.as<mdtid_MethodDef>();
+            resolved = dnmd::indirect_cursor<mdtid_MethodDef, mdtid_MethodPtr>{source}.get_target_token(token);
+            break;
+        case mdtid_ParamPtr:
+            sentinel = source.as<mdtid_Param>();
+            resolved = dnmd::indirect_cursor<mdtid_Param, mdtid_ParamPtr>{source}.get_target_token(token);
+            break;
+        case mdtid_EventPtr:
+            sentinel = source.as<mdtid_Event>();
+            resolved = dnmd::indirect_cursor<mdtid_Event, mdtid_EventPtr>{source}.get_target_token(token);
+            break;
+        case mdtid_PropertyPtr:
+            sentinel = source.as<mdtid_Property>();
+            resolved = dnmd::indirect_cursor<mdtid_Property, mdtid_PropertyPtr>{source}.get_target_token(token);
+            break;
+        default:
+            target = source;
+            return true;
+        }
+        if (!resolved)
+            return false;
+        // Token lookup accepts live rows only; retain resolved nil/end identities.
+        uint32_t row = (dnmd::detail::RidFromToken)(token);
+        if (row == 0)
+        {
+            target = sentinel;
+        }
+        else if (row == dnmd::detail::CursorTable(sentinel)->row_count + 1)
+        {
+            if (!sentinel.move(static_cast<int32_t>(row)))
+                return false;
+            target = sentinel;
+        }
+        else
+        {
+            target = dnmd::any_cursor{source.get_handle(), token};
+        }
+        return true;
+    }
+}
 
 #define RETURN_IF_FAILED(exp) \
 { \
@@ -11,7 +66,7 @@
     } \
 }
 
-HRESULT HCORENUMImpl::CreateTableEnum(_In_ uint32_t count, _Out_ HCORENUMImpl** impl) noexcept
+HRESULT HCORENUMImpl::CreateTableEnum(_In_ mdhandle_t handle, _In_ uint32_t count, _Out_ HCORENUMImpl** impl) noexcept
 {
     assert(impl != nullptr && count > 0);
 
@@ -20,43 +75,38 @@ HRESULT HCORENUMImpl::CreateTableEnum(_In_ uint32_t count, _Out_ HCORENUMImpl** 
     if (enumImpl == nullptr)
         return E_OUTOFMEMORY;
 
+    new (enumImpl) HCORENUMImpl(handle);
+
     // Immediately set the return.
     *impl = enumImpl;
-
-    enumImpl->_type = HCORENUMType::Table;
-    enumImpl->_entrySpan = 1;
-    enumImpl->_curr = &enumImpl->_data;
-    enumImpl->_last = enumImpl->_curr;
 
     // Initialize the linked list of EnumData.
     EnumData* currInit = enumImpl->_curr;
     currInit->Next = nullptr;
 
     // -1 because the initial impl contains one.
-    EnumData* nextMaybe = (EnumData*)&enumImpl[1];
+    unsigned char* nextStorage = reinterpret_cast<unsigned char*>(enumImpl) + sizeof(*enumImpl);
     for (size_t i = 0; i < (count - 1); ++i)
     {
+        EnumData* nextMaybe = new (nextStorage) EnumData(handle);
         currInit->Next = nextMaybe;
         currInit = nextMaybe;
         currInit->Next = nullptr;
         enumImpl->_last = currInit;
-        nextMaybe = nextMaybe + 1;
+        nextStorage += sizeof(EnumData);
     }
 
     return S_OK;
 }
 
-void HCORENUMImpl::InitTableEnum(_Inout_ HCORENUMImpl& impl, _In_ uint32_t index, _In_ mdcursor_t cursor, _In_ uint32_t rows) noexcept
+void HCORENUMImpl::InitTableEnum(_Inout_ HCORENUMImpl& impl, _In_ uint32_t index, _In_ dnmd::any_cursor cursor, _In_ uint32_t rows) noexcept
 {
     assert(impl._type == HCORENUMType::Table);
-    EnumData* currInit = impl._curr;
-
-    // See CreateTableEnum for allocation layout.
-    if (index > 0)
+    EnumData* currInit = &impl._data;
+    for (uint32_t i = 0; i < index; ++i)
     {
-        HCORENUMImpl* pImpl = &impl;
-        EnumData* dataBegin = (EnumData*)&pImpl[1]; // Data starts immediately after impl.
-        currInit = (EnumData*)&dataBegin[index - 1];
+        assert(currInit->Next != nullptr);
+        currInit = currInit->Next;
     }
 
     currInit->Table.Current = cursor;
@@ -74,16 +124,13 @@ HRESULT HCORENUMImpl::CreateDynamicEnum(_Out_ HCORENUMImpl** impl, _In_ uint32_t
     if (enumImpl == nullptr)
         return E_OUTOFMEMORY;
 
+    new (enumImpl) HCORENUMImpl(entrySpan);
+
     // Immediately set the return.
     *impl = enumImpl;
 
-    enumImpl->_type = HCORENUMType::Dynamic;
     // The page must be a multiple of the entrySpan for reading to be efficient.
     assert(ARRAY_SIZE(enumImpl->_data.Dynamic.Page) % entrySpan == 0);
-    enumImpl->_entrySpan = entrySpan;
-    ::memset(&enumImpl->_data, 0, sizeof(enumImpl->_data));
-    enumImpl->_curr = &enumImpl->_data;
-    enumImpl->_last = enumImpl->_curr;
     return S_OK;
 }
 
@@ -99,7 +146,7 @@ HRESULT HCORENUMImpl::AddToDynamicEnum(_Inout_ HCORENUMImpl& impl, uint32_t valu
         if (newData == nullptr)
             return E_OUTOFMEMORY;
 
-        ::memset(newData, 0, sizeof(*newData));
+        new (newData) EnumData();
         assert(currData->Next == nullptr);
         currData->Next = newData;
         impl._last = newData;
@@ -113,19 +160,21 @@ HRESULT HCORENUMImpl::AddToDynamicEnum(_Inout_ HCORENUMImpl& impl, uint32_t valu
 void HCORENUMImpl::Destroy(_In_ HCORENUMImpl* impl) noexcept
 {
     assert(impl != nullptr);
-    if (impl->_type == HCORENUMType::Dynamic)
+    EnumData* toDelete = impl->_data.Next;
+    if (impl->_type == HCORENUMType::Table)
+        impl->_data.Table.~TableData();
+    while (toDelete != nullptr)
     {
-        // Delete all allocated pages.
-        EnumData* tmp;
-        EnumData* toDelete = impl->_data.Next;
-        while (toDelete != nullptr)
-        {
-            tmp = toDelete->Next;
+        EnumData* next = toDelete->Next;
+        if (impl->_type == HCORENUMType::Table)
+            toDelete->Table.~TableData();
+        toDelete->~EnumData();
+        if (impl->_type == HCORENUMType::Dynamic)
             ::free(toDelete);
-            toDelete = tmp;
-        }
+        toDelete = next;
     }
 
+    impl->~HCORENUMImpl();
     ::free(impl);
 }
 
@@ -226,14 +275,14 @@ HRESULT HCORENUMImpl::ReadOneToken(mdToken& rToken, uint32_t& count) noexcept
 
     if (_type == HCORENUMType::Table)
     {
-        mdcursor_t current;
-        if (!md_resolve_indirect_cursor(currData->Table.Current, &current))
+        dnmd::any_cursor current{currData->Table.Current};
+        if (!ResolveIndirectCursor(currData->Table.Current, current))
             return CLDB_E_FILE_CORRUPT;
 
-        if (!md_cursor_to_token(current, &rToken))
+        if (!current.get_token(rToken))
             return S_FALSE;
 
-        (void)md_cursor_next(&currData->Table.Current);
+        currData->Table.Current.move(1);
     }
     else
     {
@@ -270,15 +319,15 @@ HRESULT HCORENUMImpl::ReadTableTokens(
             _curr = currData;
         }
 
-        mdcursor_t current;
-        if (!md_resolve_indirect_cursor(currData->Table.Current, &current))
+        dnmd::any_cursor current{currData->Table.Current};
+        if (!ResolveIndirectCursor(currData->Table.Current, current))
             return CLDB_E_FILE_CORRUPT;
 
-        if (!md_cursor_to_token(current, &rTokens[count]))
+        if (!current.get_token(rTokens[count]))
             break;
         count++;
 
-        if (!md_cursor_next(&currData->Table.Current))
+        if (!currData->Table.Current.move(1))
             break;
         currData->ReadIn++;
     }
@@ -325,13 +374,12 @@ HRESULT HCORENUMImpl::ResetTableEnum(_In_ uint32_t position) noexcept
 {
     assert(_type == HCORENUMType::Table);
 
-    mdcursor_t newStart;
     uint32_t newReadIn;
     bool reset = false;
     EnumData* currData = &_data;
     while (currData != nullptr)
     {
-        newStart = currData->Table.Start;
+        dnmd::any_cursor newStart{currData->Table.Start};
         if (reset)
         {
             // Reset the enumerator state
@@ -340,7 +388,7 @@ HRESULT HCORENUMImpl::ResetTableEnum(_In_ uint32_t position) noexcept
         else if (position < currData->Total)
         {
             // The current enumerator contains the position
-            if (!md_cursor_move(&newStart, position))
+            if (!newStart.move(position))
                 return E_INVALIDARG;
             newReadIn = position;
             reset = true;
@@ -352,7 +400,7 @@ HRESULT HCORENUMImpl::ResetTableEnum(_In_ uint32_t position) noexcept
         {
             // The current enumerator is consumed based on position
             position -= currData->Total;
-            if (!md_cursor_move(&newStart, currData->Total))
+            if (!newStart.move(currData->Total))
                 return E_INVALIDARG;
             newReadIn = currData->Total;
         }

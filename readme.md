@@ -4,7 +4,7 @@ DNMD represents a suites of tools for manipulating [ECMA-335][ecma_335] defined 
 
 DNMD provides the following tools:
 
-- `dnmd` - A static library with no external dependencies that represents the lowest level of reading ECMA-335.
+- `dnmd` - A static library with no third-party library dependencies that represents the lowest level of reading ECMA-335. Its C storage backend and C++ algorithms require the C and C++ runtimes.
 - `dnmd_interfaces` - A shared library (`.dll`|`.dylib`|`.so`) that consumes `dnmd` and provides higher level .NET APIs. At present the following interfaces are provided:
   - [`IMetaDataDispenser`][api_dispenser]
   - [`IMetaDataImport`][api_import] / [`IMetaDataImport2`][api_import2]
@@ -22,7 +22,307 @@ The primary goal of DNMD is to explore the benefits of a rewrite of the metadata
 
 - [CMake](https://cmake.org/download/) 3.10
 
-- C11 and C++14 compliant compilers
+- C11 and C++17 compliant compilers
+
+Both core libraries contain C and C++ objects. C clients can continue to compile
+their sources as C11 and use the handle-based metadata and user-string heap APIs
+in `dnmd.h`, but must link with the C++ linker/runtime. CMake consumers should enable
+both C and CXX languages and link the exported `dnmd::dnmd` or `dnmd::pdb` target.
+
+## C++ API
+
+`dnmd.hpp` provides typed cursors and column descriptors in the `dnmd` namespace.
+The C API names and types in `dnmd.h` remain global.
+It includes the complete C++ API and `dnmd::handle_ptr`. Metadata table
+navigation, column access, searching, and row editing use the C++ API exclusively.
+The C API retains handle creation/destruction, version queries, validation,
+dumping, serialization, delta application, and user-string heap operations.
+The typed API is organized into these headers:
+
+| Header | Contents |
+| --- | --- |
+| `dnmd_schema.hpp` | Column types/descriptors, reference codecs, table/list relationships, fixed widths, initial layouts, sort keys, table sequences, and typed column iteration |
+| `dnmd_cursors.hpp` | Row/position cursors, conversions, navigation, and factories |
+| `dnmd_read.hpp` | Row readers and read-only column iterators |
+| `dnmd_write.hpp` | Row writers, cursor write methods, and typed row-add guards |
+| `dnmd_search.hpp` | Typed searches and cursor parent lookup |
+| `dnmd_result.hpp` | Minimal C++17 expected-style value/error results |
+
+`dnmd_pdb.hpp`, used with the `dnmd::pdb` target, provides native C++ Portable PDB
+blob parsers and their result types.
+
+Each header includes its dependencies. When using individual headers instead of
+the umbrella, include `dnmd_write.hpp` for cursor `set_column_value` methods and
+`dnmd_search.hpp` for `get_parent_token`.
+
+`dnmd::cursor<TableId>` represents an existing, dereferenceable row and cannot be
+default-constructed.
+`dnmd::raw_cursor<TableIds...>` and `dnmd::indirect_cursor<DirectTableId, IndirectTableId>`
+represent positions, including nil and one-past-the-end positions. Test a position
+before calling `value()` to obtain a row; calling `value()` on a non-dereferenceable
+position violates its precondition.
+Positions check dereferenceability inline using their table and RID bounds.
+Row, raw, and indirect cursors contain private table-pointer/RID state and cannot
+be default-constructed.
+Use `raw_cursor<TableIds...>::nil(handle)` or `end(handle)` for explicit
+table-bound sentinels. `position.is<TableId>()` tests the bound table independently
+of dereferenceability, including for nil and end positions. `position.is_nil()`
+tests for RID zero; it is false for end positions even though they are not
+dereferenceable. Narrowing to a different table returns that table's nil in the
+same image. Checked `at(handle, row, table)` construction also validates the
+table set and nil/live/end bounds; it does not expose an unchecked pointer/RID
+constructor. Metadata handles must remain valid for the lifetime of these
+borrowed positions.
+
+Converting a row or raw position to a `raw_cursor` whose table targets are a
+superset is implicit and nonthrowing; the conversion preserves its table, RID,
+image, and nil/end state. Reserved `mdtid_Unused` tag slots do not count as
+possible source tables. This lets typed rows be passed directly to heterogeneous
+callbacks taking `dnmd::any_cursor`. Indirect-to-raw widening preserves the
+source position, not the resolved target. Narrowing remains explicit and checked.
+Prefer fixed-table or bounded-target cursors in helpers; `any_cursor` is for
+genuinely heterogeneous callback and enumeration boundaries.
+
+Indirect positions support nil/live/end source and target RIDs. `get_token`
+describes the source; `get_target_token` describes a successfully resolved target,
+including its nil/end sentinels. A malformed pointer reference fails resolution
+without creating an invalid row cursor. Indirect positions can be constructed
+from native raw positions.
+
+Every table slot retains its owning context, including empty tables.
+`mdtable_t::is_initialized`, not a null context, distinguishes materialized table
+storage from an absent/empty table. Binding nil does not initialize storage.
+
+```cpp
+dnmd::handle_ptr handle{md_create_new_handle()};
+auto types = dnmd::md_create_cursor<mdtid_TypeDef>(handle.get());
+if (types)
+{
+    auto type = types.value();
+    dnmd::row_reader<mdtid_TypeDef> reader{type};
+    uint32_t flags;
+    char const* name;
+    if (!reader.read(dnmd::columns::TypeDef_Flags, &flags)
+        || !reader.read(dnmd::columns::TypeDef_TypeName, &name))
+        return false;
+}
+```
+
+Pass a `uint32_t*` as the second argument when the row count is also needed.
+
+Only single-table raw cursors expose `value()`. Narrow a multi-table position with
+`as<TableId>()`, which returns a single-table raw cursor, or use `visit()` to
+dispatch to the matching row type. `visit()` returns false without invoking the
+callable for nil or end positions.
+
+Construct a raw position directly with `dnmd::raw_cursor<TableIds...>{handle, token}`.
+The handle must be valid; this precondition is asserted. Valid tokens must identify
+an existing row in one of the permitted tables. Invalid tokens, including nil,
+end, and wrong-table tokens, produce a nil position in the first non-reserved
+table in the parameter pack. The nil position retains its table even if that table
+is empty, without allocating or fully initializing the table.
+
+`dnmd::md_token_to_cursor<TableIds...>` uses the same lookup and nil fallback for
+valid handles. Like cursor constructors and factories, it requires a valid handle;
+there is no unbound default position to return for an invalid handle.
+Use `dnmd::md_is_valid_token` when only validation is needed. Both helpers use
+the C++ token bounds checks. Rows provide
+`get_column_values` for bulk token reads and `get_parent_token` for list owners.
+Typed range searches use column descriptors and return a raw cursor in the
+searched table along with the range status and count. Their status type is
+`dnmd::range_result`, an enum class declared in `dnmd_search.hpp` with values
+`found`, `not_found`, and `not_supported`, with numeric values 0, 1, and 2,
+respectively.
+
+The C++ `md_find_*` APIs search constant, reference, and list-position columns;
+heap columns are not searchable. Reference search values are full tokens or typed
+cursors, not bare RIDs. `column_iterator<TableId, ColumnType>` is a read-only
+random-access iterator bound to a row and column. It yields stored `uint32_t`
+values so coded indices retain encoded RID/tag order rather than token-type order.
+Iterators borrow metadata storage and are invalidated by edits like row readers.
+Default-constructed column iterators have the standard singular state for
+comparison/assignment; they do not contain a null-table cursor or row reader.
+
+Row searches return the first match at or after the supplied row, using
+`std::lower_bound` for sorted primary keys and `std::find` otherwise. Range
+searches use `std::equal_range` only for a sorted primary key with no pending row
+addition; unsupported, missing, or invalid-key results leave output parameters
+unchanged. The range is restricted to the supplied row's suffix.
+Parent searches use typed list columns and Ptr reverse lookup, preserve empty
+runs and nil starts, and project Event/Property maps back to TypeDef positions.
+Loaded direct runs use `std::upper_bound` with nil-boundary normalization;
+edited or indirected runs use a linear fallback rather than assume partitioning.
+
+`dnmd::row_reader<TableId>` is a borrowed, read-only row access context
+constructed from a dereferenceable `cursor<TableId>`. Reuse it across columns of
+that row with `reader.read(column, output)`; overload resolution enforces the
+source table, column value kind, and output type without category assertions.
+It contains no writable data pointer. Cursor reads, including ranges and bulk
+token reads, use this context. Heap offsets, encoded tags, and referenced row
+bounds are validated.
+For list columns, `reader.read(column, position, &count)` returns the range
+without rebinding the reader.
+Recreate readers after metadata edits that can invalidate their borrowed storage.
+This includes writes to other rows in the same image when heap growth widens
+columns.
+
+For reference columns, a single table ID denotes a direct row index. Multiple
+table IDs specify a coded index in encoded tag order, including `mdtid_Unused`
+placeholders for reserved tags. Reserved and out-of-range tags fail the read.
+List columns select their direct or Ptr target from `mdtable_t::has_indirect_table`
+on the element table. The flag is initialized when
+loading an image and set when editing introduces its Ptr table. Keeping it on
+the element table lets TypeDef field and method lists select independently.
+`dnmd_schema.hpp` owns the canonical list-column registry and derives parent,
+Ptr-column, and target-table helpers from it. Event/property list owners remain
+their map tables; their logical parents are obtained through the maps' Parent columns.
+
+Rows provide matching `set_column_value` overloads for constants, UTF-8 strings,
+blobs, GUIDs, user strings, and table references. They delegate to the corresponding
+`dnmd::row_writer<TableId>::write(column, value)` overloads. Construct a writer from
+a dereferenceable `cursor<TableId>` and reuse it for multiple columns of the row.
+Writes return `bool` without exception-based error handling and retain the C
+setters' input preconditions.
+References accept tokens, typed rows, and raw positions, including nil and end
+positions. An indirect value supplies its resolved target for a reference column,
+but its source position for a list column so pointer-table indices are preserved.
+
+Writers keep a row position rather than a cached writable pointer, so their own
+heap writes can grow heaps and widen columns safely. They reacquire the current
+layout and writable storage for each write, preserving copy-on-write behavior,
+sorted-table bookkeeping, and Portable PDB reference tracking. Reacquire writers
+after edits that change the row's identity, such as inserting rows before it.
+Column encoding and storage writes use the typed C++ path rather than the C
+setters' access-context checks; allocation and Portable PDB reference tracking
+remain shared with the core.
+
+C++ sorted-state maintenance uses complete typed, ordered key sequences, including
+GenericParam's Owner/Number keys and LocalScope's descending Length tie-breaker.
+Key writes compare the row lexicographically against both neighbors; non-key
+writes do not affect sortedness, and an unsorted table is not marked sorted again.
+Validation is deferred while initializing a new row. Acquire a noncopyable
+`dnmd::added_row<TableId>` using `append(handle)`, `insert(relative, after)`, or
+typed list-add factories, access the pending row with asserted `value()`, and commit
+on destruction or explicitly with `commit()`. Explicit commit consumes the guard
+to a bound nil; a previously saved row cursor remains a normal borrowed row.
+Moves transfer ownership and leave the source bound nil. A failed acquisition
+returns a nil guard and finishes any partial row it acquired; metadata edits are
+not rolled back.
+
+```cpp
+auto added = dnmd::added_row<mdtid_TypeRef>::append(handle.get());
+if (!added)
+    return false;
+auto row = added.value();
+if (!row.set_column_value(dnmd::columns::TypeRef_TypeName, "Example"))
+    return false;
+added.commit();
+```
+
+List additions infer the child table from the typed list column. Sorted insertion
+is supported only for `MethodDef_ParamList`, with its typed parameter sort column.
+Other lists support only unsorted insertion. Parameters also retain unsorted
+insertion for EnC, which appends rows before copying and sorting their contents.
+Native typed guards never expose C output pointers.
+Append and relative insertion are fully implemented in `dnmd_write.hpp`,
+including table preparation, empty-list initialization, and copying insertion
+boundaries. They call the `editor.c` storage APIs through `extern "C"`
+declarations in `dnmd::detail`. Table identities remain compile-time types
+through this boundary, without runtime table dispatch in native callers.
+List addition uses separate C++ overloads for unsorted lists and sorted lists;
+the latter also takes a typed constant-column descriptor.
+List and sort columns remain typed through the C++ implementation.
+List algorithms and reference shifting live in `src\dnmd\row.cpp`.
+Row creation there uses the typed header implementation
+for appending and inserting rows.
+Reference shifting enumerates the enum-typed `detail::all_tables` sequence and
+expands typed column schemas at compile time, without runtime table dispatch.
+`detail::table_sequence<Tables...>` keeps `mdtable_id_t` values in traversal
+signatures; an internal integer-sequence builder generates the table ranges.
+Column-width selection, layout rebuilding, and row copying also use these typed
+schemas in `row.cpp`. Heap growth scans the non-PDB and PDB typed table sequences;
+external PDB-reference growth scans only the PDB sequence. Resizing copies stored
+values directly, preserving heap offsets and coded-index tags without heap
+insertion or reference-tracking side effects. `editor.c` provides the tracked
+allocation and storage-publication primitives.
+Initial table layouts also expand the canonical schema in `dnmd_schema.hpp`,
+including fixed scalar widths, reference tag widths, offsets, and column counts.
+Image loading selects a typed initializer through a C-compatible adapter in
+`tables.cpp`, using parser-provided row counts (including PDB external counts),
+heap-size flags, and sorted bits. Native creation prepares its known table type
+before calling C allocation; new-table sorted defaults come from typed sort keys.
+Schema-only preparation does not allocate storage or set `is_initialized`.
+Runtime `mdtcol_t` entries are 16-bit values containing only two width flags and
+an eight-bit byte offset. Value kinds, heaps, reference targets, and coded tags
+come from typed descriptors, not runtime column flags. Heap storage operations
+use a separate `mdheap_id_t`; serialized metadata and heap-size flags are unchanged.
+Native clients must use headers matching the library's runtime layout.
+Initialization and resizing share reference-sizing primitives, while initial heap
+widths continue to use image flags rather than the heap-growth policy.
+If a list addition fails during an indirection-table step, the core finishes its
+owned child/Ptr additions and returns no pending row to the caller. This does not
+roll back the inserted rows or finish another edit's pending Ptr row.
+
+Binary searches use only an ascending first
+key from these same sequences, never a secondary key in isolation.
+Initialization, table validation/dumping, and EnC application use the typed C++
+API internally. The cursor-free C entrypoints retain their signatures. Delta row
+copying preserves already-merged heap indices and skips list boundaries; parameter
+ordering uses Ptr-table entries without changing element tokens.
+
+Raw and indirect cursors expose `get_token(mdToken&)`, including for sentinel
+positions. An indirect cursor additionally exposes `get_target_token(mdToken&)`
+for its resolved target. Indirect cursors cache their resolved targets and
+dereferenceability when constructed or advanced. Pointer-table rows are resolved
+through `row_reader` using the typed Ptr-table columns in `dnmd::detail`;
+nil/end positions map to the corresponding target-table sentinels without
+reading a pointer row. Reacquire indirect cursors after metadata
+edits that affect their source or target positions. Advance positions with
+`dnmd::md_cursor_next` or `dnmd::md_cursor_move`, not row cursors. Typed row searches return a
+raw cursor in the searched table, rather than the table referenced by the column.
+The metadata handle must outlive its cursors, readers, and writers.
+
+### Portable PDB blobs
+
+All Portable PDB blob parsing and dump presentation are implemented in C++.
+The C buffer-based parsers and flexible-array results in `dnmd_pdb.h` have been
+replaced by native APIs in `dnmd_pdb.hpp`:
+
+| Parser | Parsed value | Ownership |
+| --- | --- | --- |
+| `parse_document_name(handle, blob, length)` | UTF-8 `std::string` | Owns the name, including its terminator |
+| `parse_local_constant_signature(handle, blob, length)` | Primitive, enum, or general-constant variant and custom modifiers | Owns the modifier vector; value bytes borrow the input blob |
+| `parse_imports(handle, blob, length)` | Vector of typed import records | Owns the records; alias/namespace views borrow the metadata image |
+| `parse_sequence_points(method, blob, length)` | Typed sequence-point records | Owns the records; document cursors borrow the metadata image |
+
+Each parser returns an expected-style result. Test `has_value()` or its explicit
+boolean conversion before using `*`/`->`, and inspect `error()` only on failure.
+`pdb_parse_error` distinguishes `invalid_argument`, `invalid_blob`, and
+`out_of_memory`; allocation exceptions do not escape the parser entrypoints.
+The existing `sequence_point_parse_error` name aliases this common error type.
+Keep borrowed blob bytes and metadata storage alive and unmoved while consuming
+their views, and follow the usual edit-invalidation rules for metadata views.
+
+The sequence-point parser takes a dereferenceable
+`dnmd::cursor<mdtid_MethodDebugInformation>`, a blob pointer, and its length.
+It returns `dnmd::sequence_points_result`.
+
+The move-only result owns a vector of `document_change`, `sequence_point`, and
+`hidden_sequence_point` variants. Document cursors borrow the metadata image and
+follow the usual cursor lifetime/edit rules; the input blob is not retained.
+The result's `document` field contains the initial document from the
+MethodDebugInformation row or the blob's InitialDocument. Rolling IL offsets,
+start lines, and start columns are accumulated absolute values; delta-line and
+delta-column fields retain their encoded values.
+
+None of these APIs requires a caller buffer or size-query pass. Unknown import
+kinds, malformed/truncated fields, invalid encoded token tags, overflowing RIDs,
+and incomplete custom modifiers are reported as invalid blobs. Local-constant
+modifiers are consumed before the type/value; trailing bytes after an enum's
+encoded type are rejected.
+The shared C++17 result compatibility types can be replaced by `std::expected`
+and `std::unexpected` when C++23 is available; ordinary column reads still use
+their bool/out-parameter shape.
 
 ## Build
 
@@ -31,6 +331,19 @@ The primary goal of DNMD is to explore the benefits of a rewrite of the metadata
 > `cmake -S . -B artifacts`
 
 > `cmake --build artifacts --target install`
+
+For shipping-representative disassembly on Windows, use the Release build in
+`artifacts\release` with IPO enabled for both C and C++ targets:
+
+```powershell
+cmake -S . -B artifacts\release -DCMAKE_BUILD_TYPE=Release `
+    -DCMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE=ON `
+    -DCMAKE_POLICY_DEFAULT_CMP0069=NEW
+cmake --build artifacts\release --target dnmd_interfaces
+```
+
+The IPO setting enables MSVC `/GL` compilation and `/LTCG` linking. The policy
+setting also enables IPO for the vendored dependency.
 
 ## Test
 

@@ -208,7 +208,7 @@ int main(int argc, char** argv)
     }
 
     RETURN_IF_FAILED(PerfInitialize(
-        dataImage,
+        static_cast<uint8_t const*>(dataImage),
         (uint32_t)dataImage.size()));
 
     benchmark::Initialize(&argc, argv);

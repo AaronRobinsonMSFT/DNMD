@@ -72,23 +72,22 @@ static mdeditor_t* get_editor(mdcxt_t* cxt)
     return editor;
 }
 
-bool create_and_fill_indirect_table(mdcxt_t* cxt, mdtable_id_t original_table, mdtable_id_t indirect_table)
+bool create_and_fill_indirect_table(mdtable_t* original, mdtable_t* target_table)
 {
+    mdcxt_t* cxt = original->cxt;
+    mdtable_id_t original_table = (mdtable_id_t)original->table_id;
+    mdtable_id_t indirect_table = (mdtable_id_t)target_table->table_id;
+    assert(target_table->cxt == cxt && get_corresponding_indirection_table(original_table) == indirect_table);
     mdeditor_t* editor = get_editor(cxt);
     if (editor == NULL)
         return false;
 
     // We should only call into here if we don't already have an indirection table.
-    mdtable_t* target_table = editor->tables[indirect_table].table;
-    assert(target_table->cxt == NULL);
+    assert(!target_table->is_initialized && target_table->row_size_bytes != 0);
 
-    if (!initialize_new_table_details(cxt, indirect_table, target_table))
-        return false;
-
-    target_table->cxt = editor->cxt;
-    // Assert that the indirection table has exactly one column that points back at the original table.
-    // The width can be either a short or wide column.
-    assert(target_table->column_count == 1 && (target_table->column_details[0] & ~mdtc_widthmask) == (InsertTable(original_table) | mdtc_idx_table));
+    assert(target_table->column_count == 1 && ExtractOffset(target_table->column_details[0]) == 0);
+    assert((target_table->column_details[0] & mdtc_widthmask) == mdtc_b2
+        || (target_table->column_details[0] & mdtc_widthmask) == mdtc_b4);
 
     // If we're allocating an indirection table, then we're about to add new rows to the original table.
     // Allocate more space than we need for the rows we're copying over to be able to handle adding new rows.
@@ -102,34 +101,40 @@ bool create_and_fill_indirect_table(mdcxt_t* cxt, mdtable_id_t original_table, m
     if (mem == NULL)
         return false;
 
-    editor->tables[indirect_table].data.ptr = mem;
-    editor->tables[indirect_table].data.size = allocation_space;
-    target_table->data.ptr = editor->tables[indirect_table].data.ptr;
-    target_table->data.size = target_table->row_size_bytes * editor->tables[original_table].table->row_count;
-
     // The indirection table will initially have each row pointing to the matching row in the original table.
-    uint8_t* table_data = editor->tables[indirect_table].data.ptr;
-    size_t table_len = editor->tables[indirect_table].data.size;
+    uint8_t* table_data = mem;
+    size_t table_len = allocation_space;
     for (uint32_t i = 0; i < editor->tables[original_table].table->row_count; i++)
     {
+        bool written;
         if (target_table->column_details[0] & mdtc_b2)
         {
             assert(i + 1 <= UINT16_MAX);
-            write_u16(&table_data, &table_len, (uint16_t)i + 1);
+            written = write_u16(&table_data, &table_len, (uint16_t)(i + 1));
         }
         else
-            write_u32(&table_data, &table_len, i + 1);
+            written = write_u32(&table_data, &table_len, i + 1);
+        if (!written)
+        {
+            free_mdmem(cxt, mem);
+            return false;
+        }
     }
 
+    editor->tables[indirect_table].data.ptr = mem;
+    editor->tables[indirect_table].data.size = allocation_space;
+    target_table->data.ptr = mem;
+    target_table->data.size = target_table->row_size_bytes * (size_t)editor->tables[original_table].table->row_count;
     target_table->row_count = editor->tables[original_table].table->row_count;
-    target_table->cxt = editor->cxt;
 
     // Introducing a Ptr table means the table heap is now uncompressed.
     cxt->context_flags |= mdc_uncompressed_table_heap;
+    editor->tables[original_table].table->has_indirect_table = true;
+    target_table->is_initialized = true;
     return true;
 }
 
-uint8_t* get_writable_table_data(mdtable_t* table, bool make_writable)
+uint8_t* get_writable_table_data(mdtable_t* table)
 {
     mdeditor_t* editor = get_editor(table->cxt);
     if (editor == NULL)
@@ -137,7 +142,7 @@ uint8_t* get_writable_table_data(mdtable_t* table, bool make_writable)
 
     mddata_t* table_data = &editor->tables[table->table_id].data;
 
-    if (table_data->ptr == NULL && make_writable)
+    if (table_data->ptr == NULL)
     {
         // If we're trying to get writable data for a table that has not been edited,
         // then we need to allocate space for it and copy the contents for editing.
@@ -157,213 +162,32 @@ uint8_t* get_writable_table_data(mdtable_t* table, bool make_writable)
     return table_data->ptr;
 }
 
-// Copy a row from one table to another.
-// The rows must have an identical number of columns and the columns must have the same definition other than column width.
-// This function does not ensure that the destination table is still sorted after the copy, so this should only be used in cases
-// where a table will keep the same sort order after the copy (such as resizing a table).
-static bool copy_row(uint8_t** dest, size_t* dest_len, mdtcol_t const* dest_cols, uint8_t const** src, size_t* src_len, mdtcol_t const* src_cols, uint8_t num_cols)
+uint8_t* allocate_table_data(mdtable_t* table, uint8_t row_size, size_t* capacity)
 {
-    for (uint8_t col_index = 0; col_index < num_cols; col_index++)
-    {
-        // The source and destination column details can only differ by storage width.
-        assert((src_cols[col_index] & ~mdtc_widthmask) == (dest_cols[col_index] & ~mdtc_widthmask));
-
-        uint32_t data = 0;
-
-        if (src_cols[col_index] & mdtc_b2)
-        {
-            if (!read_u16(src, src_len, (uint16_t*)&data))
-                return false;
-        }
-        else
-        {
-            if (!read_u32(src, src_len, &data))
-                return false;
-        }
-
-        if (dest_cols[col_index] & mdtc_b2)
-        {
-            if (!write_u16(dest, dest_len, (uint16_t)data))
-                return false;
-        }
-        else
-        {
-            if (!write_u32(dest, dest_len, data))
-                return false;
-        }
-    }
-
-    return true;
-}
-
-static bool set_column_size_for_max_row_count(mdeditor_t* editor, mdtable_t* table, mdtable_id_t updated_table, mdtcol_t updated_heap, uint32_t new_max_row_count)
-{
-    assert(table->column_count <= MDTABLE_MAX_COLUMN_COUNT);
-    assert((mdtid_First <= updated_table && updated_table <= mdtid_End) || (updated_table == mdtid_Unused && (ExtractHeapType(updated_heap) != 0)));
-    mdtcol_t new_column_details[MDTABLE_MAX_COLUMN_COUNT];
-
-    bool is_minimal_delta = (editor->cxt->context_flags & mdc_minimal_delta) == mdc_minimal_delta;
-
-    uint32_t initial_row_count;
-    if (updated_table != mdtid_Unused)
-    {
-        initial_row_count = editor->tables[updated_table].table->row_count;
-    }
-    else if (updated_heap == mdtc_hguid)
-    {
-        mdstream_t* stream = get_heap_by_id(table->cxt, updated_heap);
-        initial_row_count = (uint32_t)(stream->size / sizeof(mdguid_t));
-    }
-    else
-    {
-        initial_row_count = (uint32_t)get_heap_by_id(table->cxt, updated_heap)->size;
-        // If we are resizing a heap, we'll ensure that the flag on the context for large heaps is consistent.
-        // This makes saving easier by requiring minimal reprocessing of the heaps at save time.
-        mdcxt_flag_t large_heap_flag = get_large_heap_flag(updated_heap);
-        if (large_heap_flag != 0)
-        {
-            if ((editor->cxt->context_flags & large_heap_flag) == large_heap_flag
-                && new_max_row_count <= UINT16_MAX)
-            {
-                editor->cxt->context_flags &= ~large_heap_flag;
-            }
-            else if ((editor->cxt->context_flags & large_heap_flag) == 0
-                && new_max_row_count > UINT16_MAX)
-            {
-                editor->cxt->context_flags |= large_heap_flag;
-            }
-        }
-    }
-
-    for (uint8_t col_index = 0; col_index < table->column_count; col_index++)
-    {
-        mdtcol_t col_details = table->column_details[col_index];
-        new_column_details[col_index] = col_details;
-
-        uint32_t initial_max_column_value, new_max_column_value;
-        if ((col_details & mdtc_idx_table) == mdtc_idx_table && ExtractTable(col_details) == updated_table)
-        {
-            initial_max_column_value = initial_row_count;
-            new_max_column_value = new_max_row_count;
-        }
-        else if ((col_details & mdtc_idx_coded) == mdtc_idx_coded && updated_table != mdtid_Unused && is_coded_index_target(col_details, updated_table))
-        {
-            bool composed = compose_coded_index(TokenFromRid(initial_row_count, CreateTokenType(updated_table)), col_details, &initial_max_column_value);
-            assert(composed);
-            (void)composed;
-            composed = compose_coded_index(TokenFromRid(new_max_row_count, CreateTokenType(updated_table)), col_details, &new_max_column_value);
-            assert(composed);
-            (void)composed;
-        }
-        else if ((col_details & (mdtc_idx_heap)) == mdtc_idx_heap && ExtractHeapType(col_details) == updated_heap)
-        {
-            initial_max_column_value = initial_row_count;
-            new_max_column_value = new_max_row_count;
-        }
-        else
-        {
-            continue;
-        }
-
-        if ((col_details & mdtc_b2) && new_max_column_value > UINT16_MAX)
-        {
-            new_column_details[col_index] = (col_details & ~mdtc_b2) | mdtc_b4;
-        }
-        else if ((col_details & mdtc_b4) && new_max_column_value <= UINT16_MAX)
-        {
-            // In minimal delta images, table or coded index columns are always 4 bytes wide.
-            // They are not affected by the table's row count.
-            bool is_table_or_coded_index = ((col_details & mdtc_idx_table) == mdtc_idx_table)
-                                        || ((col_details & mdtc_idx_coded) == mdtc_idx_coded);
-            if (!is_minimal_delta || !is_table_or_coded_index)
-            {
-                new_column_details[col_index] = (col_details & ~mdtc_b4) | mdtc_b2;
-            }
-        }
-    }
-
-    // We want to make sure that we can store as many rows as the current table can in our new allocation.
+    mdeditor_t* editor = get_editor(table->cxt);
+    if (editor == NULL)
+        return NULL;
+    assert(table->row_size_bytes != 0 && row_size != 0 && capacity != NULL);
+    // Preserve the existing capacity measured in rows.
     size_t table_data_size = editor->tables[table->table_id].data.ptr != NULL ? editor->tables[table->table_id].data.size : table->data.size;
-    size_t max_original_rows_in_size = table_data_size / table->row_size_bytes;
-
-    uint8_t new_row_size = 0;
-    for (uint8_t col_index = 0; col_index < table->column_count; col_index++)
-    {
-        new_row_size += (new_column_details[col_index] & mdtc_b2) == mdtc_b2 ? 2 : 4;
-    }
-
-    // If the row size is the same, then we didn't have to change any column sizes.
-    // We are either only expanding or reducing, so we can't end up at the same size with changed column sizes.
-    if (new_row_size == table->row_size_bytes)
-        return true;
-
-    size_t new_allocation_size;
-    if (!safe_mul_size(max_original_rows_in_size, new_row_size, &new_allocation_size))
-        return false;
-
-    void* mem = alloc_mdmem(editor->cxt, new_allocation_size);
-    if (mem == NULL)
-        return false;
-    uint8_t* new_data_blob = mem;
-
-    // Go through all of the columns of each row and copy them to the new memory for the table
-    // in their correct size.
-    uint8_t const* table_data = table->data.ptr;
-    size_t table_data_length = table->data.size;
-    uint8_t* new_table_data = new_data_blob;
-    size_t new_table_data_length = new_allocation_size;
-    for (uint32_t i = 0; i < table->row_count; i++)
-    {
-        if (!copy_row(&new_table_data, &new_table_data_length, new_column_details, &table_data, &table_data_length, table->column_details, table->column_count))
-            return false;
-    }
-
-    // Update the public view of the table to have the new schema and point to the new data.
-    table->row_size_bytes = new_row_size;
-    table->data.ptr = new_data_blob;
-    table->data.size = (size_t)table->row_count * table->row_size_bytes;
-    memcpy(table->column_details, new_column_details, sizeof(mdtcol_t) * table->column_count);
-
-    // Update the table's corresponding editor to point to the newly-allocated memory,
-    // and free the previous allocation if necessary.
-    if (editor->tables[table->table_id].data.ptr != NULL)
-        free_mdmem(editor->cxt, editor->tables[table->table_id].data.ptr);
-
-    editor->tables[table->table_id].data.ptr = new_data_blob;
-    editor->tables[table->table_id].data.size = new_allocation_size;
-
-    return true;
+    if (!safe_mul_size(table_data_size / table->row_size_bytes, row_size, capacity))
+        return NULL;
+    return alloc_mdmem(table->cxt, *capacity);
 }
 
-static bool update_table_references_for_shifted_rows(mdeditor_t* editor, mdtable_id_t updated_table, uint32_t changed_row_start, int64_t shift)
+void replace_table_data(mdtable_t* table, uint8_t* data, size_t capacity, uint8_t row_size, mdtcol_t const* columns)
 {
-    assert(updated_table != mdtid_Unused);
-    // Make sure we aren't shifting into negative row ids or shifting above the max row id. That isn't legal.
-    assert(changed_row_start + shift > 0 && changed_row_start + shift < 0x00ffffff);
-    for (mdtable_id_t table_id = mdtid_First; table_id < mdtid_End; table_id++)
-    {
-        mdtable_t* table = &editor->cxt->tables[table_id];
-        if (table->cxt == NULL) // This table is not used in the current image
-            continue;
-
-        // Update all columns in the table that can refer to the updated table
-        // to be the correct width for the updated table's new size.
-        if (!set_column_size_for_max_row_count(editor, table, updated_table, mdtc_none, (uint32_t)(table->row_count + shift)))
-            return false;
-
-        for (uint8_t i = 0; i < table->column_count; i++)
-        {
-            mdtcol_t col_details = table->column_details[i];
-            if (((col_details & mdtc_idx_table) == mdtc_idx_table && ExtractTable(col_details) == updated_table)
-                || ((col_details & mdtc_idx_coded) == mdtc_idx_coded && is_coded_index_target(col_details, updated_table)))
-            {
-                // We've found a column that will need updating.
-                mdcursor_t c = create_cursor(table, 1);
-                update_shifted_row_references(&c, table->row_count, i, updated_table, changed_row_start, (uint32_t)(changed_row_start + shift));
-            }
-        }
-    }
-    return true;
+    mdeditor_t* editor = table->cxt->editor;
+    assert(editor != NULL && data != NULL && row_size != 0);
+    assert(table->row_count <= capacity / row_size);
+    uint8_t* previous = editor->tables[table->table_id].data.ptr;
+    table->row_size_bytes = row_size;
+    table->data.ptr = data;
+    table->data.size = (size_t)table->row_count * row_size;
+    memcpy(table->column_details, columns, sizeof(*columns) * table->column_count);
+    editor->tables[table->table_id].data.ptr = data;
+    editor->tables[table->table_id].data.size = capacity;
+    free_mdmem(table->cxt, previous);
 }
 
 static bool allocate_more_editable_space(mdcxt_t* cxt, mddata_t* editable_data, mdcdata_t* data, size_t minimum_size)
@@ -397,20 +221,17 @@ static bool allocate_more_editable_space(mdcxt_t* cxt, mddata_t* editable_data, 
     return true;
 }
 
-bool allocate_new_table(mdcxt_t* cxt, mdtable_id_t table_id)
+bool allocate_new_table(mdtable_t* table)
 {
+    mdcxt_t* cxt = table->cxt;
+    mdtable_id_t table_id = (mdtable_id_t)table->table_id;
     mdeditor_t* editor = get_editor(cxt);
     if (editor == NULL)
         return false;
 
-    mdtable_t* table = &cxt->tables[table_id];
-    // We should not be allocating for a newly-initialized table.
-    assert(table->cxt == NULL);
+    // We should not be allocating for an already-initialized table.
+    assert(!table->is_initialized && table->row_size_bytes != 0);
 
-    if (!initialize_new_table_details(cxt, table_id, table))
-        return false;
-
-    table->cxt = cxt;
     // Allocate some memory for the table.
     // The number of rows in this allocation is arbitrary.
     // It may be interesting to change the default depending on the target table.
@@ -419,24 +240,24 @@ bool allocate_new_table(mdcxt_t* cxt, mdtable_id_t table_id)
     table->data.size = 0;
     uint8_t* table_data = alloc_mdmem(cxt, initial_allocation_size);
     if (table_data == NULL)
-    {
-        table->cxt = NULL;
         return false;
-    }
     table->data.ptr = cxt->editor->tables[table_id].data.ptr = table_data;
     cxt->editor->tables[table_id].data.size = initial_allocation_size;
+    table->is_initialized = true;
     return true;
 }
 
-bool insert_row_into_table(mdcxt_t* cxt, mdtable_id_t table_id, uint32_t row_index, mdcursor_t* new_row)
+bool insert_row_into_table(mdtable_t* table, uint32_t row_index, uint32_t* new_row)
 {
     assert(row_index != 0); // Row indexes are 1-based.
+    mdcxt_t* cxt = table->cxt;
+    mdtable_id_t table_id = (mdtable_id_t)table->table_id;
     mdeditor_t* editor = get_editor(cxt);
     if (editor == NULL)
         return false;
 
     mdtable_editor_t* target_table_editor = &editor->tables[table_id];
-    assert(target_table_editor->table->cxt != NULL); // The table should exist in the image before a row is added to it.
+    assert(target_table_editor->table->is_initialized); // The table should exist in the image before a row is added to it.
 
     // We do not support adding multiple rows to a table at once. One row must be fully added before another is added.
     if (target_table_editor->table->is_adding_new_row)
@@ -453,6 +274,10 @@ bool insert_row_into_table(mdcxt_t* cxt, mdtable_id_t table_id, uint32_t row_ind
             return false;
     }
 
+    // Reference growth can change the row layout and relocate the table buffer.
+    if (!update_table_references_for_shifted_rows(cxt, table_id, row_index, 1))
+        return false;
+
     size_t next_row_start_offset = target_table_editor->table->row_size_bytes * (size_t)(row_index - 1);
     size_t last_row_end_offset = target_table_editor->table->row_size_bytes * (size_t)target_table_editor->table->row_count;
 
@@ -468,17 +293,11 @@ bool insert_row_into_table(mdcxt_t* cxt, mdtable_id_t table_id, uint32_t row_ind
     // Clear the new row.
     memset(target_table_editor->data.ptr + next_row_start_offset, 0, target_table_editor->table->row_size_bytes);
 
-    // Update table references
-    // We may have columns that are pointing to the row just after the end of the table, so we need to do this in all cases,
-    // not just the "in the middle" case.
-    if (!update_table_references_for_shifted_rows(editor, table_id, row_index, 1))
-        return false;
-
     target_table_editor->table->data.size += target_table_editor->table->row_size_bytes;
     target_table_editor->table->row_count++;
     target_table_editor->table->is_adding_new_row = true;
 
-    *new_row = create_cursor(target_table_editor->table, row_index);
+    *new_row = row_index;
     return true;
 }
 
@@ -500,17 +319,8 @@ bool update_referenced_type_system_table_row_count(mdcxt_t* cxt, mdtable_id_t up
 
     pdb.type_system_table_rows[updated_table] = new_max_row_count;
 
-    for (mdtable_id_t table_id = mdtid_FirstPdb; table_id < mdtid_End; ++table_id)
-    {
-        mdtable_t* table = &editor->cxt->tables[table_id];
-        if (table->cxt == NULL) // This table is not used in the current image
-            continue;
-
-        // Update all columns in the table that can refer to the updated table
-        // to be the correct width for the updated table's new size.
-        if (!set_column_size_for_max_row_count(editor, table, updated_table, mdtc_none, new_max_row_count))
-            return false;
-    }
+    if (!update_pdb_column_sizes(cxt, updated_table, pdb.type_system_table_rows))
+        return false;
 
     size_t pdb_heap_size = cxt->pdb.size;
     if (!(pdb.referenced_type_system_tables & (1ULL << updated_table)))
@@ -521,7 +331,7 @@ bool update_referenced_type_system_table_row_count(mdcxt_t* cxt, mdtable_id_t up
         pdb.referenced_type_system_tables |= (1ULL << updated_table);
     }
 
-    if (editor->pdb_heap.heap.ptr == NULL || pdb_heap_size < editor->pdb_heap.heap.size)
+    if (editor->pdb_heap.heap.ptr == NULL || pdb_heap_size > editor->pdb_heap.heap.size)
     {
         // If we don't have space for the new row count or we haven't edited the PDB heap yet, then we need to allocate more space.
         if (!allocate_more_editable_space(editor->cxt, &editor->pdb_heap.heap, editor->pdb_heap.stream, pdb_heap_size))
@@ -556,28 +366,29 @@ bool update_referenced_type_system_table_row_count(mdcxt_t* cxt, mdtable_id_t up
     // Validate we wrote the row counts properly
     if (pdb_heap_data != pdb_end)
         return false;
+    editor->pdb_heap.stream->size = pdb_heap_size;
     return true;
 }
 #endif // DNMD_PORTABLE_PDB
 
-static md_heap_editor_t* get_heap_editor_by_id(mdeditor_t* editor, mdtcol_t heap_id)
+static md_heap_editor_t* get_heap_editor_by_id(mdeditor_t* editor, mdheap_id_t heap_id)
 {
     switch (heap_id)
     {
-        case mdtc_hblob:
+        case mdhid_Blob:
             return &editor->blob_heap;
-        case mdtc_hguid:
+        case mdhid_Guid:
             return &editor->guid_heap;
-        case mdtc_hstring:
+        case mdhid_String:
             return &editor->strings_heap;
-        case mdtc_hus:
+        case mdhid_UserString:
             return &editor->user_string_heap;
         default:
             return NULL;
     }
 }
 
-static bool reserve_heap_space(mdeditor_t* editor, uint32_t space_size, mdtcol_t heap_id, bool preserve_offsets, uint32_t* heap_offset)
+static bool reserve_heap_space(mdeditor_t* editor, uint32_t space_size, mdheap_id_t heap_id, bool preserve_offsets, uint32_t* heap_offset)
 {
     md_heap_editor_t* heap_editor = get_heap_editor_by_id(editor, heap_id);
     if (heap_editor == NULL)
@@ -587,7 +398,7 @@ static bool reserve_heap_space(mdeditor_t* editor, uint32_t space_size, mdtcol_t
     {
         // Set the default heap size based on likely reasonable sizes for the heaps.
         // In most images, there won't be more than three guids, so we can start with a small heap in that case.
-        size_t const initial_heap_size = heap_id == mdtc_hguid ? sizeof(mdguid_t) * 3 : 0x100;
+        size_t const initial_heap_size = heap_id == mdhid_Guid ? sizeof(mdguid_t) * 3 : 0x100;
         void* mem = alloc_mdmem(editor->cxt, initial_heap_size);
         if (mem == NULL)
             return false;
@@ -601,10 +412,10 @@ static bool reserve_heap_space(mdeditor_t* editor, uint32_t space_size, mdtcol_t
         // The guid heap doesn't start with a 0 byte, but it must be emitted in sizeof(mdguid_t)-based chuncks.
         // If we are preserving offsets, then we don't initialize the heap, as we will be copying an existing heap that has already been validated and
         // we must have the exact same offsets as the existing heap to avoid breaking heap references.
-        if (heap_id != mdtc_hguid && !preserve_offsets)
+        if (heap_id != mdhid_Guid && !preserve_offsets)
         {
             heap_editor->heap.ptr[0] = 0;
-            heap_editor->stream->size = heap_id == mdtc_hguid ? 0 : 1;
+            heap_editor->stream->size = heap_id == mdhid_Guid ? 0 : 1;
         }
     }
 
@@ -625,19 +436,10 @@ static bool reserve_heap_space(mdeditor_t* editor, uint32_t space_size, mdtcol_t
     }
 
     // Update heap references in case the additional used space crosses the boundary for index sizes.
-    uint32_t index_scale = (heap_id == mdtc_hguid ? sizeof(mdguid_t) : 1);
+    uint32_t index_scale = (heap_id == mdhid_Guid ? sizeof(mdguid_t) : 1);
     assert(heap_editor->stream->size % index_scale == 0);
-    for (mdtable_id_t i = mdtid_First; i < mdtid_End; i++)
-    {
-        mdtable_t* table = &editor->cxt->tables[i];
-        if (table->cxt == NULL) // This table is not used in the current image
-            continue;
-
-        // Update all columns in the table that can refer to the updated heap
-        // to be the correct width for the updated heap's new size.
-        if (!set_column_size_for_max_row_count(editor, table, mdtid_Unused, heap_id, new_heap_size / index_scale))
-            return false;
-    }
+    if (!update_heap_column_sizes(editor->cxt, heap_id, new_heap_size / index_scale))
+        return false;
 
     // Now that the new heap size can be referenced, let's update the heap size.
     heap_editor->stream->size += space_size;
@@ -662,7 +464,7 @@ uint32_t add_to_string_heap(mdcxt_t* cxt, char const* str)
     // TODO: Deduplicate heap
     uint32_t str_len = (uint32_t)strlen(str);
     uint32_t heap_offset;
-    if (!reserve_heap_space(editor, str_len + 1, mdtc_hstring, false, &heap_offset))
+    if (!reserve_heap_space(editor, str_len + 1, mdhid_String, false, &heap_offset))
     {
         return 0;
     }
@@ -694,7 +496,7 @@ uint32_t add_to_blob_heap(mdcxt_t* cxt, uint8_t const* data, uint32_t length)
     uint32_t heap_slot_size = length + (uint32_t)compressed_length_size;
 
     uint32_t heap_offset;
-    if (!reserve_heap_space(editor, heap_slot_size, mdtc_hblob, false, &heap_offset))
+    if (!reserve_heap_space(editor, heap_slot_size, mdhid_Blob, false, &heap_offset))
     {
         return 0;
     }
@@ -775,7 +577,7 @@ uint32_t add_to_user_string_heap(mdcxt_t* cxt, char16_t const* str)
 
     uint32_t heap_slot_size = (uint32_t)us_blob_bytes + (uint32_t)compressed_length_size;
     uint32_t heap_offset;
-    if (!reserve_heap_space(editor, heap_slot_size, mdtc_hus, false, &heap_offset))
+    if (!reserve_heap_space(editor, heap_slot_size, mdhid_UserString, false, &heap_offset))
     {
         return 0;
     }
@@ -802,7 +604,7 @@ uint32_t add_to_guid_heap(mdcxt_t* cxt, mdguid_t guid)
         return 0;
 
     uint32_t heap_offset;
-    if (!reserve_heap_space(editor, sizeof(mdguid_t), mdtc_hguid, false, &heap_offset))
+    if (!reserve_heap_space(editor, sizeof(mdguid_t), mdhid_Guid, false, &heap_offset))
     {
         return 0;
     }
@@ -814,7 +616,7 @@ uint32_t add_to_guid_heap(mdcxt_t* cxt, mdguid_t guid)
     return (heap_offset / sizeof(mdguid_t)) + 1;
 }
 
-bool append_heap(mdcxt_t* cxt, mdcxt_t* delta, mdtcol_t heap_id)
+bool append_heap(mdcxt_t* cxt, mdcxt_t* delta, mdheap_id_t heap_id)
 {
     bool is_minimal_delta = (delta->context_flags & mdc_minimal_delta) == mdc_minimal_delta;
     mdeditor_t* editor = get_editor(cxt);
@@ -823,12 +625,14 @@ bool append_heap(mdcxt_t* cxt, mdcxt_t* delta, mdtcol_t heap_id)
 
     md_heap_editor_t* heap_editor = get_heap_editor_by_id(editor, heap_id);
     mdstream_t* delta_heap = get_heap_by_id(delta, heap_id);
+    if (heap_editor == NULL || delta_heap == NULL)
+        return false;
     if (delta_heap->size == 0)
         return true;
 
     size_t copy_offset;
     size_t delta_size;
-    if (is_minimal_delta && heap_id != mdtc_hguid)
+    if (is_minimal_delta && heap_id != mdhid_Guid)
     {
         // If the delta image is a minimal delta and the heap is not the GUID heap, we do a full copy from the delta image.
         copy_offset = 0;
