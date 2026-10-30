@@ -47,11 +47,26 @@ target_link_libraries(headers_pdb PRIVATE dnmd::pdb gtest_main)
 add_executable(cursorconversion_pdb cursorconversion.cpp)
 target_link_libraries(cursorconversion_pdb PRIVATE dnmd::pdb gtest_main)
 
+add_executable(corealgorithms corealgorithms.cpp initiallayout.cpp)
+target_include_directories(corealgorithms PRIVATE ../../src/dnmd)
+target_link_libraries(corealgorithms PRIVATE dnmd::dnmd gtest_main)
+add_executable(corealgorithms_pdb corealgorithms.cpp initiallayout.cpp)
+target_include_directories(corealgorithms_pdb PRIVATE ../../src/dnmd)
+target_link_libraries(corealgorithms_pdb PRIVATE dnmd::pdb gtest_main)
 add_executable(pdbsequencepoints pdbsequencepoints.cpp)
 target_link_libraries(pdbsequencepoints PRIVATE dnmd::pdb gtest_main)
 add_executable(pdbblobs pdbblobs.cpp)
 target_include_directories(pdbblobs PRIVATE ../../src/dnmd)
 target_link_libraries(pdbblobs PRIVATE dnmd::pdb gtest_main)
+
+add_executable(c_api_client c_api_client.c)
+set_target_properties(c_api_client PROPERTIES
+    C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF LINKER_LANGUAGE CXX)
+target_link_libraries(c_api_client PRIVATE dnmd::dnmd)
+if (MSVC)
+    target_compile_definitions(c_api_client PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()
+add_test(NAME CApiClient COMMAND c_api_client)
 
 if (DNMD_ENABLE_SANITIZERS)
     set(SANITIZER_SUPP_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../sanitizers")
@@ -69,6 +84,10 @@ if (DNMD_ENABLE_SANITIZERS)
         "ASAN_OPTIONS=detect_odr_violation=0;LSAN_OPTIONS=suppressions=${SANITIZER_SUPP_DIR}/lsan.supp;UBSAN_OPTIONS=suppressions=${SANITIZER_SUPP_DIR}/ubsan.supp")
     gtest_discover_tests(cursorconversion_pdb TEST_PREFIX "Pdb." PROPERTIES ENVIRONMENT
         "ASAN_OPTIONS=detect_odr_violation=0;LSAN_OPTIONS=suppressions=${SANITIZER_SUPP_DIR}/lsan.supp;UBSAN_OPTIONS=suppressions=${SANITIZER_SUPP_DIR}/ubsan.supp")
+    gtest_discover_tests(corealgorithms PROPERTIES ENVIRONMENT
+        "ASAN_OPTIONS=detect_odr_violation=0;LSAN_OPTIONS=suppressions=${SANITIZER_SUPP_DIR}/lsan.supp;UBSAN_OPTIONS=suppressions=${SANITIZER_SUPP_DIR}/ubsan.supp")
+    gtest_discover_tests(corealgorithms_pdb TEST_PREFIX "Pdb." PROPERTIES ENVIRONMENT
+        "ASAN_OPTIONS=detect_odr_violation=0;LSAN_OPTIONS=suppressions=${SANITIZER_SUPP_DIR}/lsan.supp;UBSAN_OPTIONS=suppressions=${SANITIZER_SUPP_DIR}/ubsan.supp")
     gtest_discover_tests(pdbsequencepoints TEST_PREFIX "Pdb." PROPERTIES ENVIRONMENT
         "ASAN_OPTIONS=detect_odr_violation=0;LSAN_OPTIONS=suppressions=${SANITIZER_SUPP_DIR}/lsan.supp;UBSAN_OPTIONS=suppressions=${SANITIZER_SUPP_DIR}/ubsan.supp")
     gtest_discover_tests(pdbblobs TEST_PREFIX "Pdb." PROPERTIES ENVIRONMENT
@@ -81,6 +100,8 @@ else()
     gtest_discover_tests(rowsorting_pdb TEST_PREFIX "Pdb.")
     gtest_discover_tests(headers_pdb TEST_PREFIX "Pdb.")
     gtest_discover_tests(cursorconversion_pdb TEST_PREFIX "Pdb.")
+    gtest_discover_tests(corealgorithms)
+    gtest_discover_tests(corealgorithms_pdb TEST_PREFIX "Pdb.")
     gtest_discover_tests(pdbsequencepoints TEST_PREFIX "Pdb.")
     gtest_discover_tests(pdbblobs TEST_PREFIX "Pdb.")
 endif()
