@@ -19,7 +19,7 @@ class MetadataEmit final : public TearOffBase<IMetaDataEmit2, IMetaDataAssemblyE
 protected:
     bool TryGetInterfaceOnThis(REFIID riid, void** ppvObject) override
     {
-        if (riid == IID_IMetaDataEmit || riid == IID_IMetaDataEmit)
+        if (riid == IID_IMetaDataEmit || riid == IID_IMetaDataEmit2)
         {
             *ppvObject = static_cast<IMetaDataEmit2*>(this);
             return true;
