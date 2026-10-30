@@ -14,6 +14,10 @@ set(SOURCES
 	rowwriter.cpp
 	columnsearch.cpp
 	rowsorting.cpp
+	importhelpers.cpp
+	emitteraccess.cpp
+	hcorenum.cpp
+	pal.cpp
 	typeref.cpp
 	module.cpp
 	typedef.cpp
@@ -32,6 +36,7 @@ set(SOURCES
 set(HEADERS emit.hpp native.hpp)
 
 add_executable(emit ${SOURCES} ${HEADERS})
+target_include_directories(emit PRIVATE ../../src/interfaces)
 target_link_libraries(emit PRIVATE dnmd::interfaces_static gtest_main gmock)
 
 add_executable(rowreader_pdb rowreader.cpp)

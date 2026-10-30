@@ -16,14 +16,20 @@ class HCORENUMImpl final
 
     struct EnumData final
     {
+        struct TableData final
+        {
+            dnmd::any_cursor Current;
+            dnmd::any_cursor Start;
+
+            explicit TableData(mdhandle_t handle) noexcept
+                : Current{handle, 0}, Start{handle, 0}
+            {}
+        };
+
         union
         {
             // Enumerate for tables
-            struct
-            {
-                mdcursor_t Current;
-                mdcursor_t Start;
-            } Table;
+            TableData Table;
 
             // Enumerate for dynamic uint32_t array
             struct
@@ -35,16 +41,36 @@ class HCORENUMImpl final
         uint32_t ReadIn;
         uint32_t Total;
         EnumData* Next;
+
+        explicit EnumData(mdhandle_t handle) noexcept
+            : Table{handle}, ReadIn{0}, Total{0}, Next{nullptr}
+        {}
+
+        EnumData() noexcept
+            : Dynamic{}, ReadIn{0}, Total{0}, Next{nullptr}
+        {}
+
+        ~EnumData() noexcept {}
     };
 
     EnumData _data;
     EnumData* _curr;
     EnumData* _last;
 
+    explicit HCORENUMImpl(mdhandle_t handle) noexcept
+        : _type{HCORENUMType::Table}, _entrySpan{1}, _data{handle},
+          _curr{&_data}, _last{&_data}
+    {}
+
+    explicit HCORENUMImpl(uint32_t entrySpan) noexcept
+        : _type{HCORENUMType::Dynamic}, _entrySpan{entrySpan}, _data{},
+          _curr{&_data}, _last{&_data}
+    {}
+
 public: // static
     // Lifetime operations
-    static HRESULT CreateTableEnum(_In_ uint32_t count, _Out_ HCORENUMImpl** impl) noexcept;
-    static void InitTableEnum(_Inout_ HCORENUMImpl& impl, _In_ uint32_t index, _In_ mdcursor_t cursor, _In_ uint32_t rows) noexcept;
+    static HRESULT CreateTableEnum(_In_ mdhandle_t handle, _In_ uint32_t count, _Out_ HCORENUMImpl** impl) noexcept;
+    static void InitTableEnum(_Inout_ HCORENUMImpl& impl, _In_ uint32_t index, _In_ dnmd::any_cursor cursor, _In_ uint32_t rows) noexcept;
 
     // If multiple values represent a single entry, the "entrySpan" argument
     // can be used to indicate the count for a single entry.
