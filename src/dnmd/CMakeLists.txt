@@ -47,8 +47,14 @@ set_target_properties(dnmd_pdb PROPERTIES EXPORT_NAME pdb)
 add_library(dnmd::dnmd ALIAS dnmd)
 add_library(dnmd::pdb ALIAS dnmd_pdb)
 
-target_include_directories(dnmd PUBLIC $<INSTALL_INTERFACE:include>)
-target_include_directories(dnmd_pdb PUBLIC $<INSTALL_INTERFACE:include>)
+target_include_directories(dnmd PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../inc>
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../inc/external>
+  $<INSTALL_INTERFACE:include>)
+target_include_directories(dnmd_pdb PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../inc>
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../inc/external>
+  $<INSTALL_INTERFACE:include>)
 target_compile_features(dnmd PUBLIC cxx_std_17)
 target_compile_features(dnmd_pdb PUBLIC cxx_std_17)
 
@@ -57,7 +63,7 @@ set_target_properties(dnmd PROPERTIES
   POSITION_INDEPENDENT_CODE ON)
 
 set_target_properties(dnmd_pdb PROPERTIES
-  PUBLIC_HEADER "${PUBLIC_HEADERS};../inc/dnmd_pdb.hpp"
+  PUBLIC_HEADER "${PUBLIC_HEADERS};../inc/dnmd_pdb.h;../inc/dnmd_pdb.hpp"
   POSITION_INDEPENDENT_CODE ON)
 
 install(TARGETS dnmd dnmd_pdb EXPORT dnmd

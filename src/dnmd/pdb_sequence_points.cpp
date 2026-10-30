@@ -25,7 +25,7 @@ sequence_points_result parse_sequence_points(cursor<mdtid_MethodDebugInformation
     if (!row_reader{method}.read(columns::MethodDebugInformation_Document, document))
         return unexpected{error::invalid_blob};
 
-    auto initial_document = raw_cursor<mdtid_Document>::nil(handle);
+    auto initial_document = document;
     if (document.is_nil())
     {
         uint32_t rid;
@@ -38,10 +38,15 @@ sequence_points_result parse_sequence_points(cursor<mdtid_MethodDebugInformation
                 return unexpected{error::invalid_blob};
         }
     }
+    else if (!document)
+        return unexpected{error::invalid_blob};
 
     try
     {
         sequence_points result{signature, initial_document};
+        uint32_t running_il = 0;
+        int64_t running_line = 0;
+        int64_t running_column = 0;
         bool seen_non_hidden = false;
         while (length != 0)
         {
@@ -63,6 +68,9 @@ sequence_points_result parse_sequence_points(cursor<mdtid_MethodDebugInformation
                 result.records.emplace_back(document_change{next_document});
                 continue;
             }
+            if (il_offset > UINT32_MAX - running_il)
+                return unexpected{error::invalid_blob};
+            running_il += il_offset;
 
             uint32_t delta_lines;
             if (!read_unsigned(delta_lines))
@@ -84,20 +92,18 @@ sequence_points_result parse_sequence_points(cursor<mdtid_MethodDebugInformation
             }
             if (delta_lines == 0 && delta_columns == 0)
             {
-                result.records.emplace_back(hidden_sequence_point{il_offset});
+                result.records.emplace_back(hidden_sequence_point{running_il});
                 continue;
             }
 
-            int64_t start_line;
-            int64_t start_column;
             if (!seen_non_hidden)
             {
                 uint32_t line;
                 uint32_t column;
                 if (!read_unsigned(line) || !read_unsigned(column))
                     return unexpected{error::invalid_blob};
-                start_line = line;
-                start_column = column;
+                running_line = line;
+                running_column = column;
                 seen_non_hidden = true;
             }
             else
@@ -106,11 +112,11 @@ sequence_points_result parse_sequence_points(cursor<mdtid_MethodDebugInformation
                 int32_t column;
                 if (!read_signed(line) || !read_signed(column))
                     return unexpected{error::invalid_blob};
-                start_line = line;
-                start_column = column;
+                running_line += line;
+                running_column += column;
             }
             result.records.emplace_back(sequence_point{
-                il_offset, delta_lines, delta_columns, start_line, start_column});
+                running_il, delta_lines, delta_columns, running_line, running_column});
         }
         return std::move(result);
     }

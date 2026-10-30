@@ -2,6 +2,7 @@
 #define _SRC_INC_DNMD_PDB_HPP_
 
 #include "dnmd_read.hpp"
+#include "dnmd_pdb.h"
 #include "dnmd_result.hpp"
 #include <string>
 #include <string_view>
@@ -120,7 +121,7 @@ using sequence_point_record = std::variant<document_change, sequence_point, hidd
 struct sequence_points final
 {
     mdToken signature;
-    // The blob's InitialDocument, or nil when the document is supplied by its row.
+    // The initial document, supplied by the row or encoded in the blob.
     raw_cursor<mdtid_Document> document;
     std::vector<sequence_point_record> records;
 

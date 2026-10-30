@@ -310,9 +310,10 @@ It returns `dnmd::sequence_points_result`.
 The move-only result owns a vector of `document_change`, `sequence_point`, and
 `hidden_sequence_point` variants. Document cursors borrow the metadata image and
 follow the usual cursor lifetime/edit rules; the input blob is not retained.
-The result's `document` field contains the blob's InitialDocument, or a bound nil
-when the document is supplied by the MethodDebugInformation row. Numeric record
-fields retain their encoded delta/rolling-field interpretation.
+The result's `document` field contains the initial document from the
+MethodDebugInformation row or the blob's InitialDocument. Rolling IL offsets,
+start lines, and start columns are accumulated absolute values; delta-line and
+delta-column fields retain their encoded values.
 
 None of these APIs requires a caller buffer or size-query pass. Unknown import
 kinds, malformed/truncated fields, invalid encoded token tags, overflowing RIDs,

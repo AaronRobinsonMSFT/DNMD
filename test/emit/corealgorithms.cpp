@@ -1,4 +1,7 @@
 #include <dnmd.hpp>
+#ifdef DNMD_PORTABLE_PDB
+#include <dnmd_pdb.h>
+#endif
 #include "internal.hpp"
 #include <gtest/gtest.h>
 #include <algorithm>
@@ -1285,6 +1288,29 @@ TEST_F(CoreAlgorithms, SortsExistingPointerListsStably)
 }
 
 #ifdef DNMD_PORTABLE_PDB
+TEST_F(CoreAlgorithms, ReadsPortablePdbIdentityThroughTheRetainedCApi)
+{
+    auto pdb = CreatePdb();
+    ASSERT_TRUE(pdb);
+    std::array<uint8_t, 20> expected{};
+    for (size_t index = 0; index != expected.size(); ++index)
+        pdb_image[60 + index] = expected[index] = static_cast<uint8_t>(index + 1);
+    size_t length = 0;
+    EXPECT_FALSE(md_get_pdb_id(pdb.get(), &length, nullptr));
+    EXPECT_EQ(expected.size(), length);
+    std::array<uint8_t, 20> actual{};
+    length = actual.size() - 1;
+    EXPECT_FALSE(md_get_pdb_id(pdb.get(), &length, actual.data()));
+    EXPECT_EQ(expected.size(), length);
+    EXPECT_EQ((std::array<uint8_t, 20>{}), actual);
+    ASSERT_TRUE(md_get_pdb_id(pdb.get(), &length, actual.data()));
+    EXPECT_EQ(expected, actual);
+    EXPECT_FALSE(md_get_pdb_id(pdb.get(), nullptr, actual.data()));
+    EXPECT_FALSE(md_get_pdb_id(pdb.get(), &length, nullptr));
+    EXPECT_FALSE(md_get_pdb_id(base.get(), &length, actual.data()));
+    EXPECT_FALSE(md_get_pdb_id(nullptr, &length, actual.data()));
+}
+
 TEST_F(CoreAlgorithms, TypedListAddSupportsDirectPortablePdbLists)
 {
     handle_ptr pdb{md_create_new_pdb_handle()};

@@ -141,12 +141,12 @@ TEST_F(PdbSequencePoints, OwnsTypedRecordsAndPreservesDocumentAndSignedFields)
     EXPECT_EQ(100, first.rolling_start_line);
     EXPECT_EQ(9, first.rolling_start_column);
     auto const& second = std::get<sequence_point>(parsed->records[3]);
-    EXPECT_EQ(3u, second.rolling_il_offset);
+    EXPECT_EQ(8u, second.rolling_il_offset);
     EXPECT_EQ(0u, second.delta_lines);
     EXPECT_EQ(2, second.delta_columns);
-    EXPECT_EQ(-3, second.rolling_start_line);
-    EXPECT_EQ(5, second.rolling_start_column);
-    EXPECT_EQ(7u, std::get<hidden_sequence_point>(parsed->records[4]).rolling_il_offset);
+    EXPECT_EQ(97, second.rolling_start_line);
+    EXPECT_EQ(14, second.rolling_start_column);
+    EXPECT_EQ(15u, std::get<hidden_sequence_point>(parsed->records[4]).rolling_il_offset);
 }
 
 TEST_F(PdbSequencePoints, SupportsColumnDocumentsAndHeaderOnlyBlobs)
@@ -158,7 +158,11 @@ TEST_F(PdbSequencePoints, SupportsColumnDocumentsAndHeaderOnlyBlobs)
     uint8_t bytes[] = {0};
     auto result = parse_sequence_points(method.value(), bytes, sizeof(bytes));
     ASSERT_TRUE(result);
-    EXPECT_TRUE(result->document.is_nil());
+    mdToken expected_document;
+    mdToken actual_document;
+    ASSERT_TRUE(document.get_token(expected_document));
+    ASSERT_TRUE(result->document.get_token(actual_document));
+    EXPECT_EQ(expected_document, actual_document);
     EXPECT_TRUE(result->records.empty());
     method = Method(raw_cursor<mdtid_Document>::nil(handle.get()));
     uint8_t initial[] = {0, 1};
@@ -200,10 +204,32 @@ TEST_F(PdbSequencePoints, DecodesCompressedIntegerBoundaries)
             EXPECT_EQ(signed_value, first.delta_columns);
             EXPECT_EQ(value, first.rolling_start_line);
             auto const& second = std::get<sequence_point>(result->records[1]);
-            EXPECT_EQ(signed_value, second.rolling_start_line);
-            EXPECT_EQ(signed_value, second.rolling_start_column);
+            EXPECT_EQ(int64_t{value} + signed_value, second.rolling_start_line);
+            EXPECT_EQ(int64_t{value} + signed_value, second.rolling_start_column);
         }
     }
+}
+
+TEST_F(PdbSequencePoints, RejectsRollingIlOffsetOverflow)
+{
+    auto document = Document();
+    ASSERT_TRUE(document);
+    auto method = Method(document);
+    ASSERT_TRUE(method);
+    std::vector<uint8_t> bytes{0};
+    for (unsigned index = 0; index != 8; ++index)
+    {
+        AppendUnsigned(bytes, 0x1fffffff);
+        bytes.insert(bytes.end(), {0, 0});
+    }
+    auto valid = parse_sequence_points(method.value(), bytes.data(), bytes.size());
+    ASSERT_TRUE(valid);
+    EXPECT_EQ(UINT32_MAX - 7, std::get<hidden_sequence_point>(valid->records.back()).rolling_il_offset);
+    AppendUnsigned(bytes, 0x1fffffff);
+    bytes.insert(bytes.end(), {0, 0});
+    auto overflow = parse_sequence_points(method.value(), bytes.data(), bytes.size());
+    ASSERT_FALSE(overflow);
+    EXPECT_EQ(error::invalid_blob, overflow.error());
 }
 
 TEST_F(PdbSequencePoints, RejectsTruncatedInvalidAndOutOfRangeInput)
