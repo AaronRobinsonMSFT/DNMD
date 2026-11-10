@@ -74,12 +74,13 @@ table set and nil/live/end bounds; it does not expose an unchecked pointer/RID
 constructor. Metadata handles must remain valid for the lifetime of these
 borrowed positions.
 
-Converting a row or raw position to a `raw_cursor` whose table targets are a
-superset is implicit and nonthrowing; the conversion preserves its table, RID,
-image, and nil/end state. Reserved `mdtid_Unused` tag slots do not count as
-possible source tables. This lets typed rows be passed directly to heterogeneous
-callbacks taking `dnmd::any_cursor`. Indirect-to-raw widening preserves the
-source position, not the resolved target. Narrowing remains explicit and checked.
+Constructing a `raw_cursor` from a row or position whose possible source tables are
+a subset of its table targets is explicit and nonthrowing; construction preserves
+its table, RID, image, and nil/end state. Reserved `mdtid_Unused` tag slots do not count as
+possible source tables. Explicitly construct `dnmd::any_cursor{row}` when passing
+a typed row to a heterogeneous callback taking `dnmd::any_cursor`.
+Indirect-to-raw widening preserves the source position, not the resolved target.
+Narrowing remains explicit and checked.
 Prefer fixed-table or bounded-target cursors in helpers; `any_cursor` is for
 genuinely heterogeneous callback and enumeration boundaries.
 

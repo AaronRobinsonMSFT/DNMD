@@ -142,7 +142,7 @@ namespace
             uint32_t sequence;
             if (!position || !position.value().get_column_value(Param_Sequence, &sequence))
                 return false;
-            parameters.push_back({position.value(), sequence});
+            parameters.push_back({raw_cursor<mdtid_Param>{position.value()}, sequence});
         }
         auto compare = [](parameter const& left, parameter const& right) {
             return left.sequence < right.sequence;
