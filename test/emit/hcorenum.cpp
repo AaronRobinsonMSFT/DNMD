@@ -71,7 +71,7 @@ namespace
             ASSERT_TRUE(pointer_position.value().set_column_value(dnmd::detail::pointer_column<Ptr>(), expected[0]));
             ASSERT_TRUE(pointer_position.move(1));
             ASSERT_TRUE(pointer_position.value().set_column_value(dnmd::detail::pointer_column<Ptr>(), expected[1]));
-            auto enumeration = Enumerator(source, count);
+            auto enumeration = Enumerator(dnmd::any_cursor{source}, count);
             mdToken tokens[2];
             ULONG read;
             ASSERT_EQ(S_OK, enumeration->ReadTokens(tokens, 2, &read));
@@ -94,7 +94,7 @@ namespace
             {
                 for (ULONG capacity : {1u, 2u})
                 {
-                    auto sentinel = Enumerator(sentinels[i], 1);
+                    auto sentinel = Enumerator(dnmd::any_cursor{sentinels[i]}, 1);
                     ASSERT_EQ(S_OK, sentinel->ReadTokens(tokens, capacity, &read));
                     ASSERT_EQ(1u, read);
                     EXPECT_EQ(targets[i], tokens[0]);
@@ -107,7 +107,7 @@ namespace
                 ASSERT_TRUE(pointer.set_column_value(dnmd::detail::pointer_column<Ptr>(), target));
                 for (ULONG capacity : {1u, 2u})
                 {
-                    auto sentinel_target = Enumerator(source, 1);
+                    auto sentinel_target = Enumerator(dnmd::any_cursor{source}, 1);
                     ASSERT_EQ(S_OK, sentinel_target->ReadTokens(tokens, capacity, &read));
                     ASSERT_EQ(1u, read);
                     EXPECT_EQ(target, tokens[0]);
@@ -117,7 +117,7 @@ namespace
                 CreateTokenType(Direct) | 100));
             for (ULONG capacity : {1u, 2u})
             {
-                auto malformed = Enumerator(source, 1);
+                auto malformed = Enumerator(dnmd::any_cursor{source}, 1);
                 tokens[0] = 0x12345678;
                 EXPECT_EQ(CLDB_E_FILE_CORRUPT, malformed->ReadTokens(tokens, capacity, &read));
                 EXPECT_EQ(0u, read);
@@ -146,7 +146,7 @@ TEST_F(CppEnumResolution, DirectNilLiveEndPositionsPassThrough)
         dnmd::raw_cursor<mdtid_TypeDef>::end(handle.get())};
     for (auto position : positions)
     {
-        auto enumeration = Enumerator(position, 1);
+        auto enumeration = Enumerator(dnmd::any_cursor{position}, 1);
         mdToken expected;
         ASSERT_TRUE(position.get_token(expected));
         mdToken actual;

@@ -70,7 +70,7 @@ namespace
 
         HCORENUMImpl* enumImpl;
         RETURN_IF_FAILED(HCORENUMImpl::CreateTableEnum(mdhandle, 1, &enumImpl));
-        HCORENUMImpl::InitTableEnum(*enumImpl, 0, cursor, rows);
+        HCORENUMImpl::InitTableEnum(*enumImpl, 0, dnmd::any_cursor{cursor}, rows);
         *pEnumImpl = enumImpl;
         return S_OK;
     }
@@ -104,7 +104,7 @@ namespace
         if (filter == nullptr || filter->Value == nullptr)
         {
             RETURN_IF_FAILED(HCORENUMImpl::CreateTableEnum(mdhandle, 1, &enumImpl));
-            HCORENUMImpl::InitTableEnum(*enumImpl, 0, begin, count);
+            HCORENUMImpl::InitTableEnum(*enumImpl, 0, dnmd::any_cursor{begin}, count);
         }
         else
         {
@@ -168,7 +168,7 @@ namespace
         {
             HCORENUMImpl* enumImpl;
             RETURN_IF_FAILED(HCORENUMImpl::CreateTableEnum(mdhandle, 1, &enumImpl));
-            HCORENUMImpl::InitTableEnum(*enumImpl, 0, begin, count);
+            HCORENUMImpl::InitTableEnum(*enumImpl, 0, dnmd::any_cursor{begin}, count);
             *pEnumImpl = enumImpl;
             return S_OK;
         }
@@ -409,7 +409,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumTypeDefs(
         (void)dnmd::md_cursor_next(cursor);
 
         RETURN_IF_FAILED(HCORENUMImpl::CreateTableEnum(_md_ptr.get(), 1, &enumImpl));
-        HCORENUMImpl::InitTableEnum(*enumImpl, 0, cursor, rows);
+        HCORENUMImpl::InitTableEnum(*enumImpl, 0, dnmd::any_cursor{cursor}, rows);
         *phEnum = enumImpl;
     }
     return enumImpl->ReadTokens(rTypeDefs, cMax, pcTypeDefs);
@@ -767,8 +767,8 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumMembers(
         }
 
         RETURN_IF_FAILED(HCORENUMImpl::CreateTableEnum(_md_ptr.get(), 2, &enumImpl));
-        HCORENUMImpl::InitTableEnum(*enumImpl, 0, methodList, methodListCount);
-        HCORENUMImpl::InitTableEnum(*enumImpl, 1, fieldList, fieldListCount);
+        HCORENUMImpl::InitTableEnum(*enumImpl, 0, dnmd::any_cursor{methodList}, methodListCount);
+        HCORENUMImpl::InitTableEnum(*enumImpl, 1, dnmd::any_cursor{fieldList}, fieldListCount);
         *phEnum = enumImpl;
     }
     return enumImpl->ReadTokens(rMembers, cMax, pcTokens);
@@ -1092,7 +1092,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumPermissionSets(
         if (IsNilToken(tk) && IsDclActionNil(dwActions))
         {
             RETURN_IF_FAILED(HCORENUMImpl::CreateTableEnum(_md_ptr.get(), 1, &enumImpl));
-            HCORENUMImpl::InitTableEnum(*enumImpl, 0, cursor, count);
+            HCORENUMImpl::InitTableEnum(*enumImpl, 0, dnmd::any_cursor{cursor}, count);
         }
         else
         {
@@ -1473,7 +1473,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumProperties(
         }
 
         RETURN_IF_FAILED(HCORENUMImpl::CreateTableEnum(_md_ptr.get(), 1, &enumImpl));
-        HCORENUMImpl::InitTableEnum(*enumImpl, 0, propertyList, propertyListCount);
+        HCORENUMImpl::InitTableEnum(*enumImpl, 0, dnmd::any_cursor{propertyList}, propertyListCount);
         *phEnum = enumImpl;
     }
     return enumImpl->ReadTokens(rProperties, cMax, pcProperties);
@@ -1510,7 +1510,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumEvents(
         }
 
         RETURN_IF_FAILED(HCORENUMImpl::CreateTableEnum(_md_ptr.get(), 1, &enumImpl));
-        HCORENUMImpl::InitTableEnum(*enumImpl, 0, eventList, eventListCount);
+        HCORENUMImpl::InitTableEnum(*enumImpl, 0, dnmd::any_cursor{eventList}, eventListCount);
         *phEnum = enumImpl;
     }
     return enumImpl->ReadTokens(rEvents, cMax, pcEvents);
@@ -2238,7 +2238,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumCustomAttributes(
             // Caller is looking across all attributes
             assert(IsNilToken(tkType)); // Ignoring type filter
             RETURN_IF_FAILED(HCORENUMImpl::CreateTableEnum(_md_ptr.get(), 1, &enumImpl));
-            HCORENUMImpl::InitTableEnum(*enumImpl, 0, cursor, count);
+            HCORENUMImpl::InitTableEnum(*enumImpl, 0, dnmd::any_cursor{cursor}, count);
         }
         else
         {
@@ -2249,7 +2249,7 @@ HRESULT STDMETHODCALLTYPE MetadataImportRO::EnumCustomAttributes(
                 if (result == dnmd::range_result::found)
                 {
                     RETURN_IF_FAILED(HCORENUMImpl::CreateTableEnum(_md_ptr.get(), 1, &enumImpl));
-                    HCORENUMImpl::InitTableEnum(*enumImpl, 0, curr, currCount);
+                    HCORENUMImpl::InitTableEnum(*enumImpl, 0, dnmd::any_cursor{curr}, currCount);
                 }
                 else if (result == dnmd::range_result::not_found)
                 {

@@ -533,7 +533,7 @@ namespace
         if (!assemblyRef)
             return import_helpers::unexpected{E_FAIL};
 
-        onRowAdded(assemblyRef.value());
+        onRowAdded(dnmd::any_cursor{assemblyRef.value()});
 
         dnmd::row_writer writer{assemblyRef.value()};
         if (!writer.write(AssemblyRef_MajorVersion, majorVersion))
@@ -668,7 +668,7 @@ namespace
         if (!assemblyRef)
             return import_helpers::unexpected{E_FAIL};
 
-        onRowAdded(assemblyRef.value());
+        onRowAdded(dnmd::any_cursor{assemblyRef.value()});
 
         dnmd::row_writer writer{assemblyRef.value()};
         if (!writer.write(AssemblyRef_MajorVersion, majorVersion))
@@ -780,9 +780,9 @@ cursor_result<dnmd::raw_cursor<mdtid_TypeDef, mdtid_TypeRef>> ImportReferenceToT
             if (!targetCursor)
                 return import_helpers::unexpected{CLDB_E_FILE_CORRUPT};
 
-            return targetCursor;
+            return dnmd::raw_cursor<mdtid_TypeDef, mdtid_TypeRef>{targetCursor};
         }
-        resolutionScope = dnmd::md_create_cursor<mdtid_Module>(targetModule);
+        resolutionScope = resolution_scope_cursor{dnmd::md_create_cursor<mdtid_Module>(targetModule)};
         if (!resolutionScope)
             return import_helpers::unexpected{E_FAIL};
     }
@@ -802,8 +802,8 @@ cursor_result<dnmd::raw_cursor<mdtid_TypeDef, mdtid_TypeRef>> ImportReferenceToT
             return import_helpers::unexpected{E_FAIL};
         }
 
-        resolutionScope = moduleRef.position();
-        onRowAdded(moduleRef.value());
+        resolutionScope = resolution_scope_cursor{moduleRef.position()};
+        onRowAdded(dnmd::any_cursor{moduleRef.value()});
     }
     else if (sameModuleMvid)
     {
@@ -818,7 +818,7 @@ cursor_result<dnmd::raw_cursor<mdtid_TypeDef, mdtid_TypeRef>> ImportReferenceToT
         auto reference = ImportReferenceToAssembly(sourceAssembly, sourceAssemblyHash, targetModule, targetAssembly, onRowAdded);
         if (!reference)
             return import_helpers::unexpected{reference.error()};
-        resolutionScope = *reference;
+        resolutionScope = resolution_scope_cursor{*reference};
     }
 
     try
@@ -876,11 +876,11 @@ cursor_result<dnmd::raw_cursor<mdtid_TypeDef, mdtid_TypeRef>> ImportReferenceToT
                 return import_helpers::unexpected{E_FAIL};
             }
 
-            resolutionScope = typeRef.position();
-            onRowAdded(typeRef.value());
+            resolutionScope = resolution_scope_cursor{typeRef.position()};
+            onRowAdded(dnmd::any_cursor{typeRef.value()});
         }
 
-        return resolutionScope.as<mdtid_TypeRef>();
+        return dnmd::raw_cursor<mdtid_TypeDef, mdtid_TypeRef>{resolutionScope.as<mdtid_TypeRef>()};
     }
     catch (std::bad_alloc const&)
     {
@@ -980,11 +980,11 @@ namespace
 
                     if (std::strcmp(fileName, moduleName) == 0)
                     {
-                        result = moduleCursor;
+                        result = imported_scope_cursor{moduleCursor};
                     }
                     else if (auto existing = FindModuleRef(module, fileName))
                     {
-                        result = existing;
+                        result = imported_scope_cursor{existing};
                     }
                     else
                     {
@@ -995,21 +995,22 @@ namespace
                         if (!moduleRef.value().set_column_value(ModuleRef_Name, fileName))
                             return;
 
-                        result = moduleRef.position();
-                        onRowAdded(moduleRef.value());
+                        result = imported_scope_cursor{moduleRef.position()};
+                        onRowAdded(dnmd::any_cursor{moduleRef.value()});
                     }
                 }
                 // If the ExportedType.Implementation is an AssemblyRef, then we'll use that as the imported scope.
                 // COMPAT-BREAK: CoreCLR does not support this case (it assumes that this ExportedType entry is never a type forwarder).
                 else if constexpr (table == mdtid_AssemblyRef)
                 {
-                    auto reference = ImportReferenceToAssemblyRef(row, module, assembly, onRowAdded);
+                    auto reference = ImportReferenceToAssemblyRef(
+                        dnmd::raw_cursor<mdtid_AssemblyRef>{row}, module, assembly, onRowAdded);
                     if (!reference)
                     {
                         result = import_helpers::unexpected{reference.error()};
                         return;
                     }
-                    result = *reference;
+                    result = imported_scope_cursor{*reference};
                 }
                 // If the ExportedType.Implementation is an ExportedType, then we're in an error scenario.
                 else if constexpr (table == mdtid_ExportedType)
@@ -1080,11 +1081,11 @@ namespace
                 {
                     // If the assembly module has the same name as the current module,
                     // assume that the assembly manifest module is the same module as the current module.
-                    return moduleCursor;
+                    return imported_scope_cursor{moduleCursor};
                 }
                 else if (auto existing = FindModuleRef(module, assemblyModuleName))
                 {
-                    return existing;
+                    return imported_scope_cursor{existing};
                 }
                 else
                 {
@@ -1095,8 +1096,8 @@ namespace
                     if (!moduleRef.value().set_column_value(ModuleRef_Name, assemblyModuleName))
                         return import_helpers::unexpected{E_FAIL};
 
-                    onRowAdded(moduleRef.value());
-                    return moduleRef.position();
+                    onRowAdded(dnmd::any_cursor{moduleRef.value()});
+                    return imported_scope_cursor{moduleRef.position()};
                 }
             }
         }
@@ -1232,9 +1233,9 @@ namespace
 
         HRESULT hr;
         std::stack<resolution_scope_cursor> typesForTypeRefs;
-        typesForTypeRefs.push(sourceTypeRef);
+        typesForTypeRefs.emplace(sourceTypeRef);
 
-        source_scope_cursor scope = sourceTypeRef;
+        source_scope_cursor scope{sourceTypeRef};
         while (scope.is<mdtid_TypeRef>())
         {
             auto typeRefScope = scope.as<mdtid_TypeRef>();
@@ -1242,8 +1243,8 @@ namespace
             if (!typeRefScope || !typeRefScope.value().get_column_value(TypeRef_ResolutionScope, resolutionScope))
                 return import_helpers::unexpected{E_FAIL};
 
-            typesForTypeRefs.push(resolutionScope);
-            scope = resolutionScope;
+            typesForTypeRefs.emplace(resolutionScope);
+            scope = source_scope_cursor{resolutionScope};
         }
 
         mdhandle_t sourceModule = sourceTypeRef.get_handle();
@@ -1277,7 +1278,7 @@ namespace
             if (!typeRef)
                 return import_helpers::unexpected{CLDB_E_FILE_CORRUPT};
 
-            return typeRef;
+            return dnmd::raw_cursor<mdtid_TypeDef, mdtid_TypeRef>{typeRef};
         }
         else if (sameAssemblyMvid && !sameModuleMvid)
         {
@@ -1306,7 +1307,7 @@ namespace
                         result = E_FAIL;
                         if (auto existing = FindModuleRef(targetModule, moduleName))
                         {
-                            targetOutermostScope = existing;
+                            targetOutermostScope = resolution_scope_cursor{existing};
                         }
                         else
                         {
@@ -1317,8 +1318,8 @@ namespace
                             if (!moduleRef.value().set_column_value(ModuleRef_Name, moduleName))
                                 return;
 
-                            targetOutermostScope = moduleRef.position();
-                            onRowAdded(moduleRef.value());
+                            targetOutermostScope = resolution_scope_cursor{moduleRef.position()};
+                            onRowAdded(dnmd::any_cursor{moduleRef.value()});
                         }
                         result = S_OK;
                     }
@@ -1343,11 +1344,11 @@ namespace
 
                         if (std::strcmp(moduleName, targetModuleName) == 0)
                         {
-                            targetOutermostScope = targetModuleCursor;
+                            targetOutermostScope = resolution_scope_cursor{targetModuleCursor};
                         }
                         else if (auto existing = FindModuleRef(targetModule, moduleName))
                         {
-                            targetOutermostScope = existing;
+                            targetOutermostScope = resolution_scope_cursor{existing};
                         }
                         else
                         {
@@ -1358,22 +1359,23 @@ namespace
                             if (!moduleRef.value().set_column_value(ModuleRef_Name, moduleName))
                                 return;
 
-                            targetOutermostScope = moduleRef.position();
-                            onRowAdded(moduleRef.value());
+                            targetOutermostScope = resolution_scope_cursor{moduleRef.position()};
+                            onRowAdded(dnmd::any_cursor{moduleRef.value()});
                         }
                         result = S_OK;
                     }
                     else if constexpr (table == mdtid_AssemblyRef)
                     {
                         // Copy the AssemblyRef from the source module to the target module.
-                        auto reference = ImportReferenceToAssemblyRef(row, targetModule, targetAssembly, onRowAdded);
+                        auto reference = ImportReferenceToAssemblyRef(
+                            dnmd::raw_cursor<mdtid_AssemblyRef>{row}, targetModule, targetAssembly, onRowAdded);
                         if (!reference)
                         {
                             result = reference.error();
                             return;
                         }
                         result = S_OK;
-                        targetOutermostScope = *reference;
+                        targetOutermostScope = resolution_scope_cursor{*reference};
                     }
                 }))
                 {
@@ -1393,7 +1395,7 @@ namespace
                 auto reference = ImportReferenceToAssembly(sourceAssembly, sourceAssemblyHash, targetModule, targetAssembly, onRowAdded);
                 if (!reference)
                     return reference.error();
-                targetOutermostScope = *reference;
+                targetOutermostScope = resolution_scope_cursor{*reference};
                 return S_OK;
             };
 
@@ -1454,7 +1456,7 @@ namespace
                             result = importSourceAssembly();
                             if (FAILED(result))
                                 return;
-                            scope = row;
+                            scope = source_scope_cursor{row};
                         }
                         else if constexpr (table == mdtid_AssemblyRef)
                         {
@@ -1462,7 +1464,7 @@ namespace
                             // Set the scope to this AssemblyRef.
                             // If this is a type forward from the target assembly, we want to resolve it to the target assembly to avoid a self-referential
                             // AssemblyRef.
-                            scope = row;
+                            scope = source_scope_cursor{row};
                             result = S_OK;
                         }
                         else if constexpr (table == mdtid_ExportedType)
@@ -1561,7 +1563,8 @@ namespace
                     if (!targetAssemblyCursor)
                         return;
 
-                    HRESULT match = AssemblyRefPointsToAssembly(row, targetAssemblyCursor);
+                    HRESULT match = AssemblyRefPointsToAssembly(
+                        dnmd::raw_cursor<mdtid_AssemblyRef>{row}, targetAssemblyCursor);
                     if (FAILED(match))
                     {
                         result = match;
@@ -1594,20 +1597,21 @@ namespace
                             return;
                         }
                         result = S_OK;
-                        targetOutermostScope = *importedScope;
+                        targetOutermostScope = resolution_scope_cursor{*importedScope};
                     }
                     else
                     {
                         // The type is defined in another assembly. We need to create an AssemblyRef to that assembly.
                         assert(match == S_FALSE);
-                        auto reference = ImportReferenceToAssemblyRef(row, targetModule, targetAssembly, onRowAdded);
+                        auto reference = ImportReferenceToAssemblyRef(
+                            dnmd::raw_cursor<mdtid_AssemblyRef>{row}, targetModule, targetAssembly, onRowAdded);
                         if (!reference)
                         {
                             result = reference.error();
                             return;
                         }
                         result = S_OK;
-                        targetOutermostScope = *reference;
+                        targetOutermostScope = resolution_scope_cursor{*reference};
                     }
                 }
                 else if constexpr (table == mdtid_ModuleRef)
@@ -1713,9 +1717,9 @@ namespace
                 if (!found)
                     return import_helpers::unexpected{CLDB_E_RECORD_NOTFOUND};
 
-                enclosingScope = targetTypeDef;
+                enclosingScope = dnmd::raw_cursor<mdtid_Module, mdtid_TypeDef>{targetTypeDef};
             }
-            return enclosingScope.as<mdtid_TypeDef>();
+            return dnmd::raw_cursor<mdtid_TypeDef, mdtid_TypeRef>{enclosingScope.as<mdtid_TypeDef>()};
         }
 
         resolution_scope_cursor resolutionScope = targetOutermostScope;
@@ -1749,11 +1753,11 @@ namespace
                 return import_helpers::unexpected{E_FAIL};
             }
 
-            resolutionScope = targetEnclosingTypeRef.position();
-            onRowAdded(targetEnclosingTypeRef.value());
+            resolutionScope = resolution_scope_cursor{targetEnclosingTypeRef.position()};
+            onRowAdded(dnmd::any_cursor{targetEnclosingTypeRef.value()});
         }
 
-        return resolutionScope.as<mdtid_TypeRef>();
+        return dnmd::raw_cursor<mdtid_TypeDef, mdtid_TypeRef>{resolutionScope.as<mdtid_TypeRef>()};
     }
 }
 

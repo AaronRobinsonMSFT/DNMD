@@ -14,7 +14,8 @@ namespace
     static_assert(std::is_same_v<type_result::error_type, HRESULT>);
     static_assert(std::is_same_v<type_result::value_type,
         dnmd::raw_cursor<mdtid_TypeDef, mdtid_TypeRef>>);
-    static_assert(std::is_nothrow_constructible_v<type_result, dnmd::raw_cursor<mdtid_TypeDef>>);
+    static_assert(!std::is_constructible_v<type_result, dnmd::raw_cursor<mdtid_TypeDef>>);
+    static_assert(std::is_nothrow_constructible_v<type_result, type_result::value_type>);
     static_assert(!std::is_constructible_v<type_result, dnmd::raw_cursor<mdtid_Module>>);
     static_assert(!std::is_constructible_v<cursor_result<dnmd::raw_cursor<mdtid_TypeDef>>,
         dnmd::raw_cursor<mdtid_TypeDef, mdtid_TypeRef>>);
@@ -76,7 +77,7 @@ TEST_F(CppImportHelperReads, ImportsNestedTypeNamesAndEnclosingReference)
         ASSERT_TRUE(writer.write(NestedClass_EnclosingClass, outer));
     }
 
-    auto imported = ImportReferenceToTypeDef(inner, source.get(), {},
+    auto imported = ImportReferenceToTypeDef(dnmd::raw_cursor<mdtid_TypeDef>{inner}, source.get(), {},
         target.get(), target.get(), true, [](dnmd::any_cursor) {});
     ASSERT_TRUE(imported);
     EXPECT_TRUE(imported.has_value());
@@ -115,7 +116,7 @@ TEST_F(CppImportHelperReads, ImportsTypeNamesWithinTheSourceImage)
 {
     using namespace dnmd::columns;
     auto type = AddType("InPlace", "Tests");
-    auto imported = ImportReferenceToTypeDef(type, source.get(), {},
+    auto imported = ImportReferenceToTypeDef(dnmd::raw_cursor<mdtid_TypeDef>{type}, source.get(), {},
         source.get(), source.get(), true, [](dnmd::any_cursor) {});
     ASSERT_TRUE(imported);
     EXPECT_TRUE(imported.has_value());
@@ -235,7 +236,7 @@ TEST_F(CppImportHelperReads, FindsMatchingAssemblyReferenceWhileImportingType)
         ASSERT_TRUE(writer.write(AssemblyRef_RevisionNumber, candidate.revision));
     }
     auto type = AddType("Imported", "Tests");
-    auto imported = ImportReferenceToTypeDef(type, source.get(), {},
+    auto imported = ImportReferenceToTypeDef(dnmd::raw_cursor<mdtid_TypeDef>{type}, source.get(), {},
         target.get(), target.get(), true, [](dnmd::any_cursor) {});
     ASSERT_TRUE(imported);
     EXPECT_TRUE(imported.has_value());
@@ -294,7 +295,8 @@ TEST_F(CppImportHelperReads, CursorResultsPreserveNilAndEndPositions)
     using position = dnmd::raw_cursor<mdtid_Module>;
     for (auto value : {position::nil(source.get()), position::end(source.get())})
     {
-        cursor_result<dnmd::raw_cursor<mdtid_Module, mdtid_ModuleRef>> result{value};
+        cursor_result<dnmd::raw_cursor<mdtid_Module, mdtid_ModuleRef>> result{
+            dnmd::raw_cursor<mdtid_Module, mdtid_ModuleRef>{value}};
         ASSERT_TRUE(result);
         EXPECT_TRUE(result.has_value());
         EXPECT_FALSE(*result);
@@ -314,7 +316,7 @@ TEST_F(CppImportHelperReads, CursorResultsWidenAndChangeAlternatives)
     auto module = dnmd::md_create_cursor<mdtid_Module>(source.get());
     ASSERT_TRUE(module);
     cursor_result<dnmd::raw_cursor<mdtid_Module, mdtid_ModuleRef>> result{import_helpers::unexpected{E_FAIL}};
-    result = module.value();
+    result = dnmd::raw_cursor<mdtid_Module, mdtid_ModuleRef>{module.value()};
     ASSERT_TRUE(result);
     EXPECT_TRUE(result.has_value());
     auto const copy = result;
@@ -347,7 +349,7 @@ TEST_F(CppImportHelperReads, ReusesTypeDefinitionInMatchingTargetImage)
     targetType.commit();
     uint32_t added = 0;
 
-    auto imported = ImportReferenceToTypeDef(type, source.get(), {},
+    auto imported = ImportReferenceToTypeDef(dnmd::raw_cursor<mdtid_TypeDef>{type}, source.get(), {},
         target.get(), target.get(), false, [&](dnmd::any_cursor) { ++added; });
     ASSERT_TRUE(imported);
     EXPECT_TRUE(imported.has_value());
@@ -365,7 +367,7 @@ TEST_F(CppImportHelperReads, RejectsMissingTypeDefinitionInMatchingTargetImage)
     ASSERT_NO_FATAL_FAILURE(SetMvid(target.get(), 1));
     auto type = AddType("Missing", "Tests");
     uint32_t added = 0;
-    auto imported = ImportReferenceToTypeDef(type, source.get(), {},
+    auto imported = ImportReferenceToTypeDef(dnmd::raw_cursor<mdtid_TypeDef>{type}, source.get(), {},
         target.get(), target.get(), false, [&](dnmd::any_cursor) { ++added; });
     ASSERT_FALSE(imported);
     EXPECT_FALSE(imported.has_value());
