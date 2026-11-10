@@ -135,6 +135,8 @@ template<typename ColumnType, mdtable_id_t DirectTableId, mdtable_id_t IndirectT
 struct search_reference_value<ColumnType, indirect_cursor<DirectTableId, IndirectTableId>>
     : search_reference_tables<ColumnType, DirectTableId> {};
 
+// Multiple TableIds must follow coded-index tag order, including mdtid_Unused
+// placeholders for reserved tags. A single TableId denotes a direct table index.
 template<mdtable_id_t... TableIds>
 struct column_reference_codec
 {
@@ -487,43 +489,70 @@ constexpr auto all_list_columns() noexcept
     };
 }
 
-template<typename Predicate>
-constexpr auto matching_list_columns(Predicate) noexcept
-{
-    // Selection is encoded in the predicate's bool_constant result type.
-    auto select = [](auto col) {
-        if constexpr (decltype(std::declval<Predicate>()(col))::value)
-            return std::tuple{col};
-        else
-            return std::tuple{};
-    };
-    return for_each_column<mdtid_Unused>([&](auto... columns) {
-        return std::tuple_cat(select(columns)...);
-    }, all_list_columns());
-}
-
 template<mdtable_id_t Table>
 constexpr auto list_columns() noexcept
 {
-    return matching_list_columns([](auto col) {
-        return std::bool_constant<decltype(col)::table_id == Table>{};
-    });
+    using namespace columns;
+    if constexpr (Table == mdtid_TypeDef)
+        return std::tuple{TypeDef_FieldList, TypeDef_MethodList};
+    else if constexpr (Table == mdtid_MethodDef)
+        return std::tuple{MethodDef_ParamList};
+    else if constexpr (Table == mdtid_EventMap)
+        return std::tuple{EventMap_EventList};
+    else if constexpr (Table == mdtid_PropertyMap)
+        return std::tuple{PropertyMap_PropertyList};
+#ifdef DNMD_PORTABLE_PDB
+    else if constexpr (Table == mdtid_LocalScope)
+        return std::tuple{LocalScope_VariableList, LocalScope_ConstantList};
+#endif
+    else
+        return std::tuple{};
 }
 
 template<mdtable_id_t Element>
 constexpr auto element_list_columns() noexcept
 {
-    return matching_list_columns([](auto col) {
-        return std::bool_constant<list_traits<typename decltype(col)::value_type>::direct == Element>{};
-    });
+    using namespace columns;
+    if constexpr (Element == mdtid_Field)
+        return std::tuple{TypeDef_FieldList};
+    else if constexpr (Element == mdtid_MethodDef)
+        return std::tuple{TypeDef_MethodList};
+    else if constexpr (Element == mdtid_Param)
+        return std::tuple{MethodDef_ParamList};
+    else if constexpr (Element == mdtid_Event)
+        return std::tuple{EventMap_EventList};
+    else if constexpr (Element == mdtid_Property)
+        return std::tuple{PropertyMap_PropertyList};
+#ifdef DNMD_PORTABLE_PDB
+    else if constexpr (Element == mdtid_LocalVariable)
+        return std::tuple{LocalScope_VariableList};
+    else if constexpr (Element == mdtid_LocalConstant)
+        return std::tuple{LocalScope_ConstantList};
+#endif
+    else
+        return std::tuple{};
 }
 
 template<mdtable_id_t Ptr>
 constexpr auto pointer_list_columns() noexcept
 {
-    return matching_list_columns([](auto col) {
-        return std::bool_constant<list_traits<typename decltype(col)::value_type>::pointer == Ptr>{};
-    });
+    using namespace columns;
+    if constexpr (Ptr == mdtid_FieldPtr)
+        return std::tuple{TypeDef_FieldList};
+    else if constexpr (Ptr == mdtid_MethodPtr)
+        return std::tuple{TypeDef_MethodList};
+    else if constexpr (Ptr == mdtid_ParamPtr)
+        return std::tuple{MethodDef_ParamList};
+    else if constexpr (Ptr == mdtid_EventPtr)
+        return std::tuple{EventMap_EventList};
+    else if constexpr (Ptr == mdtid_PropertyPtr)
+        return std::tuple{PropertyMap_PropertyList};
+#ifdef DNMD_PORTABLE_PDB
+    else if constexpr (Ptr == mdtid_Unused)
+        return std::tuple{LocalScope_VariableList, LocalScope_ConstantList};
+#endif
+    else
+        return std::tuple{};
 }
 
 template<mdtable_id_t Element>
@@ -583,10 +612,11 @@ constexpr auto make_pointer_table_ids() noexcept
     std::array<mdtable_id_t, mdtid_End> tables{};
     for (auto& table : tables)
         table = mdtid_Unused;
-    for_each_column<mdtid_Unused>([&](auto... columns) {
-        ((tables[list_traits<typename decltype(columns)::value_type>::direct] =
-            list_traits<typename decltype(columns)::value_type>::pointer), ...);
-    }, all_list_columns());
+    tables[mdtid_Field] = mdtid_FieldPtr;
+    tables[mdtid_MethodDef] = mdtid_MethodPtr;
+    tables[mdtid_Param] = mdtid_ParamPtr;
+    tables[mdtid_Event] = mdtid_EventPtr;
+    tables[mdtid_Property] = mdtid_PropertyPtr;
     return tables;
 }
 
@@ -826,44 +856,61 @@ constexpr decltype(auto) for_each_column(Callable&& callable)
     return for_each_column<Table>(std::forward<Callable>(callable), table_columns<Table>());
 }
 
+constexpr auto make_constant_column_widths() noexcept
+{
+    // Assembly has the largest column schema. Zero marks a non-constant column.
+    constexpr auto max_columns = std::tuple_size_v<decltype(table_columns<mdtid_Assembly>())>;
+    std::array<std::array<uint8_t, max_columns>, mdtid_End> widths{};
+    widths[mdtid_Module] = {2};
+    widths[mdtid_TypeDef] = {4};
+    widths[mdtid_Field] = {2};
+    widths[mdtid_MethodDef] = {4, 2, 2};
+    widths[mdtid_Param] = {2, 2};
+    widths[mdtid_Constant] = {2};
+    widths[mdtid_DeclSecurity] = {2};
+    widths[mdtid_ClassLayout] = {2, 4};
+    widths[mdtid_FieldLayout] = {4};
+    widths[mdtid_Event] = {2};
+    widths[mdtid_Property] = {2};
+    widths[mdtid_MethodSemantics] = {2};
+    widths[mdtid_ImplMap] = {2};
+    widths[mdtid_FieldRva] = {4};
+    widths[mdtid_ENCLog] = {4, 4};
+    widths[mdtid_ENCMap] = {4};
+    widths[mdtid_Assembly] = {4, 2, 2, 2, 2, 4};
+    widths[mdtid_AssemblyProcessor] = {4};
+    widths[mdtid_AssemblyOS] = {4, 4, 4};
+    widths[mdtid_AssemblyRef] = {2, 2, 2, 2, 4};
+    widths[mdtid_AssemblyRefProcessor] = {4};
+    widths[mdtid_AssemblyRefOS] = {4, 4, 4};
+    widths[mdtid_File] = {4};
+    widths[mdtid_ExportedType] = {4, 4};
+    widths[mdtid_ManifestResource] = {4, 4};
+    widths[mdtid_GenericParam] = {2, 2};
+#ifdef DNMD_PORTABLE_PDB
+    widths[mdtid_LocalScope] = {0, 0, 0, 0, 4, 4};
+    widths[mdtid_LocalVariable] = {2, 2};
+#endif
+    return widths;
+}
+
+inline constexpr auto constant_column_widths = make_constant_column_widths();
+
 template<mdtable_id_t Table>
 constexpr uint8_t constant_column_width(column<Table, column_type_constant> col) noexcept
 {
-    using namespace columns;
-    if constexpr (Table == mdtid_TypeDef || Table == mdtid_FieldLayout || Table == mdtid_FieldRva
-        || Table == mdtid_ENCLog || Table == mdtid_ENCMap
-        || Table == mdtid_AssemblyProcessor || Table == mdtid_AssemblyOS
-        || Table == mdtid_AssemblyRefProcessor || Table == mdtid_AssemblyRefOS
-        || Table == mdtid_File || Table == mdtid_ExportedType || Table == mdtid_ManifestResource
-#ifdef DNMD_PORTABLE_PDB
-        || Table == mdtid_LocalScope
-#endif
-        )
-    {
-        (void)col;
-        return 4;
-    }
-    else if constexpr (Table == mdtid_MethodDef)
-        return col.column_index == MethodDef_Rva.column_index ? 4 : 2;
-    else if constexpr (Table == mdtid_ClassLayout)
-        return col.column_index == ClassLayout_ClassSize.column_index ? 4 : 2;
-    else if constexpr (Table == mdtid_Assembly)
-        return col.column_index == Assembly_HashAlgId.column_index || col.column_index == Assembly_Flags.column_index ? 4 : 2;
-    else if constexpr (Table == mdtid_AssemblyRef)
-        return col.column_index == AssemblyRef_Flags.column_index ? 4 : 2;
-    else
-    {
-        static_assert(Table == mdtid_Module || Table == mdtid_Field || Table == mdtid_Param
-            || Table == mdtid_Constant || Table == mdtid_DeclSecurity || Table == mdtid_Event
-            || Table == mdtid_Property || Table == mdtid_MethodSemantics || Table == mdtid_ImplMap
-            || Table == mdtid_GenericParam
-#ifdef DNMD_PORTABLE_PDB
-            || Table == mdtid_LocalVariable
-#endif
-            , "The scalar column needs a fixed storage width.");
-        (void)col;
-        return 2;
-    }
+    static_assert(Table >= mdtid_First && Table < mdtid_End);
+    static_assert(std::tuple_size_v<decltype(table_columns<Table>())> <= constant_column_widths[Table].size());
+    static_assert([] {
+        for (auto width : constant_column_widths[Table])
+            if (width != 0)
+                return true;
+        return false;
+    }(), "The scalar column needs a fixed storage width.");
+    assert(static_cast<size_t>(col.column_index) < constant_column_widths[Table].size());
+    auto width = constant_column_widths[Table][col.column_index];
+    assert(width != 0);
+    return width;
 }
 
 template<typename Kind>

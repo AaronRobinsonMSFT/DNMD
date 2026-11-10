@@ -11,9 +11,9 @@ namespace dnmd
 
 enum class range_result
 {
-    found = 0,
-    not_found = 1,
-    not_supported = 2,
+    found,
+    not_found,
+    not_supported,
 };
 
 namespace detail

@@ -196,7 +196,7 @@ private:
     raw_cursor(mdtable_t& table, uint32_t row) noexcept : _table{&table}, _row{row}
     {
         assert(((table.table_id == TableIds) || ...));
-        assert(uint64_t{row} <= uint64_t{table.row_count} + 1);
+        assert(row == 0 || row - 1 <= table.row_count);
     }
 
     raw_cursor(mdcxt_t& context, mdToken token) noexcept
@@ -224,7 +224,7 @@ public:
 
     template<typename P, std::enable_if_t<detail::position_targets_subset<P, TableIds...>::value
         && !std::is_same_v<P, raw_cursor>, int> = 0>
-    raw_cursor(P const& other) noexcept
+    explicit raw_cursor(P const& other) noexcept
         : _table{detail::CursorTable(other)}, _row{detail::CursorRow(other)}
     {
     }
@@ -256,7 +256,7 @@ public:
         auto& c = detail::context(handle);
         if (table < mdtid_First || table >= mdtid_End
             || !((table == TableIds) || ...)
-            || uint64_t{row} > uint64_t{c.tables[table].row_count} + 1)
+            || (row != 0 && row - 1 > c.tables[table].row_count))
             return nil(handle);
         return raw_cursor{c.tables[table], row};
     }
@@ -279,10 +279,11 @@ public:
 
     bool move(int32_t delta) noexcept
     {
-        int64_t row = int64_t{_row} + delta;
-        if (row <= 0 || uint64_t(row) > uint64_t{_table->row_count} + 1 || row > UINT32_MAX)
+        uint32_t row = _row + static_cast<uint32_t>(delta);
+        if ((delta < 0 && row > _row) || (delta >= 0 && row < _row)
+            || row == 0 || row - 1 > _table->row_count)
             return false;
-        _row = static_cast<uint32_t>(row);
+        _row = row;
         return true;
     }
 
