@@ -12,12 +12,18 @@ namespace
         mdtid_MethodDef, mdtid_MemberRef, mdtid_Unused>;
     using indirect_method = dnmd::indirect_cursor<mdtid_MethodDef, mdtid_MethodPtr>;
 
-    static_assert(std::is_convertible_v<method, methods_and_fields>);
-    static_assert(std::is_convertible_v<dnmd::cursor<mdtid_MethodDef>, methods_and_fields>);
-    static_assert(std::is_convertible_v<constructor_reference, method_or_ref>);
-    static_assert(std::is_convertible_v<constructor_reference, dnmd::any_cursor>);
-    static_assert(std::is_convertible_v<indirect_method, dnmd::any_cursor>);
+    static_assert(!std::is_convertible_v<method, methods_and_fields>);
+    static_assert(!std::is_convertible_v<dnmd::cursor<mdtid_MethodDef>, methods_and_fields>);
+    static_assert(!std::is_convertible_v<constructor_reference, method_or_ref>);
+    static_assert(!std::is_convertible_v<constructor_reference, dnmd::any_cursor>);
+    static_assert(!std::is_convertible_v<indirect_method, dnmd::any_cursor>);
+    static_assert(std::is_nothrow_constructible_v<methods_and_fields, method>);
+    static_assert(std::is_nothrow_constructible_v<methods_and_fields, dnmd::cursor<mdtid_MethodDef>>);
+    static_assert(std::is_nothrow_constructible_v<method_or_ref, constructor_reference>);
+    static_assert(std::is_nothrow_constructible_v<dnmd::any_cursor, constructor_reference>);
+    static_assert(std::is_nothrow_constructible_v<dnmd::any_cursor, indirect_method>);
     static_assert(std::is_nothrow_constructible_v<dnmd::any_cursor, method>);
+    static_assert(std::is_convertible_v<method, method>);
     static_assert(!std::is_convertible_v<methods_and_fields, method>);
     static_assert(!std::is_convertible_v<method, dnmd::raw_cursor<mdtid_Field>>);
     static_assert(!std::is_convertible_v<indirect_method, method>);
@@ -67,8 +73,8 @@ TEST_F(CppCursorConversion, WideningPreservesNilLiveEndAndOwner)
     };
     for (auto const& original : positions)
     {
-        methods_and_fields widened = original;
-        dnmd::any_cursor erased = widened;
+        methods_and_fields widened{original};
+        dnmd::any_cursor erased{widened};
         mdToken expected;
         mdToken actual;
         ASSERT_TRUE(original.get_token(expected));
@@ -78,10 +84,10 @@ TEST_F(CppCursorConversion, WideningPreservesNilLiveEndAndOwner)
         EXPECT_EQ(expected, actual);
         EXPECT_EQ(static_cast<bool>(original), static_cast<bool>(widened));
         EXPECT_EQ(handle.get(), widened.get_handle());
-        callback(original);
+        callback(dnmd::any_cursor{original});
         EXPECT_EQ(expected, callback_tokens.back());
     }
-    callback(row);
+    callback(dnmd::any_cursor{row});
     EXPECT_EQ(CreateTokenType(mdtid_MethodDef) | dnmd::detail::CursorRow(row), callback_tokens.back());
     method explicitly_narrowed{methods_and_fields{row}};
     EXPECT_TRUE(explicitly_narrowed);
@@ -90,7 +96,7 @@ TEST_F(CppCursorConversion, WideningPreservesNilLiveEndAndOwner)
 TEST_F(CppCursorConversion, ReservedSlotsDoNotPreventWidening)
 {
     constructor_reference nil = constructor_reference::nil(handle.get());
-    method_or_ref widened = nil;
+    method_or_ref widened{nil};
     mdToken token;
     ASSERT_TRUE(widened.get_token(token));
     EXPECT_EQ(CreateTokenType(mdtid_MethodDef), token);
@@ -102,8 +108,8 @@ TEST_F(CppCursorConversion, TypedCreationAssignsSupersetAndPreservesEmptyTableId
 {
     auto owner = AddOwner();
     uint32_t count = 0x12345678;
-    dnmd::raw_cursor<mdtid_Module, mdtid_TypeDef, mdtid_TypeRef> position =
-        dnmd::md_create_cursor<mdtid_TypeDef>(handle.get(), &count);
+    using union_position = dnmd::raw_cursor<mdtid_Module, mdtid_TypeDef, mdtid_TypeRef>;
+    union_position position{dnmd::md_create_cursor<mdtid_TypeDef>(handle.get(), &count)};
     ASSERT_TRUE(position);
     EXPECT_EQ(dnmd::detail::CursorTable(owner)->row_count, count);
     mdToken token;
@@ -112,14 +118,14 @@ TEST_F(CppCursorConversion, TypedCreationAssignsSupersetAndPreservesEmptyTableId
     EXPECT_EQ(handle.get(), position.get_handle());
 
     count = 0x12345678;
-    position = dnmd::md_create_cursor<mdtid_TypeRef>(handle.get(), &count);
+    position = union_position{dnmd::md_create_cursor<mdtid_TypeRef>(handle.get(), &count)};
     EXPECT_FALSE(position);
     EXPECT_EQ(0x12345678u, count);
     ASSERT_TRUE(position.get_token(token));
     EXPECT_EQ(CreateTokenType(mdtid_TypeRef), token);
     EXPECT_EQ(handle.get(), position.get_handle());
 
-    position = dnmd::md_create_cursor<mdtid_TypeDef>(handle.get());
+    position = union_position{dnmd::md_create_cursor<mdtid_TypeDef>(handle.get())};
     EXPECT_TRUE(position);
 }
 
@@ -138,7 +144,7 @@ TEST_F(CppCursorConversion, IndirectWideningRetainsSourceRatherThanTarget)
         indirect_method::nil(handle.get()), current, indirect_method::end(handle.get())};
     for (auto const& original : positions)
     {
-        dnmd::any_cursor widened = original;
+        dnmd::any_cursor widened{original};
         mdToken source;
         mdToken target;
         mdToken actual;

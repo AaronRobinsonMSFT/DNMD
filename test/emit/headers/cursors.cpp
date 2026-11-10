@@ -135,7 +135,7 @@ TEST_F(CppHeader, TableIdentityIncludesNilAndEndPositions)
     dnmd::raw_cursor<mdtid_Unused, mdtid_TypeRef> invalid{handle, 0xff000001};
     EXPECT_TRUE(invalid.is<mdtid_TypeRef>());
     EXPECT_TRUE(invalid.is_nil());
-    dnmd::any_cursor widened = invalid;
+    dnmd::any_cursor widened{invalid};
     EXPECT_TRUE(widened.is<mdtid_TypeRef>());
     EXPECT_TRUE(widened.is_nil());
 }
