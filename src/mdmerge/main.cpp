@@ -18,7 +18,7 @@ bool apply_deltas(mdhandle_t handle, std::vector<char const*>& deltas, std::vect
             return false;
         }
 
-        mdhandle_ptr delta;
+        dnmd::handle_ptr delta;
         if (!create_mdhandle(d, delta))
         {
             std::fprintf(stderr, "Failed to create handle for '%s'.\n", p);
@@ -71,7 +71,7 @@ void merge(merge_config_t cfg)
 
     std::printf("Loaded '%s'.\n    Metadata blob size %zu bytes\n", cfg.path, b.size());
 
-    mdhandle_ptr handle;
+    dnmd::handle_ptr handle;
     if (!create_mdhandle(b, handle)
         || !apply_deltas(handle.get(), cfg.delta_paths, cfg.data)
         || !md_validate(handle.get()))
@@ -82,7 +82,7 @@ void merge(merge_config_t cfg)
     size_t save_size;
     md_write_to_buffer(handle.get(), nullptr, &save_size);
     malloc_span<uint8_t> out_buffer { (uint8_t*)malloc(save_size), save_size };
-    if (!md_write_to_buffer(handle.get(), out_buffer, &save_size))
+    if (!md_write_to_buffer(handle.get(), out_buffer.begin(), &save_size))
     {
         std::fprintf(stderr, "Failed to save image.\n");
     }

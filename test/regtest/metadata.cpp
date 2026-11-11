@@ -1625,14 +1625,14 @@ TEST(FindTest, FindAPIs)
     malloc_span<uint8_t> metadata = GetRegressionAssemblyMetadata();
 
     dncp::com_ptr<IMetaDataImport2> baselineImport;
-    ASSERT_HRESULT_SUCCEEDED(CreateImport(TestBaseline::Metadata, metadata, (uint32_t)metadata.size(), &baselineImport));
+    ASSERT_HRESULT_SUCCEEDED(CreateImport(TestBaseline::Metadata, static_cast<uint8_t const*>(metadata), (uint32_t)metadata.size(), &baselineImport));
     // Load metadata
     dncp::com_ptr<IMetaDataImport2> currentImport;
 
     dncp::com_ptr<IMetaDataDispenser> dispenser;
     ASSERT_HRESULT_SUCCEEDED(GetDispenser(IID_IMetaDataDispenser, (void**)&dispenser));
 
-    ASSERT_HRESULT_SUCCEEDED(CreateImport(dispenser, metadata, (uint32_t)metadata.size(), &currentImport));
+    ASSERT_HRESULT_SUCCEEDED(CreateImport(dispenser, static_cast<uint8_t const*>(metadata), (uint32_t)metadata.size(), &currentImport));
 
     static auto FindTokenByName = [](IMetaDataImport2* import, LPCWSTR name, mdToken enclosing = mdTokenNil) -> mdToken
     {
@@ -1768,7 +1768,7 @@ TEST_P(MetadataImportTest, ImportAPIs)
 {
     auto param = GetParam();
     span<uint8_t> blob = GetMetadataForFile(param);
-    void const* data = blob;
+    void const* data = static_cast<uint8_t const*>(blob);
     uint32_t dataLen = (uint32_t)blob.size();
 
     // Load metadata
@@ -2005,7 +2005,7 @@ TEST_P(MetaDataLongRunningTest, ImportAPIs)
 {
     auto param = GetParam();
     span<uint8_t> blob = GetMetadataForFile(param);
-    void const* data = blob;
+    void const* data = static_cast<uint8_t const*>(blob);
     uint32_t dataLen = (uint32_t)blob.size();
 
     // Load metadata

@@ -9,7 +9,6 @@ set(SOURCES
 
 add_executable(regfuzz ${SOURCES} ${HEADERS})
 target_link_libraries(regfuzz PRIVATE dnmd::interfaces gtest gmock dncp::dncp regpal) # Reference gmock for better collection assertions
-set_target_properties(regfuzz PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON) # Require C++17 for the tests so we can use std::filesystem.
 
 target_compile_definitions(regfuzz PRIVATE COM_NO_WINDOWS_H)
 

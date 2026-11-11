@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+_Static_assert(sizeof(mdtcol_t) == 2, "Column layout metadata must use 16-bit storage.");
 
 static bool check_user_string(mdhandle_t handle, mduserstringcursor_t start)
 {

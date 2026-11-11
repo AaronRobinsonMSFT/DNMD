@@ -76,6 +76,22 @@ bool try_get_user_string(mdcxt_t* cxt, size_t offset, mduserstring_t* str, size_
     return true;
 }
 
+bool md_walk_user_string_heap(mdhandle_t handle, mduserstringcursor_t* cursor, mduserstring_t* str, uint32_t* offset)
+{
+    mdcxt_t* cxt = extract_mdcxt(handle);
+    if (cxt == NULL)
+        return false;
+
+    assert(cursor != NULL);
+    *offset = (uint32_t)*cursor;
+    size_t next_offset;
+    if (!try_get_user_string(cxt, *offset, str, &next_offset))
+        return false;
+
+    *cursor = (mduserstringcursor_t)next_offset;
+    return true;
+}
+
 bool validate_user_string_heap(mdcxt_t* cxt)
 {
     assert(cxt != NULL);
@@ -113,6 +129,8 @@ bool try_get_blob(mdcxt_t* cxt, size_t offset, uint8_t const** blob, uint32_t* b
     size_t data_len = h->size - offset;
     uint32_t byte_count;
     if (!decompress_u32(&ptr, &data_len, &byte_count))
+        return false;
+    if (byte_count > data_len)
         return false;
 
     *blob = ptr;
@@ -259,6 +277,13 @@ bool initialize_tables(mdcxt_t* cxt)
     }
 #endif // DNMD_PORTABLE_PDB
 
+    // Empty element tables still need to know whether their Ptr table is present.
+    for (mdtable_id_t id = mdtid_First; id < mdtid_End; ++id)
+    {
+        mdtable_id_t indirect = get_corresponding_indirection_table(id);
+        cxt->tables[id].has_indirect_table = indirect != mdtid_Unused && row_counts[indirect] != 0;
+    }
+
     mdtable_t* table;
     valid = valid_tables;
     for (size_t i = 0; valid; ++i)
@@ -276,87 +301,10 @@ bool initialize_tables(mdcxt_t* cxt)
             if (!consume_table_rows(table, &curr, &curr_len))
                 return false;
 
-            // Store the context on the table as an indication of fully initialized.
-            table->cxt = cxt;
+            table->is_initialized = true;
         }
         sorted_tables = sorted_tables >> 1;
         valid = valid >> 1;
-    }
-
-    return true;
-}
-
-bool validate_tables(mdcxt_t* cxt)
-{
-    assert(cxt != NULL);
-
-    // [TODO] Reference ECMA-335 and encode table verification.
-
-    // Do not allow the *Ptr indirection tables
-    // to be present in a compressed table heap (#~).
-    if (!(cxt->context_flags & mdc_uncompressed_table_heap))
-    {
-        for (size_t i = 0; i < MDTABLE_MAX_COUNT; ++i)
-        {
-            if (table_is_indirect_table((mdtable_id_t)i) && cxt->tables[i].row_count != 0)
-                return false;
-        }
-    }
-
-    // II.22 - Validate that tables marked as sorted are actually sorted.
-    for (size_t i = 0; i < MDTABLE_MAX_COUNT; ++i)
-    {
-        mdtable_t* table = &cxt->tables[i];
-        if (!table->is_sorted || table->row_count <= 1)
-            continue;
-
-        md_key_info_t const* keys;
-        uint8_t key_count = get_table_keys((mdtable_id_t)i, &keys);
-        if (key_count == 0)
-            continue;
-
-        for (uint32_t r = 1; r < table->row_count; ++r)
-        {
-            mdcursor_t row = create_cursor(table, r);
-            mdcursor_t next_row = create_cursor(table, r + 1);
-
-            for (uint8_t k = 0; k < key_count; ++k)
-            {
-                col_index_t key_col = index_to_col(keys[k].index, (mdtable_id_t)i);
-
-                access_cxt_t row_acxt;
-                if (!create_access_context(&row, key_col, false, &row_acxt))
-                    return false;
-
-                access_cxt_t next_acxt;
-                if (!create_access_context(&next_row, key_col, false, &next_acxt))
-                    return false;
-
-                uint32_t row_value;
-                if (!read_column_data(&row_acxt, &row_value))
-                    return false;
-
-                uint32_t next_value;
-                if (!read_column_data(&next_acxt, &next_value))
-                    return false;
-
-                // Compare by sort direction - ascending or descending.
-                if (keys[k].descending)
-                {
-                    if (row_value < next_value)
-                        return false;
-                    if (row_value > next_value)
-                        break;
-                }
-                else
-                {
-                    if (row_value > next_value)
-                        return false;
-                    if (row_value < next_value)
-                        break;
-                }
-            }
-        }
     }
 
     return true;
@@ -430,33 +378,45 @@ bool try_get_pdb(mdcxt_t* cxt, md_pdb_t* pdb)
 #endif // !DNMD_PORTABLE_PDB
 }
 
-mdstream_t* get_heap_by_id(mdcxt_t* cxt, mdtcol_t heap_id)
+#ifdef DNMD_PORTABLE_PDB
+bool get_referenced_type_system_table_row_counts(mdcxt_t* cxt, uint32_t* row_counts)
+{
+    assert(row_counts != NULL);
+    md_pdb_t pdb;
+    if (!try_get_pdb(cxt, &pdb))
+        return false;
+    memcpy(row_counts, pdb.type_system_table_rows, sizeof(*row_counts) * mdtid_FirstPdb);
+    return true;
+}
+#endif
+
+mdstream_t* get_heap_by_id(mdcxt_t* cxt, mdheap_id_t heap_id)
 {
     assert(cxt != NULL);
     switch (heap_id)
     {
-        case mdtc_hblob:
+        case mdhid_Blob:
             return &cxt->blob_heap;
-        case mdtc_hguid:
+        case mdhid_Guid:
             return &cxt->guid_heap;
-        case mdtc_hstring:
+        case mdhid_String:
             return &cxt->strings_heap;
-        case mdtc_hus:
+        case mdhid_UserString:
             return &cxt->user_string_heap;
         default:
             return NULL;
     }
 }
 
-mdcxt_flag_t get_large_heap_flag(mdtcol_t heap_id)
+mdcxt_flag_t get_large_heap_flag(mdheap_id_t heap_id)
 {
     switch (heap_id)
     {
-    case mdtc_hblob:
+    case mdhid_Blob:
         return mdc_large_blob_heap;
-    case mdtc_hguid:
+    case mdhid_Guid:
         return mdc_large_guid_heap;
-    case mdtc_hstring:
+    case mdhid_String:
         return mdc_large_string_heap;
     default:
         return 0;
