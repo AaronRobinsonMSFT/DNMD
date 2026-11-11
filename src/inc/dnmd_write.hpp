@@ -30,7 +30,7 @@ bool update_referenced_type_system_table_row_count(::mdcxt__* context, mdtable_i
 }
 
 template<mdtable_id_t Table, mdtable_id_t... Tables>
-inline bool initialize_new_table_details(mdcxt_t* context, table_sequence<Tables...>) noexcept
+bool initialize_new_table_details(mdcxt_t* context, table_sequence<Tables...>) noexcept
 {
     auto& table = context->tables[Table];
     assert(table.cxt == context && !table.is_initialized);
@@ -44,13 +44,13 @@ inline bool initialize_new_table_details(mdcxt_t* context, table_sequence<Tables
 }
 
 template<mdtable_id_t Table>
-inline bool initialize_new_table_details(mdcxt_t* context) noexcept
+bool initialize_new_table_details(mdcxt_t* context) noexcept
 {
     return initialize_new_table_details<Table>(context, all_tables{});
 }
 
 template<mdtable_id_t... Targets>
-inline bool initialize_new_table_details(raw_cursor<Targets...> const& position) noexcept
+bool initialize_new_table_details(raw_cursor<Targets...> const& position) noexcept
 {
     auto table = CursorTable(position);
     return ((table->table_id == Targets && initialize_new_table_details<Targets>(table->cxt)) || ...);
@@ -78,7 +78,7 @@ bool add_row_to_list(cursor<mdtid_LocalScope> owner, decltype(columns::LocalScop
 #endif
 
 template<size_t Key = 0, mdtable_id_t TableId>
-inline bool rows_sorted(cursor<TableId> first, cursor<TableId> second) noexcept
+bool rows_sorted(cursor<TableId> first, cursor<TableId> second) noexcept
 {
     constexpr auto keys = table_sort_keys<TableId>();
     if constexpr (Key == std::tuple_size_v<decltype(keys)>)
@@ -95,7 +95,7 @@ inline bool rows_sorted(cursor<TableId> first, cursor<TableId> second) noexcept
 }
 
 template<mdtable_id_t TableId>
-inline bool validate_row_sorted_within_table(cursor<TableId> row) noexcept
+bool validate_row_sorted_within_table(cursor<TableId> row) noexcept
 {
     auto table = CursorTable(row);
     uint32_t index = CursorRow(row);
@@ -105,7 +105,7 @@ inline bool validate_row_sorted_within_table(cursor<TableId> row) noexcept
 }
 
 template<mdtable_id_t TableId, typename ColumnType>
-inline void update_column_sort_order(cursor<TableId> row, column<TableId, ColumnType> col) noexcept
+void update_column_sort_order(cursor<TableId> row, column<TableId, ColumnType> col) noexcept
 {
     auto table = CursorTable(row);
     if (!table->is_sorted || table->is_adding_new_row)
@@ -285,87 +285,87 @@ public:
 };
 
 template<mdtable_id_t TableId>
-inline bool cursor<TableId>::set_column_value(column<TableId, column_type_constant> column, uint32_t value) const noexcept
+bool cursor<TableId>::set_column_value(column<TableId, column_type_constant> column, uint32_t value) const noexcept
 {
     return row_writer<TableId>{*this}.write(column, value);
 }
 
 template<mdtable_id_t TableId>
-inline bool cursor<TableId>::set_column_value(column<TableId, column_type_string> column, char const* value) const noexcept
+bool cursor<TableId>::set_column_value(column<TableId, column_type_string> column, char const* value) const noexcept
 {
     return row_writer<TableId>{*this}.write(column, value);
 }
 
 template<mdtable_id_t TableId>
-inline bool cursor<TableId>::set_column_value(column<TableId, column_type_blob> column, uint8_t const* value, uint32_t length) const noexcept
+bool cursor<TableId>::set_column_value(column<TableId, column_type_blob> column, uint8_t const* value, uint32_t length) const noexcept
 {
     return row_writer<TableId>{*this}.write(column, value, length);
 }
 
 template<mdtable_id_t TableId>
-inline bool cursor<TableId>::set_column_value(column<TableId, column_type_guid> column, mdguid_t value) const noexcept
+bool cursor<TableId>::set_column_value(column<TableId, column_type_guid> column, mdguid_t value) const noexcept
 {
     return row_writer<TableId>{*this}.write(column, value);
 }
 
 template<mdtable_id_t TableId>
-inline bool cursor<TableId>::set_column_value(column<TableId, column_type_userstring> column, char16_t const* value) const noexcept
+bool cursor<TableId>::set_column_value(column<TableId, column_type_userstring> column, char16_t const* value) const noexcept
 {
     return row_writer<TableId>{*this}.write(column, value);
 }
 
 template<mdtable_id_t TableId>
 template<mdtable_id_t... TargetTableIds>
-inline bool cursor<TableId>::set_column_value(column<TableId, raw_cursor<TargetTableIds...>> column, mdToken value) const noexcept
+bool cursor<TableId>::set_column_value(column<TableId, raw_cursor<TargetTableIds...>> column, mdToken value) const noexcept
 {
     return row_writer<TableId>{*this}.write(column, value);
 }
 
 template<mdtable_id_t TableId>
 template<mdtable_id_t... TargetTableIds, mdtable_id_t ValueTableId>
-inline bool cursor<TableId>::set_column_value(column<TableId, raw_cursor<TargetTableIds...>> column, cursor<ValueTableId> value) const noexcept
+bool cursor<TableId>::set_column_value(column<TableId, raw_cursor<TargetTableIds...>> column, cursor<ValueTableId> value) const noexcept
 {
     return row_writer<TableId>{*this}.write(column, value);
 }
 
 template<mdtable_id_t TableId>
 template<mdtable_id_t... TargetTableIds, mdtable_id_t... ValueTableIds>
-inline bool cursor<TableId>::set_column_value(column<TableId, raw_cursor<TargetTableIds...>> column, raw_cursor<ValueTableIds...> const& value) const noexcept
+bool cursor<TableId>::set_column_value(column<TableId, raw_cursor<TargetTableIds...>> column, raw_cursor<ValueTableIds...> const& value) const noexcept
 {
     return row_writer<TableId>{*this}.write(column, value);
 }
 
 template<mdtable_id_t TableId>
 template<mdtable_id_t... TargetTableIds, mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
-inline bool cursor<TableId>::set_column_value(column<TableId, raw_cursor<TargetTableIds...>> column, indirect_cursor<DirectTableId, IndirectTableId> const& value) const noexcept
+bool cursor<TableId>::set_column_value(column<TableId, raw_cursor<TargetTableIds...>> column, indirect_cursor<DirectTableId, IndirectTableId> const& value) const noexcept
 {
     return row_writer<TableId>{*this}.write(column, value);
 }
 
 template<mdtable_id_t TableId>
 template<mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
-inline bool cursor<TableId>::set_column_value(column<TableId, indirect_cursor<DirectTableId, IndirectTableId>> column, mdToken value) const noexcept
+bool cursor<TableId>::set_column_value(column<TableId, indirect_cursor<DirectTableId, IndirectTableId>> column, mdToken value) const noexcept
 {
     return row_writer<TableId>{*this}.write(column, value);
 }
 
 template<mdtable_id_t TableId>
 template<mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId, mdtable_id_t ValueTableId>
-inline bool cursor<TableId>::set_column_value(column<TableId, indirect_cursor<DirectTableId, IndirectTableId>> column, cursor<ValueTableId> value) const noexcept
+bool cursor<TableId>::set_column_value(column<TableId, indirect_cursor<DirectTableId, IndirectTableId>> column, cursor<ValueTableId> value) const noexcept
 {
     return row_writer<TableId>{*this}.write(column, value);
 }
 
 template<mdtable_id_t TableId>
 template<mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId, mdtable_id_t... ValueTableIds>
-inline bool cursor<TableId>::set_column_value(column<TableId, indirect_cursor<DirectTableId, IndirectTableId>> column, raw_cursor<ValueTableIds...> const& value) const noexcept
+bool cursor<TableId>::set_column_value(column<TableId, indirect_cursor<DirectTableId, IndirectTableId>> column, raw_cursor<ValueTableIds...> const& value) const noexcept
 {
     return row_writer<TableId>{*this}.write(column, value);
 }
 
 template<mdtable_id_t TableId>
 template<mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
-inline bool cursor<TableId>::set_column_value(column<TableId, indirect_cursor<DirectTableId, IndirectTableId>> column, indirect_cursor<DirectTableId, IndirectTableId> const& value) const noexcept
+bool cursor<TableId>::set_column_value(column<TableId, indirect_cursor<DirectTableId, IndirectTableId>> column, indirect_cursor<DirectTableId, IndirectTableId> const& value) const noexcept
 {
     return row_writer<TableId>{*this}.write(column, value);
 }
@@ -373,7 +373,7 @@ inline bool cursor<TableId>::set_column_value(column<TableId, indirect_cursor<Di
 namespace detail
 {
 template<mdtable_id_t Owner, typename Kind, mdtable_id_t... Targets>
-inline bool initialize_list_column(cursor<Owner> owner, column<Owner, Kind> col,
+bool initialize_list_column(cursor<Owner> owner, column<Owner, Kind> col,
     raw_cursor<Targets...> target_position) noexcept
 {
     auto target = CursorTable(target_position);
@@ -387,7 +387,7 @@ inline bool initialize_list_column(cursor<Owner> owner, column<Owner, Kind> col,
 }
 
 template<mdtable_id_t Owner, mdtable_id_t Direct, mdtable_id_t Ptr>
-inline bool initialize_list_column(cursor<Owner> owner,
+bool initialize_list_column(cursor<Owner> owner,
     column<Owner, indirect_cursor<Direct, Ptr>> col) noexcept
 {
     auto source = CursorTable(owner);
@@ -396,13 +396,13 @@ inline bool initialize_list_column(cursor<Owner> owner,
 }
 
 template<mdtable_id_t Owner, mdtable_id_t Direct>
-inline bool initialize_list_column(cursor<Owner> owner, column<Owner, raw_cursor<Direct>> col) noexcept
+bool initialize_list_column(cursor<Owner> owner, column<Owner, raw_cursor<Direct>> col) noexcept
 {
     return initialize_list_column(owner, col, raw_cursor<Direct>::nil(owner.get_handle()));
 }
 
 template<mdtable_id_t Table>
-inline bool initialize_list_columns(cursor<Table> row) noexcept
+bool initialize_list_columns(cursor<Table> row) noexcept
 {
     if constexpr (Table == mdtid_TypeDef || Table == mdtid_MethodDef
         || Table == mdtid_EventMap || Table == mdtid_PropertyMap)
@@ -416,7 +416,7 @@ inline bool initialize_list_columns(cursor<Table> row) noexcept
 }
 
 template<mdtable_id_t Table>
-inline bool append_row(mdcxt_t* context, uint32_t* row) noexcept
+bool append_row(mdcxt_t* context, uint32_t* row) noexcept
 {
     // Append to the end of an already initialized table.
     auto& table = context->tables[Table];
@@ -427,7 +427,7 @@ inline bool append_row(mdcxt_t* context, uint32_t* row) noexcept
 }
 
 template<mdtable_id_t Table>
-inline bool append_row_to_table(mdcxt_t* context, uint32_t* row) noexcept
+bool append_row_to_table(mdcxt_t* context, uint32_t* row) noexcept
 {
     static_assert(Table >= mdtid_First && Table < mdtid_End);
     if (row == nullptr)
@@ -459,7 +459,7 @@ inline bool append_row_to_table(mdcxt_t* context, uint32_t* row) noexcept
 }
 
 template<mdtable_id_t Table>
-inline bool insert_row_relative(raw_cursor<Table> relative, bool after, uint32_t* row) noexcept
+bool insert_row_relative(raw_cursor<Table> relative, bool after, uint32_t* row) noexcept
 {
     if (row == nullptr)
         return false;
@@ -604,7 +604,7 @@ public:
 };
 
 template<mdtable_id_t Owner, mdtable_id_t Direct, mdtable_id_t Ptr>
-inline added_row<Direct> md_add_new_row_to_list(cursor<Owner> owner,
+added_row<Direct> md_add_new_row_to_list(cursor<Owner> owner,
     column<Owner, indirect_cursor<Direct, Ptr>> list) noexcept
 {
     static_assert(Ptr == detail::pointer_table_id<Direct>());

@@ -37,7 +37,7 @@ bool get_referenced_type_system_table_row_counts(mdcxt_t* context, uint32_t* row
 }
 
 template<mdtable_id_t Direct, mdtable_id_t Ptr>
-inline bool create_and_fill_indirect_table(mdcxt_t* context) noexcept
+bool create_and_fill_indirect_table(mdcxt_t* context) noexcept
 {
     static_assert(pointer_table_id<Direct>() == Ptr);
     return initialize_new_table_details<Ptr>(context)

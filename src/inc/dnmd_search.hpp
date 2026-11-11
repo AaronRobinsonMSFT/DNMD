@@ -19,7 +19,7 @@ enum class range_result
 namespace detail
 {
 template<mdtable_id_t TableId, typename ColumnType>
-inline bool sorted_search(mdtable_t const* table, column<TableId, ColumnType> col) noexcept
+bool sorted_search(mdtable_t const* table, column<TableId, ColumnType> col) noexcept
 {
     constexpr auto keys = table_sort_keys<TableId>();
     if constexpr (std::tuple_size_v<decltype(keys)> == 0)
@@ -30,20 +30,20 @@ inline bool sorted_search(mdtable_t const* table, column<TableId, ColumnType> co
 }
 
 template<mdtable_id_t TableId, typename ColumnType, mdtable_id_t ValueTableId>
-inline bool search_token(column<TableId, ColumnType>, cursor<ValueTableId> const& value, mdToken& token) noexcept
+bool search_token(column<TableId, ColumnType>, cursor<ValueTableId> const& value, mdToken& token) noexcept
 {
     token = CreateTokenType(ValueTableId) | CursorRow(value);
     return true;
 }
 
 template<mdtable_id_t TableId, typename ColumnType, mdtable_id_t... ValueTableIds>
-inline bool search_token(column<TableId, ColumnType>, raw_cursor<ValueTableIds...> const& value, mdToken& token) noexcept
+bool search_token(column<TableId, ColumnType>, raw_cursor<ValueTableIds...> const& value, mdToken& token) noexcept
 {
     return value.get_token(token);
 }
 
 template<mdtable_id_t TableId, typename ColumnType, mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
-inline bool search_token(column<TableId, ColumnType>, indirect_cursor<DirectTableId, IndirectTableId> const& value, mdToken& token) noexcept
+bool search_token(column<TableId, ColumnType>, indirect_cursor<DirectTableId, IndirectTableId> const& value, mdToken& token) noexcept
 {
     if constexpr (std::is_same_v<ColumnType, indirect_cursor<DirectTableId, IndirectTableId>>)
         return value.get_token(token);
@@ -52,20 +52,20 @@ inline bool search_token(column<TableId, ColumnType>, indirect_cursor<DirectTabl
 }
 
 template<mdtable_id_t TableId>
-inline bool search_value(mdtable_t const*, column<TableId, column_type_constant>, uint32_t value, uint32_t& raw) noexcept
+bool search_value(mdtable_t const*, column<TableId, column_type_constant>, uint32_t value, uint32_t& raw) noexcept
 {
     raw = value;
     return true;
 }
 
 template<mdtable_id_t TableId, mdtable_id_t... TargetTableIds>
-inline bool search_value(mdtable_t const*, column<TableId, raw_cursor<TargetTableIds...>>, mdToken value, uint32_t& raw) noexcept
+bool search_value(mdtable_t const*, column<TableId, raw_cursor<TargetTableIds...>>, mdToken value, uint32_t& raw) noexcept
 {
     return column_reference_codec<TargetTableIds...>::encode(value, raw);
 }
 
 template<mdtable_id_t TableId, mdtable_id_t DirectTableId, mdtable_id_t IndirectTableId>
-inline bool search_value(mdtable_t const* table,
+bool search_value(mdtable_t const* table,
     column<TableId, indirect_cursor<DirectTableId, IndirectTableId>>, mdToken value, uint32_t& raw) noexcept
 {
     if (static_cast<mdtable_id_t>(ExtractTokenType(value)) != list_target_table<DirectTableId, IndirectTableId>(table->cxt))
@@ -75,7 +75,7 @@ inline bool search_value(mdtable_t const* table,
 }
 
 template<mdtable_id_t TableId, typename ColumnType>
-inline raw_cursor<TableId> find_row(cursor<TableId> begin, column<TableId, ColumnType> col, uint32_t value) noexcept
+raw_cursor<TableId> find_row(cursor<TableId> begin, column<TableId, ColumnType> col, uint32_t value) noexcept
 {
     column_iterator first{begin, col};
     auto last = first.end();
@@ -89,7 +89,7 @@ inline raw_cursor<TableId> find_row(cursor<TableId> begin, column<TableId, Colum
 
 template<mdtable_id_t TableId, typename ColumnType,
     std::enable_if_t<detail::searchable_column<ColumnType>::value, int> = 0>
-inline raw_cursor<TableId> md_find_row_from_cursor(cursor<TableId> begin, column<TableId, ColumnType> col, uint32_t value) noexcept
+raw_cursor<TableId> md_find_row_from_cursor(cursor<TableId> begin, column<TableId, ColumnType> col, uint32_t value) noexcept
 {
     uint32_t encoded;
     if (!detail::search_value(detail::CursorTable(begin), col, value, encoded))
@@ -99,7 +99,7 @@ inline raw_cursor<TableId> md_find_row_from_cursor(cursor<TableId> begin, column
 
 template<mdtable_id_t TableId, typename ColumnType, typename Value,
     std::enable_if_t<detail::search_reference_value<ColumnType, Value>::value, int> = 0>
-inline raw_cursor<TableId> md_find_row_from_cursor(cursor<TableId> begin, column<TableId, ColumnType> col,
+raw_cursor<TableId> md_find_row_from_cursor(cursor<TableId> begin, column<TableId, ColumnType> col,
     Value const& value) noexcept
 {
     mdToken token;
@@ -110,7 +110,7 @@ inline raw_cursor<TableId> md_find_row_from_cursor(cursor<TableId> begin, column
 
 template<mdtable_id_t TableId, typename ColumnType,
     std::enable_if_t<detail::searchable_column<ColumnType>::value, int> = 0>
-inline range_result md_find_range_from_cursor(cursor<TableId> begin,
+range_result md_find_range_from_cursor(cursor<TableId> begin,
     column<TableId, ColumnType> col, uint32_t value,
     raw_cursor<TableId>& start, uint32_t* count) noexcept
 {
@@ -132,7 +132,7 @@ inline range_result md_find_range_from_cursor(cursor<TableId> begin,
 
 template<mdtable_id_t TableId, typename ColumnType, typename Value,
     std::enable_if_t<detail::search_reference_value<ColumnType, Value>::value, int> = 0>
-inline range_result md_find_range_from_cursor(cursor<TableId> begin, column<TableId, ColumnType> col,
+range_result md_find_range_from_cursor(cursor<TableId> begin, column<TableId, ColumnType> col,
     Value const& value, raw_cursor<TableId>& start, uint32_t* count) noexcept
 {
     mdToken token;
@@ -144,7 +144,7 @@ inline range_result md_find_range_from_cursor(cursor<TableId> begin, column<Tabl
 namespace detail
 {
 template<mdtable_id_t ElementTableId, mdtable_id_t OwnerTableId, typename ColumnType>
-inline raw_cursor<OwnerTableId> find_list_owner(cursor<ElementTableId> element,
+raw_cursor<OwnerTableId> find_list_owner(cursor<ElementTableId> element,
     column<OwnerTableId, ColumnType> col) noexcept
 {
     auto element_table = CursorTable(element);
@@ -201,7 +201,7 @@ inline raw_cursor<OwnerTableId> find_list_owner(cursor<ElementTableId> element,
 }
 
 template<mdtable_id_t ElementTableId, mdtable_id_t ParentTableId>
-inline bool md_find_cursor_of_range_element(cursor<ElementTableId> element, raw_cursor<ParentTableId>& parent) noexcept
+bool md_find_cursor_of_range_element(cursor<ElementTableId> element, raw_cursor<ParentTableId>& parent) noexcept
 {
     static_assert(detail::parent_table_id<ElementTableId>() != mdtid_Unused, "The row must belong to a list.");
     static_assert(ParentTableId == detail::parent_table_id<ElementTableId>(), "The parent table type is incorrect.");
@@ -219,7 +219,7 @@ inline bool md_find_cursor_of_range_element(cursor<ElementTableId> element, raw_
 }
 
 template<mdtable_id_t TableId>
-inline bool md_find_token_of_range_element(cursor<TableId> element, mdToken& token) noexcept
+bool md_find_token_of_range_element(cursor<TableId> element, mdToken& token) noexcept
 {
     static_assert(detail::parent_table_id<TableId>() != mdtid_Unused, "The row must belong to a list.");
     auto parent = raw_cursor<detail::parent_table_id<TableId>()>::nil(element.get_handle());
@@ -227,7 +227,7 @@ inline bool md_find_token_of_range_element(cursor<TableId> element, mdToken& tok
 }
 
 template<mdtable_id_t TableId>
-inline bool cursor<TableId>::get_parent_token(mdToken& tk) const noexcept
+bool cursor<TableId>::get_parent_token(mdToken& tk) const noexcept
 {
     static_assert(detail::parent_table_id<TableId>() != mdtid_Unused, "The row must belong to a list.");
     return dnmd::md_find_token_of_range_element(*this, tk);

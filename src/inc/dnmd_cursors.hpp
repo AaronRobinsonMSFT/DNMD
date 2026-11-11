@@ -30,8 +30,8 @@ struct cursor_access
     }
 };
 
-template<typename P> inline mdtable_t* CursorTable(P const& p) noexcept { return cursor_access::table(p); }
-template<typename P> inline uint32_t CursorRow(P const& p) noexcept { return cursor_access::row(p); }
+template<typename P> mdtable_t* CursorTable(P const& p) noexcept { return cursor_access::table(p); }
+template<typename P> uint32_t CursorRow(P const& p) noexcept { return cursor_access::row(p); }
 
 inline bool is_valid_token(mdcxt_t const& c, mdToken token) noexcept
 {
@@ -430,12 +430,12 @@ using any_cursor = raw_cursor<
 
 
 template<typename P>
-inline auto md_cursor_move(P& p, int32_t delta) noexcept -> decltype(p.move(delta)) { return p.move(delta); }
+auto md_cursor_move(P& p, int32_t delta) noexcept -> decltype(p.move(delta)) { return p.move(delta); }
 template<typename P>
-inline auto md_cursor_next(P& p) noexcept -> decltype(p.move(1)) { return p.move(1); }
+auto md_cursor_next(P& p) noexcept -> decltype(p.move(1)) { return p.move(1); }
 
 template<mdtable_id_t T>
-inline raw_cursor<T> md_create_cursor(mdhandle_t handle, uint32_t* count) noexcept
+raw_cursor<T> md_create_cursor(mdhandle_t handle, uint32_t* count) noexcept
 {
     if (count == nullptr)
         return raw_cursor<T>::nil(handle);
@@ -445,9 +445,9 @@ inline raw_cursor<T> md_create_cursor(mdhandle_t handle, uint32_t* count) noexce
     return result;
 }
 template<mdtable_id_t T>
-inline raw_cursor<T> md_create_cursor(mdhandle_t handle) noexcept { return raw_cursor<T>{handle, CreateTokenType(T) | 1}; }
+raw_cursor<T> md_create_cursor(mdhandle_t handle) noexcept { return raw_cursor<T>{handle, CreateTokenType(T) | 1}; }
 template<mdtable_id_t... T>
-inline raw_cursor<T...> md_token_to_cursor(mdhandle_t handle, mdToken token) noexcept { return raw_cursor<T...>{handle, token}; }
+raw_cursor<T...> md_token_to_cursor(mdhandle_t handle, mdToken token) noexcept { return raw_cursor<T...>{handle, token}; }
 inline bool md_is_valid_token(mdhandle_t handle, mdToken token) noexcept
 {
     auto c = detail::extract_mdcxt(handle);

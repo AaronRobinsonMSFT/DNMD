@@ -646,13 +646,13 @@ constexpr mdtable_id_t select_list_target(bool indirect) noexcept
 }
 
 template<mdtable_id_t Direct, mdtable_id_t Ptr>
-inline mdtable_id_t list_target_table(mdcxt_t const* context) noexcept
+mdtable_id_t list_target_table(mdcxt_t const* context) noexcept
 {
     return select_list_target<Direct, Ptr>(context->tables[Direct].has_indirect_table);
 }
 
 template<mdtable_id_t Owner, typename Kind>
-inline mdtable_id_t list_target_table(mdcxt_t const* context, column<Owner, Kind>) noexcept
+mdtable_id_t list_target_table(mdcxt_t const* context, column<Owner, Kind>) noexcept
 {
     using traits = list_traits<Kind>;
     if constexpr (traits::pointer == mdtid_Unused)
@@ -662,7 +662,7 @@ inline mdtable_id_t list_target_table(mdcxt_t const* context, column<Owner, Kind
 }
 
 template<mdtable_id_t Owner, typename Kind>
-inline uint32_t list_end_row(mdtable_t const* source, column<Owner, Kind> col) noexcept
+uint32_t list_end_row(mdtable_t const* source, column<Owner, Kind> col) noexcept
 {
     return source->cxt->tables[list_target_table(source->cxt, col)].row_count + 1;
 }
@@ -674,7 +674,7 @@ constexpr bool references_table(mdtable_t const*, column<Table, raw_cursor<Targe
 }
 
 template<mdtable_id_t Table, mdtable_id_t Direct, mdtable_id_t Ptr>
-inline bool references_table(mdtable_t const* table, column<Table, indirect_cursor<Direct, Ptr>>, mdtable_id_t target) noexcept
+bool references_table(mdtable_t const* table, column<Table, indirect_cursor<Direct, Ptr>>, mdtable_id_t target) noexcept
 {
     return list_target_table<Direct, Ptr>(table->cxt) == target;
 }
@@ -956,7 +956,7 @@ constexpr uint64_t max_reference_value(mdtable_t const&, column<Table, raw_curso
 }
 
 template<mdtable_id_t Table, mdtable_id_t Direct, mdtable_id_t Ptr, typename RowCounts>
-inline uint64_t max_reference_value(mdtable_t const& table, column<Table, indirect_cursor<Direct, Ptr>>,
+uint64_t max_reference_value(mdtable_t const& table, column<Table, indirect_cursor<Direct, Ptr>>,
     RowCounts const& rows) noexcept
 {
     return rows[list_target_table<Direct, Ptr>(table.cxt)];
@@ -1003,7 +1003,7 @@ constexpr mdtcol_t initial_column_details(column<Table, indirect_cursor<Direct, 
 // Row counts include every target table (and PDB external counts when loading).
 // This prepares schema only: context ownership and storage state are unchanged.
 template<mdtable_id_t Table, typename RowCounts>
-inline bool initialize_table_details(RowCounts const& rows, mdcxt_flag_t flags,
+bool initialize_table_details(RowCounts const& rows, mdcxt_flag_t flags,
     bool sorted, mdtable_t& table) noexcept
 {
     constexpr auto count = std::tuple_size_v<decltype(table_columns<Table>())>;
