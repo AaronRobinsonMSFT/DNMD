@@ -30,11 +30,13 @@ typedef struct _IMAGE_DOS_HEADER {      // DOS .EXE header
     int32_t  e_lfanew;                    // File address of new exe header
 } IMAGE_DOS_HEADER, *PIMAGE_DOS_HEADER;
 
+#ifndef IMAGE_DATA_DIRECTORY_DEFINED
 #define IMAGE_DATA_DIRECTORY_DEFINED
 typedef struct _IMAGE_DATA_DIRECTORY {
     uint32_t VirtualAddress;
     uint32_t Size;
 } IMAGE_DATA_DIRECTORY, *PIMAGE_DATA_DIRECTORY;
+#endif // IMAGE_DATA_DIRECTORY_DEFINED
 
 #define IMAGE_DEBUG_DIRECTORY_DEFINED
 typedef struct _IMAGE_DEBUG_DIRECTORY {
